@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Core APIs the window needs. Without this, event listen/emit is denied and the pty stream never reaches xterm — our own #[tauri::command]s work regardless, which makes the failure look like a UI bug.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

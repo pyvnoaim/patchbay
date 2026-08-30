@@ -1,0 +1,33 @@
+[package]
+name = "patchbay-app"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.77"
+description = "Every host, one jack away."
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# preserve_order keeps jacks in the order they appear in the file, like `bay ls` does.
+toml = { version = "0.8", features = ["preserve_order"] }
+# Writes go through toml_edit, not a re-serialize — it keeps the user's comments,
+# spacing and key order intact. The config is a file people hand-edit.
+toml_edit = "0.22"
+# A real PTY, so ssh gets a tty — password prompts and full-screen programs work.
+portable-pty = "0.9"
+indexmap = { version = "2", features = ["serde"] }
+dirs = "5"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+window-vibrancy = "0.5"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"
