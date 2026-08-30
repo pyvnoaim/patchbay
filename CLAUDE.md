@@ -3,19 +3,123 @@
 SSH connection manager: one TOML file, exec `ssh`. A deliberately tiny answer to
 Royal TS — no Electron, no sync service, no stored credentials.
 
+Two front ends over one config format:
+
 - `src/patchbay.ts` — config load, `[defaults]` inheritance, jump-chain walk, name resolve. All the logic worth testing lives here.
 - `src/cli.ts` — arg dispatch and process spawning. Keep it dumb.
-- `test/patchbay.test.ts` — `node:test` + `assert`. `npm test`.
+- `test/patchbay.test.ts` — `node:test` + `assert`.
+- `src-tauri/src/patchbay.rs` — **a port of `src/patchbay.ts`**, because the app can't import TypeScript. Same behaviour, same errors, same argv; its tests mirror the TS ones. Change one, change both.
+- `src-tauri/src/config.rs` — the only code that *writes* the config. Everything else reads.
+- `src-tauri/src/pty.rs` — in-app sessions: ssh on a real pty, streamed to xterm.js as `pty:<id>` events.
+- `src-tauri/capabilities/default.json` — grants `core:default`. Load-bearing; see below.
+- `src-tauri/src/terminal.rs` — the other path: hands the ssh command to the *system* terminal.
+- `ui/vendor/` — xterm.js UMD builds, copied by `npm run vendor`. Generated; don't edit.
+- `src-tauri/src/main.rs` — Tauri setup and the `#[tauri::command]` surface. Thin; logic belongs in `patchbay.rs`.
+- `ui/` — `index.html` + `app.css` + `app.js`, no framework, no bundler. `icons.js` is generated.
+- `scripts/` — one-job node scripts, run via npm. Never imported by the app.
+
+## Commands
+
+```sh
+npm run dev      # the app window, against patchbay.dev.toml (needs cargo)
+npm run cli --   # the CLI, same sample config, no toolchain needed
+npm test         # test:cli (node:test) + test:app (cargo test)
+npm run build    # patchbay.app / .exe / .deb
+npm run icon     # regenerate the app icon from scripts/icon.mjs
+npm run icons    # regenerate ui/icons.js after editing USED in scripts/icons.mjs
+```
+
+## "push"
+
+When I say **push**, that is not just `git push`. It means: review first, then push
+only if the review comes back clean.
+
+1. Review everything that would go out — bugs and correctness, security, performance, and anything worth simplifying or deleting. Check both implementations when the change touched shared logic; a fix in `patchbay.ts` that missed `patchbay.rs` is the standing risk here.
+2. Run `npm test` — both suites, not one.
+3. **Clean → commit and push.** Sensible commit messages, split into separate commits when the changes are unrelated.
+4. **Not clean → stop and tell me what you found.** Don't push and don't fix it silently; a behaviour change is my call. Trivial nits (a typo, dead code) you can just fix, mention, and carry on.
+
+Findings first, one line each. Don't push a "probably fine".
+
+## Conventions
+
+Read a neighbouring file before adding one; match what's there. The rules that
+aren't obvious from reading:
+
+**Everywhere**
+
+- Comments explain *why*, never *what*. If a line needs a comment to say what it does, rename something instead. The exceptions worth writing: a non-obvious ordering constraint, a platform quirk, a deliberate shortcut.
+- Mark deliberate simplifications `ponytail:` with the ceiling and the upgrade path — `// ponytail: one thread per jack, bounded pool if someone brings a thousand`.
+- Prefer deleting to adding. No interface with one implementation, no config for a value that never changes, no scaffolding for later.
+- Errors are lowercase sentence fragments naming the thing that failed, and quote the user's input: `no jack named "web"`, `jump loop through "loop2"`. They surface in both front ends, so don't phrase them for one.
+
+**TypeScript (`src/`, `test/`)**
+
+- No build step: Node runs the `.ts` directly, flags in the `src/cli.ts` shebang. So no enums, no namespaces, no parameter properties, and relative imports must end in `.ts`.
+- Exported functions are `export function`; small local helpers are `const x = () =>`.
+- Two-space indent, double quotes, semicolons, trailing commas. ~100 col.
+- Pure logic goes in `patchbay.ts` and gets a test. `cli.ts` stays side-effects-only.
+
+**Rust (`src-tauri/src/`)**
+
+- Mirror the TypeScript's names and control flow so the two stay diffable — `sshArgs`/`ssh_args`, `hops`/`hops`. A port that drifts structurally is a port that silently disagrees.
+- `Result<T, String>` at the command boundary; the string is shown to the user, so it follows the error style above.
+- Platform code is `#[cfg(target_os = ...)]` in `terminal.rs`, never an `if` on a runtime flag.
+- Every `patchbay.rs` test has a counterpart in `test/patchbay.test.ts`. Adding one without the other is how the two implementations diverge.
+
+**Frontend (`ui/`)**
+
+- No bundler, so no `import` — scripts are classic, loaded in order by `index.html`. `withGlobalTauri` is on; call `window.__TAURI__.core.invoke`.
+- CSP is `script-src 'self'`: no inline `<script>`, no CDN. Inline `<style>` is allowed but put styles in `app.css` anyway.
+- Everything interpolated into `innerHTML` goes through `esc()`. No exceptions — a jack name comes from a file a colleague may have written.
+- Colours only from the `:root` custom properties, and every one needs its light-mode value in the `prefers-color-scheme` block. Never hardcode a hex outside `:root`.
+- Icons are Lucide via `icon("name")`. Add the name to `USED` in `scripts/icons.mjs` and run `npm run icons` — don't paste SVG into `app.js`, and don't add `lucide-react` (there is no React here, and it wraps the same artwork).
+- A jack's `os = "..."` renders through `osIcon()`: a simple-icons brand mark if one exists, else a Lucide shape from `BRAND_FALLBACKS`, else `server`. Both maps live in `scripts/brands.mjs`; run `npm run brands`. Matching is loose on purpose so `"Ubuntu 22.04"` and `"ubuntu"` land on the same glyph. Brand marks are *filled* paths, Lucide ones are *stroked* — `.i.brand` clears the stroke.
+- Don't fetch favicons from devices to use as icons. It needs an HTTP client and TLS in the app, nearly every appliance ships a self-signed cert, half of them sit behind a bastion where the app can't reach them anyway, and it turns opening the window into outbound requests to every host. The curated set covers the real cases.
+- One render path: mutate state, call `render()`. No targeted DOM patching — the lists are tens of rows, not thousands.
+- The default `contextmenu` is suppressed app-wide (it's the webview's Reload/Inspect menu). Right-click is ours; new actions go in the `contextmenu` handler as well as a visible button, since a menu alone isn't discoverable.
+- Shortcut labels come from `chord("k")`, never a hardcoded `⌘` — it reads `Ctrl+K` off macOS.
+- **A live session owns the keyboard.** The global `keydown` handler returns early when `activeId !== null`; every keystroke belongs to ssh. Only window-level chords (⌘K, ⌘N, ⌘W, ⌘[/]) may be intercepted, and each one you add is a key someone can no longer send to their remote shell.
+- xterm needs a laid-out element to size itself, so `fit()` after the pane is visible, not before.
+- **Core commands need a capability; ours don't.** Anything declared with `#[tauri::command]` and listed in `generate_handler!` works with no permission at all, but Tauri's own APIs — `listen`, `emit`, clipboard, path — are denied unless `src-tauri/capabilities/*.json` grants them. Deleting that file doesn't break `invoke("jacks")`, it just makes sessions open and sit there mute, which reads like a UI bug and isn't. If a `window.__TAURI__` call rejects for no visible reason, check the capability first.
+
+**Writing the config**
+
+- All writes go through `config.rs`, via `toml_edit` on a parsed `DocumentMut` — never re-serialize the struct. People hand-edit this file and their comments must survive; there's a test asserting exactly that.
+- Writes land as temp file + `rename` so a crash can't truncate someone's hosts.
+- Every write function has a `*_at(path, …)` twin that the tests drive against a scratch file. Add the twin when you add a writer, or it can't be tested without touching a real config.
+- Folder rename/delete are tag-prefix rewrites across every jack (`map_tags`) — deleting a folder drops the tag and keeps the device.
 
 ## Non-obvious
 
-- **No build step.** Node runs the `.ts` directly; the flags live in the `src/cli.ts` shebang (`--experimental-strip-types`, needed until Node 23.6). So: no enums, no namespaces, no parameter properties, and relative imports must end in `.ts`.
-- **`$PATCHBAY_CONFIG`** overrides the config path — that's how you exercise the CLI without touching `~/.config`.
+- **`$PATCHBAY_CONFIG`** overrides the config path — that's how you exercise either front end without touching `~/.config`. `npm run dev` and `npm run cli` set it via `dev.env` (`node --env-file`, the only cross-platform way to set one in an npm script). `scripts/tauri.mjs` makes it absolute first, because `tauri dev` runs the binary with `src-tauri/` as its cwd.
+- Config lives at `%APPDATA%\patchbay\` on Windows, `$XDG_CONFIG_HOME` or `~/.config` elsewhere. Both implementations must agree.
 - Jump chains resolve by walking `jump` until it hits a non-jack name (passed through raw) or runs out. The cycle guard is load-bearing; don't drop it.
+- **`-J` order is reversed relative to the walk.** Walking `jump` goes *outward* from the target, but `ssh -J a,b` dials `a` first. `db → web → bastion` must emit `-J bastion,web`. Both implementations reverse, and both have a test pinning it — that bug is invisible until a chain is three deep.
+- The status dot probes the chain's *entry point* (the outermost bastion), not the target. Anything past the first hop is only reachable through ssh, so there's nothing to TCP-probe.
+- Windows editors are usually `.cmd` shims, which `spawn` refuses without `shell: true` — see `edit()` in `cli.ts`.
 
 ## Scope
 
 We shell out to `/usr/bin/ssh` on purpose — the agent, `~/.ssh/config` and
-`known_hosts` come free. Do not add an ssh2 client, a GUI, or a credential store.
+`known_hosts` come free. Do not add an ssh2 client or a credential store.
 RDP, when it lands, hands off to the system client; embedding FreeRDP is the
 thing this project exists to avoid.
+
+There **is** a GUI now (Tauri, not Electron), and it **does** host sessions in-app:
+`pty.rs` spawns `/usr/bin/ssh` on a real pty and streams it to xterm.js. That is a
+deliberate reversal of the original "launcher, not a client" rule. What did *not*
+change is the part that matters: we still exec the system `ssh` with the same argv
+the CLI builds, so the agent, `~/.ssh/config` and `known_hosts` still do the work,
+and a real tty means password and host-key prompts behave. "Open in Terminal" is
+still there on the context menu.
+
+The Royal TS failure mode is still the thing to avoid, but it was about embedding
+*RDP* — a graphics stack — not a text terminal. So: never embed an ssh protocol
+implementation, never embed FreeRDP. RDP, when it lands, hands off to the system
+client. Watch memory per session; xterm scrollback is capped at 5000 lines on
+purpose.
+
+Grouping is tags, not folders: a tag with slashes (`prod/eu/web`) nests in the
+sidebar, and a jack can sit in several branches. Don't add a `group` field — one
+home per host is the thing that makes Royal TS's tree annoying to navigate.
