@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { load, resolve, sshArgs, type Jacks } from "../src/patchbay.ts";
+import { configPath, load, resolve, sshArgs, type Jacks } from "../src/patchbay.ts";
 
 const jacks: Jacks = {
   bastion: { host: "bastion.example", user: "jump", port: 2222 },
@@ -18,14 +18,16 @@ test("plain jack is just user@host", () => {
   assert.deepEqual(sshArgs("bastion", jacks), ["-p", "2222", "jump@bastion.example"]);
 });
 
-test("jump chains walk to the end, in order", () => {
+test("jump chains dial the outermost bastion first, as ssh -J expects", () => {
+  // db is reached via web, web via bastion — so from here the order is bastion, then web.
   assert.deepEqual(sshArgs("db", jacks), [
     "-J",
-    "deploy@10.0.0.4,jump@bastion.example:2222",
+    "jump@bastion.example:2222,deploy@10.0.0.4",
     "-L",
     "5432:localhost:5432",
     "10.0.0.5",
   ]);
+  assert.deepEqual(sshArgs("web", jacks).slice(0, 2), ["-J", "jump@bastion.example:2222"]);
 });
 
 test("~ in key expands, unknown jump passes through raw", () => {
@@ -43,6 +45,33 @@ test("resolve: exact wins, unique substring works, ambiguity throws", () => {
   assert.equal(resolve("loop", jacks), "loop"); // exact beats the loop2 substring hit
   assert.throws(() => resolve("loo", jacks), /matches 2/);
   assert.throws(() => resolve("nope", jacks), /no jack/);
+});
+
+test("config path: env overrides win, Windows lands in %APPDATA%", () => {
+  const { PATCHBAY_CONFIG, XDG_CONFIG_HOME, APPDATA } = process.env;
+  const platform = process.platform;
+  const setPlatform = (v: string) => Object.defineProperty(process, "platform", { value: v });
+  try {
+    delete process.env.PATCHBAY_CONFIG;
+    process.env.XDG_CONFIG_HOME = join("x", "cfg");
+    assert.equal(configPath(), join("x", "cfg", "patchbay", "patchbay.toml"));
+
+    delete process.env.XDG_CONFIG_HOME;
+    process.env.APPDATA = join("C:", "Roaming");
+    setPlatform("win32");
+    assert.equal(configPath(), join("C:", "Roaming", "patchbay", "patchbay.toml"));
+
+    setPlatform("linux");
+    assert.match(configPath(), /\.config[\\/]patchbay[\\/]patchbay\.toml$/);
+
+    process.env.PATCHBAY_CONFIG = "/tmp/override.toml";
+    assert.equal(configPath(), "/tmp/override.toml");
+  } finally {
+    setPlatform(platform);
+    Object.assign(process.env, { PATCHBAY_CONFIG, XDG_CONFIG_HOME, APPDATA });
+    for (const [k, v] of Object.entries({ PATCHBAY_CONFIG, XDG_CONFIG_HOME, APPDATA }))
+      if (v === undefined) delete process.env[k];
+  }
 });
 
 test("[defaults] merge into jacks, jack wins", () => {

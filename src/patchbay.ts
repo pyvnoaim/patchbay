@@ -9,6 +9,7 @@ export type Jack = {
   port?: number;
   key?: string;
   jump?: string;
+  os?: string;
   tags?: string[];
   desc?: string;
   forward?: string[];
@@ -16,9 +17,15 @@ export type Jack = {
 
 export type Jacks = Record<string, Jack>;
 
+/** %APPDATA% on Windows, $XDG_CONFIG_HOME or ~/.config everywhere else. */
+const configHome = (): string => {
+  if (process.env.XDG_CONFIG_HOME) return process.env.XDG_CONFIG_HOME;
+  if (process.platform === "win32" && process.env.APPDATA) return process.env.APPDATA;
+  return join(homedir(), ".config");
+};
+
 export const configPath = (): string =>
-  process.env.PATCHBAY_CONFIG ??
-  join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "patchbay", "patchbay.toml");
+  process.env.PATCHBAY_CONFIG ?? join(configHome(), "patchbay", "patchbay.toml");
 
 const expand = (p: string) => (p.startsWith("~") ? homedir() + p.slice(1) : p);
 
@@ -35,26 +42,37 @@ export function load(path = configPath()): Jacks {
 
 const spec = (j: Jack) => `${j.user ? j.user + "@" : ""}${j.host}`;
 
-export function sshArgs(name: string, jacks: Jacks): string[] {
+/**
+ * The jump chain, ordered the way `ssh -J` wants it: leftmost is the first hop
+ * from here. Walking `jump` goes outward from the target, so the walk is reversed —
+ * `db → web → bastion` has to dial bastion first, not web.
+ */
+export function hops(name: string, jacks: Jacks): string[] {
   const j = jacks[name];
   if (!j) throw new Error(`no jack named "${name}"`);
 
-  const hops: string[] = [];
+  const out: string[] = [];
   const seen = new Set([name]);
   for (let hop: string | undefined = j.jump; hop; ) {
     if (seen.has(hop)) throw new Error(`jump loop through "${hop}"`);
     seen.add(hop);
     const via: Jack | undefined = jacks[hop];
     if (!via) {
-      hops.push(hop); // not a jack name, pass through as a raw ssh spec
+      out.push(hop); // not a jack name, pass through as a raw ssh spec
       break;
     }
-    hops.push(via.port ? `${spec(via)}:${via.port}` : spec(via));
+    out.push(via.port ? `${spec(via)}:${via.port}` : spec(via));
     hop = via.jump;
   }
+  return out.reverse();
+}
+
+export function sshArgs(name: string, jacks: Jacks): string[] {
+  const j = jacks[name]!;
+  const hopList = hops(name, jacks);
 
   const args: string[] = [];
-  if (hops.length) args.push("-J", hops.join(","));
+  if (hopList.length) args.push("-J", hopList.join(","));
   if (j.port) args.push("-p", String(j.port));
   if (j.key) args.push("-i", expand(j.key));
   for (const f of j.forward ?? []) args.push("-L", f);

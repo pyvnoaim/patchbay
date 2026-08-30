@@ -23,6 +23,7 @@ desc = "delete me"
 # forward = ["8080:localhost:80"]
 `;
 
+const win = process.platform === "win32";
 const c = process.stdout.isTTY ? styleText : (_f: unknown, s: string) => s;
 const die = (msg: string): never => {
   console.error(c("red", msg));
@@ -56,8 +57,12 @@ function edit() {
     writeFileSync(path, TEMPLATE);
     console.error(c("dim", `created ${path}`));
   }
-  const editor = process.env.VISUAL ?? process.env.EDITOR ?? "vi";
-  process.exit(spawnSync(editor, [path], { stdio: "inherit" }).status ?? 0);
+  const editor = process.env.VISUAL ?? process.env.EDITOR ?? (win ? "notepad" : "vi");
+  // Windows editors are usually .cmd shims (code, subl), which spawn refuses without a shell.
+  const r = win
+    ? spawnSync(editor, [`"${path}"`], { stdio: "inherit", shell: true })
+    : spawnSync(editor, [path], { stdio: "inherit" });
+  process.exit(r.status ?? 0);
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -65,6 +70,7 @@ const [cmd, ...rest] = process.argv.slice(2);
 if (cmd === "-h" || cmd === "--help") {
   console.log(`bay              pick a jack (fzf) or list them
 bay <name>       connect — substring is enough
+bay <name> -n    print the ssh command instead of running it
 bay <name> -- <cmd>   run a command instead of a shell
 bay ls [filter]  list jacks, filtered by name or tag
 bay edit         open ${configPath()}`);
@@ -97,7 +103,17 @@ try {
   const dash = rest.indexOf("--");
   const args = sshArgs(resolve(target, jacks!), jacks!);
   if (dash !== -1) args.push(...rest.slice(dash + 1));
-  process.exit(spawnSync("ssh", args, { stdio: "inherit" }).status ?? 1);
+
+  const flags = dash === -1 ? rest : rest.slice(0, dash);
+  if (flags.includes("-n") || flags.includes("--dry-run")) {
+    console.log(["ssh", ...args].join(" "));
+    process.exit(0);
+  }
+
+  const r = spawnSync("ssh", args, { stdio: "inherit" });
+  if ((r.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT")
+    die(win ? "no ssh on PATH — enable the OpenSSH Client feature in Windows Settings" : "no ssh on PATH");
+  process.exit(r.status ?? 1);
 } catch (e) {
   die((e as Error).message);
 }
