@@ -1,0 +1,84 @@
+# Sample config for `npm run dev` — never touches your real one.
+# `local` actually connects if you have an sshd running (macOS: Settings →
+# General → Sharing → Remote Login). The rest exercise the tree and the route pane.
+#
+# A tag with slashes nests in the sidebar: "prod/eu/web" is prod → eu → web.
+# A jack can sit in more than one branch — that's the point of tags over folders.
+
+[defaults]
+user = "root"
+
+[jack.local]
+os = "macos"
+host = "localhost"
+user = "you"          # your own account — [defaults] root won't work here
+tags = ["dev"]
+desc = "your own box, if Remote Login is on"
+
+[jack.bastion]
+os = "debian"
+host = "bastion.example"
+port = 2222
+tags = ["prod/eu", "entrypoint"]
+desc = "the way in"
+
+[jack.web]
+os = "ubuntu"
+host = "10.0.0.4"
+user = "deploy"
+key = "~/.ssh/prod"
+jump = "bastion"
+forward = ["8080:localhost:80"]
+tags = ["prod/eu/web", "customer-facing"]
+desc = "two hops: bastion, then here"
+
+[jack.db]
+os = "postgres"
+host = "10.0.0.5"
+jump = "web"
+forward = ["5432:localhost:5432"]
+tags = ["prod/eu/db"]
+desc = "three hops — check the route pane's order"
+
+[jack.web-us]
+os = "ubuntu"
+host = "10.1.0.4"
+user = "deploy"
+tags = ["prod/us/web", "customer-facing"]
+
+[jack.db-us]
+os = "postgres"
+host = "10.1.0.5"
+tags = ["prod/us/db"]
+
+[jack.staging-web]
+os = "alpine"
+host = "10.2.0.4"
+user = "deploy"
+tags = ["staging/web"]
+
+[jack.scratch]
+os = "synology"
+host = "10.9.9.9"
+desc = "no tags — lands under Untagged"
+
+[jack.nas]
+host = "10.0.0.20"
+os = "synology"
+tags = ["home"]
+desc = "DS920+"
+
+[jack.hypervisor]
+host = "10.0.0.30"
+os = "proxmox"
+tags = ["home"]
+
+[jack.gateway]
+host = "10.0.0.1"
+os = "opnsense"
+tags = ["home"]
+
+[jack.pi]
+host = "10.0.0.40"
+os = "raspberrypi"
+tags = ["home"]
