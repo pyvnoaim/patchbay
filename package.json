@@ -1,0 +1,15 @@
+{
+  "name": "patchbay",
+  "version": "0.0.1",
+  "description": "Every host, one jack away.",
+  "type": "module",
+  "bin": { "bay": "src/cli.ts" },
+  "engines": { "node": ">=22.6" },
+  "files": ["src", "README.md"],
+  "scripts": {
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test test/*.test.ts"
+  },
+  "dependencies": {
+    "smol-toml": "^1.3.1"
+  }
+}
