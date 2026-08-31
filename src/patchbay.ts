@@ -10,6 +10,7 @@ export type Jack = {
   key?: string;
   jump?: string;
   os?: string;
+  url?: string;
   tags?: string[];
   desc?: string;
   forward?: string[];

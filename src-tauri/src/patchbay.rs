@@ -20,6 +20,8 @@ pub struct Jack {
     pub key: Option<String>,
     pub jump: Option<String>,
     pub os: Option<String>,
+    /// Optional web UI — a NAS or router is one device with two ways in.
+    pub url: Option<String>,
     pub tags: Option<Vec<String>>,
     pub desc: Option<String>,
     pub forward: Option<Vec<String>>,
@@ -72,6 +74,7 @@ pub fn parse(src: &str) -> Result<Jacks, String> {
                 key: j.key.or_else(|| d.key.clone()),
                 jump: j.jump.or_else(|| d.jump.clone()),
                 os: j.os.or_else(|| d.os.clone()),
+                url: j.url.or_else(|| d.url.clone()),
                 tags: j.tags.or_else(|| d.tags.clone()),
                 desc: j.desc.or_else(|| d.desc.clone()),
                 forward: j.forward.or_else(|| d.forward.clone()),

@@ -3,7 +3,7 @@
 //! lands via a temp file + rename so a crash mid-write can't truncate it.
 
 use crate::patchbay;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use toml_edit::{value, Array, DocumentMut, Item, Table};
 
@@ -16,6 +16,7 @@ pub struct JackInput {
     pub key: Option<String>,
     pub jump: Option<String>,
     pub os: Option<String>,
+    pub url: Option<String>,
     pub desc: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
@@ -96,6 +97,11 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     if name.contains('.') {
         return Err("a jack name can't contain a dot".into());
     }
+    if let Some(u) = j.url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+        if !crate::is_web_url(u) {
+            return Err("a url has to start with http:// or https://".into());
+        }
+    }
 
     let mut doc = read_doc(path)?;
     let jacks = jack_table(&mut doc)?;
@@ -120,6 +126,7 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     set_str(t, "key", j.key.as_deref());
     set_str(t, "jump", j.jump.as_deref());
     set_str(t, "os", j.os.as_deref());
+    set_str(t, "url", j.url.as_deref());
     set_str(t, "desc", j.desc.as_deref());
     set_arr(t, "tags", &j.tags);
     set_arr(t, "forward", &j.forward);
@@ -144,6 +151,194 @@ pub fn delete_jack_at(path: &Path, name: &str) -> Result<(), String> {
         return Err(format!("no jack named \"{name}\""));
     }
     write_doc(path, &doc)
+}
+
+/// App preferences, in `[settings]`. Defaults are what you get with no section.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Settings {
+    /// Bring a folder's VPN up before connecting to a device in it.
+    #[serde(default = "yes")]
+    pub vpn_auto_connect: bool,
+    /// Take it down when that folder's last session closes. Off by default — it
+    /// will cut a tunnel you were still using outside patchbay.
+    #[serde(default)]
+    pub vpn_auto_disconnect: bool,
+    /// TCP-probe every device's entry point on a timer for the status dots.
+    #[serde(default = "yes")]
+    pub probe: bool,
+    /// Connect opens the system terminal instead of a tab in the window.
+    #[serde(default)]
+    pub connect_in_terminal: bool,
+    /// Tint a device's icon by its `os`, using the brand's colour unless [colors]
+    /// overrides it.
+    #[serde(default = "yes")]
+    pub os_colors: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            vpn_auto_connect: true,
+            vpn_auto_disconnect: false,
+            probe: true,
+            connect_in_terminal: false,
+            os_colors: true,
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawSettings {
+    #[serde(default)]
+    settings: Settings,
+}
+
+pub fn load_settings() -> Settings {
+    load_settings_at(&patchbay::config_path())
+}
+
+/// Never fails: a broken or missing config just means defaults, so the settings
+/// sheet still opens and can fix whatever is wrong.
+pub fn load_settings_at(file: &Path) -> Settings {
+    std::fs::read_to_string(file)
+        .ok()
+        .and_then(|s| toml::from_str::<RawSettings>(&s).ok())
+        .map(|r| r.settings)
+        .unwrap_or_default()
+}
+
+pub fn save_settings(s: &Settings) -> Result<(), String> {
+    save_settings_at(&patchbay::config_path(), s)
+}
+
+pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
+    let mut doc = read_doc(file)?;
+    let t = doc
+        .entry("settings")
+        .or_insert_with(|| Item::Table(Table::new()))
+        .as_table_mut()
+        .ok_or("`settings` in the config isn't a table")?;
+    t["vpn_auto_connect"] = value(s.vpn_auto_connect);
+    t["vpn_auto_disconnect"] = value(s.vpn_auto_disconnect);
+    t["probe"] = value(s.probe);
+    t["connect_in_terminal"] = value(s.connect_in_terminal);
+    t["os_colors"] = value(s.os_colors);
+    write_doc(file, &doc)
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawColors {
+    #[serde(default)]
+    colors: std::collections::BTreeMap<String, String>,
+}
+
+/// `[colors]` maps an `os` value to a hex. Absent entries fall back to the brand's
+/// own colour, so this only holds what you have deliberately changed.
+pub fn load_colors() -> std::collections::BTreeMap<String, String> {
+    std::fs::read_to_string(patchbay::config_path())
+        .ok()
+        .and_then(|s| toml::from_str::<RawColors>(&s).ok())
+        .map(|r| r.colors)
+        .unwrap_or_default()
+}
+
+/// `None` clears the override and restores the brand default.
+pub fn save_color(os: &str, hex: Option<&str>) -> Result<(), String> {
+    save_color_at(&patchbay::config_path(), os, hex)
+}
+
+pub fn save_color_at(file: &Path, os: &str, hex: Option<&str>) -> Result<(), String> {
+    let os = os.trim().to_lowercase();
+    if os.is_empty() {
+        return Err("which os?".into());
+    }
+    if let Some(h) = hex {
+        // This ends up in a style attribute, so nothing but a plain hex gets in.
+        let ok = h.len() == 7
+            && h.starts_with('#')
+            && h[1..].chars().all(|c| c.is_ascii_hexdigit());
+        if !ok {
+            return Err(format!("\"{h}\" isn't a #rrggbb colour"));
+        }
+    }
+    let mut doc = read_doc(file)?;
+    let t = doc
+        .entry("colors")
+        .or_insert_with(|| Item::Table(Table::new()))
+        .as_table_mut()
+        .ok_or("`colors` in the config isn't a table")?;
+    match hex {
+        Some(h) => t[&os] = value(h),
+        None => {
+            t.remove(&os);
+        }
+    }
+    write_doc(file, &doc)
+}
+
+/// `[vpn]` holds one table per folder path, same implicit-parent trick as `[jack]`.
+fn vpn_table(doc: &mut DocumentMut) -> Result<&mut Table, String> {
+    let item = doc.entry("vpn").or_insert_with(|| {
+        let mut t = Table::new();
+        t.set_implicit(true);
+        Item::Table(t)
+    });
+    let t = item.as_table_mut().ok_or("`vpn` in the config isn't a table")?;
+    t.set_implicit(true);
+    Ok(t)
+}
+
+pub fn save_vpn(path: &str, v: &crate::vpn::Vpn) -> Result<(), String> {
+    save_vpn_at(&patchbay::config_path(), path, v)
+}
+
+pub fn save_vpn_at(file: &Path, path: &str, v: &crate::vpn::Vpn) -> Result<(), String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err("a vpn needs a folder".into());
+    }
+    let provider = v.provider.as_deref().unwrap_or("custom");
+    if provider == "custom" {
+        if v.up.as_deref().map(str::trim).unwrap_or("").is_empty() {
+            return Err("a custom vpn needs an `up` command".into());
+        }
+    } else if v.profile.as_deref().map(str::trim).unwrap_or("").is_empty()
+        && provider != "tailscale"
+    {
+        return Err(format!("pick a {provider} profile"));
+    }
+
+    let mut doc = read_doc(file)?;
+    let vpns = vpn_table(&mut doc)?;
+    let entry = vpns.entry(path).or_insert_with(|| Item::Table(Table::new()));
+    let t = entry
+        .as_table_mut()
+        .ok_or_else(|| format!("[vpn.{path}] isn't a table"))?;
+    set_str(t, "provider", Some(provider));
+    set_str(t, "profile", v.profile.as_deref());
+    // A preset derives these, so don't leave stale ones behind.
+    let custom = provider == "custom";
+    set_str(t, "up", if custom { v.up.as_deref() } else { None });
+    set_str(t, "down", if custom { v.down.as_deref() } else { None });
+    set_str(t, "check", if custom { v.check.as_deref() } else { None });
+    write_doc(file, &doc)
+}
+
+pub fn delete_vpn(path: &str) -> Result<(), String> {
+    delete_vpn_at(&patchbay::config_path(), path)
+}
+
+pub fn delete_vpn_at(file: &Path, path: &str) -> Result<(), String> {
+    let mut doc = read_doc(file)?;
+    let vpns = vpn_table(&mut doc)?;
+    if vpns.remove(path).is_none() {
+        return Err(format!("no vpn on \"{path}\""));
+    }
+    write_doc(file, &doc)
 }
 
 /// Rewrite every tag that is `path` or sits under `path/`. `to` of None deletes them.
@@ -195,7 +390,24 @@ pub fn rename_group_at(file: &Path, from: &str, to: &str) -> Result<usize, Strin
     if to.is_empty() {
         return Err("a folder needs a name".into());
     }
-    map_tags(file, from, Some(to))
+    let touched = map_tags(file, from, Some(to))?;
+    // A [vpn."old/path"] would otherwise be orphaned by the rename.
+    let mut doc = read_doc(file)?;
+    let vpns = vpn_table(&mut doc)?;
+    let moved: Vec<String> = vpns
+        .iter()
+        .map(|(k, _)| k.to_string())
+        .filter(|k| k == from || k.starts_with(&format!("{from}/")))
+        .collect();
+    if !moved.is_empty() {
+        for key in moved {
+            if let Some(item) = vpns.remove(&key) {
+                vpns.insert(&format!("{to}{}", &key[from.len()..]), item);
+            }
+        }
+        write_doc(file, &doc)?;
+    }
+    Ok(touched)
 }
 
 pub fn delete_group(path: &str) -> Result<usize, String> {
@@ -237,7 +449,7 @@ tags = ["prod/eu/web"]
     fn input(name: &str, host: &str) -> JackInput {
         JackInput {
             name: name.into(), host: host.into(),
-            user: None, port: None, key: None, jump: None, os: None, desc: None,
+            user: None, port: None, key: None, jump: None, os: None, url: None, desc: None,
             tags: vec![], forward: vec![],
         }
     }
@@ -309,6 +521,65 @@ tags = ["prod/eu/web"]
         assert!(out.contains(r#"tags = ["entrypoint"]"#), "its other tag stays");
         // web's only tag was under the folder, so the key goes entirely
         assert!(!out.contains(r#"tags = []"#));
+    }
+
+    #[test]
+    fn vpn_round_trips_and_needs_an_up_command() {
+        let p = scratch("vpn");
+        let custom = |up: Option<&str>, down: Option<&str>, check: Option<&str>| crate::vpn::Vpn {
+            provider: Some("custom".into()),
+            up: up.map(str::to_string),
+            down: down.map(str::to_string),
+            check: check.map(str::to_string),
+            ..Default::default()
+        };
+        save_vpn_at(&p, "acme", &custom(Some("wg-quick up acme"), Some("wg-quick down acme"), None)).unwrap();
+        let out = read(&p);
+        assert!(out.contains("[vpn.acme]"), "{out}");
+        assert!(out.contains(r#"up = "wg-quick up acme""#));
+        assert!(!out.contains("check"), "an empty check shouldn't be written");
+        assert!(out.contains("# my hosts — keep this comment"), "comments survive");
+
+        // clearing a field removes the key rather than writing ""
+        save_vpn_at(&p, "acme", &custom(Some("x"), None, Some("wg show acme"))).unwrap();
+        let out = read(&p);
+        assert!(!out.contains("down ="), "{out}");
+        assert!(out.contains(r#"check = "wg show acme""#));
+
+        assert!(save_vpn_at(&p, "acme", &custom(None, None, None)).unwrap_err().contains("`up`"));
+        assert!(save_vpn_at(&p, "  ", &custom(Some("x"), None, None)).unwrap_err().contains("folder"));
+
+        delete_vpn_at(&p, "acme").unwrap();
+        assert!(!read(&p).contains("[vpn.acme]"));
+        assert!(delete_vpn_at(&p, "acme").unwrap_err().contains("no vpn"));
+    }
+
+    #[test]
+    fn renaming_a_folder_carries_its_vpn_across() {
+        let p = scratch("vpn-rename");
+        save_vpn_at(&p, "prod/eu", &crate::vpn::Vpn {
+            provider: Some("custom".into()), up: Some("up".into()), ..Default::default()
+        }).unwrap();
+        rename_group_at(&p, "prod/eu", "prod/emea").unwrap();
+        let out = read(&p);
+        assert!(out.contains(r#"[vpn."prod/emea"]"#), "{out}");
+        assert!(!out.contains(r#"[vpn."prod/eu"]"#));
+    }
+
+    #[test]
+    fn colours_are_validated_and_clearable() {
+        let p = scratch("colors");
+        save_color_at(&p, "Synology", Some("#0C4A9F")).unwrap();
+        let out = read(&p);
+        assert!(out.contains("[colors]"), "{out}");
+        assert!(out.contains(r##"synology = "#0C4A9F""##), "key is lowercased: {out}");
+
+        for bad in ["blue", "#0C4A9", "#GGGGGG", "red; background:url(x)"] {
+            assert!(save_color_at(&p, "x", Some(bad)).is_err(), "{bad:?} should be rejected");
+        }
+
+        save_color_at(&p, "synology", None).unwrap();
+        assert!(!read(&p).contains("synology ="));
     }
 
     #[test]
