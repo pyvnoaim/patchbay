@@ -26,6 +26,8 @@ const USED = [
   "folder-plus",
   "external-link",
   "globe",
+  "monitor",
+  "unplug",
   "cog",
   "router",
   "network",

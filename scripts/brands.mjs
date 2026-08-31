@@ -41,15 +41,26 @@ const FALLBACKS = {
 // simple-icons carries each brand's official colour, so "Synology is blue" needs
 // no configuration — it is just the mark's own hex. Overridable in [colors].
 const CUSTOM_COLORS = { windows: "#0078D4" };
+const CUSTOM_LABELS = { windows: "Windows", macos: "macOS" };
+// Generic kinds aren't brands, so their casing is ours to pick.
+const FALLBACK_LABELS = {
+  router: "Router", switch: "Switch", nas: "NAS", vm: "VM",
+  container: "Container", printer: "Printer", camera: "Camera", server: "Server",
+};
 
 const brands = { ...CUSTOM };
 const colors = { ...CUSTOM_COLORS };
+// simple-icons knows how each brand writes its own name — "OPNsense", "TrueNAS",
+// "Raspberry Pi" — so the suggestions read properly instead of being flattened.
+const labels = { ...CUSTOM_LABELS };
 for (const [key, slug] of Object.entries(BRANDS)) {
   const entry = si[`si${slug}`];
   if (!entry) throw new Error(`simple-icons has no si${slug} — fix scripts/brands.mjs`);
   brands[key] = entry.path;
   if (entry.hex) colors[key] = `#${entry.hex}`;
+  if (entry.title && !labels[key]) labels[key] = entry.title;
 }
+for (const [k, v] of Object.entries(FALLBACK_LABELS)) labels[k] = v;
 
 mkdirSync("ui/gen", { recursive: true });
 writeFileSync(
@@ -59,6 +70,10 @@ writeFileSync(
     `const BRANDS = ${JSON.stringify(brands, null, 0)};\n` +
     `const BRAND_FALLBACKS = ${JSON.stringify(FALLBACKS, null, 0)};\n` +
     `const BRAND_COLORS = ${JSON.stringify(colors, null, 0)};\n` +
-    `const OS_CHOICES = ${JSON.stringify([...Object.keys(brands), ...Object.keys(FALLBACKS)].sort())};\n`,
+    `const OS_CHOICES = ${JSON.stringify(
+      [...new Set([...Object.keys(brands), ...Object.keys(FALLBACKS)])]
+        .map((k) => labels[k] ?? k)
+        .sort((a, b) => a.localeCompare(b)),
+    )};\n`,
 );
 console.log(`wrote ui/gen/brands.js (${Object.keys(brands).length} marks, ${Object.keys(FALLBACKS).length} fallbacks)`);
