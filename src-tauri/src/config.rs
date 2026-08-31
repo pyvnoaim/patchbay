@@ -47,6 +47,55 @@ fn write_doc(path: &Path, doc: &DocumentMut) -> Result<(), String> {
     std::fs::rename(&tmp, &path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// toml_edit hangs the lines above a table on that table, so removing one deletes
+/// the comments sitting over it — including a file header that was never about it.
+/// Hands them back for `rehome_comments` instead.
+/// ponytail: the whole block moves, so a comment about a deleted jack ends up above
+/// the next one. A stale comment is visible and fixable; a deleted one isn't.
+fn orphan_comments(parent: &mut Table, key: &str) -> Option<(String, usize)> {
+    let removed = parent.remove(key)?;
+    let t = removed.as_table()?;
+    let prefix = t.decor().prefix()?.as_str()?;
+    if prefix.trim().is_empty() {
+        return None;
+    }
+    Some((prefix.to_string(), t.position()?))
+}
+
+/// Tables render in `position()` order, so the one that takes the removed table's
+/// place is the next position along — wherever in the tree it happens to live.
+fn first_position_after(item: &Item, after: usize) -> Option<usize> {
+    let t = item.as_table()?;
+    t.iter()
+        .filter_map(|(_, v)| first_position_after(v, after))
+        .chain(t.position().filter(|p| *p > after))
+        .min()
+}
+
+fn prepend_prefix(item: &mut Item, at: usize, comments: &str) -> bool {
+    let Some(t) = item.as_table_mut() else { return false };
+    if t.position() == Some(at) {
+        let old = t.decor().prefix().and_then(|p| p.as_str()).unwrap_or("").to_string();
+        t.decor_mut().set_prefix(format!("{comments}{old}"));
+        return true;
+    }
+    t.iter_mut().any(|(_, v)| prepend_prefix(v, at, comments))
+}
+
+fn rehome_comments(doc: &mut DocumentMut, orphan: Option<(String, usize)>) {
+    let Some((comments, was_at)) = orphan else { return };
+    match first_position_after(doc.as_item(), was_at) {
+        Some(at) => {
+            prepend_prefix(doc.as_item_mut(), at, &comments);
+        }
+        // Nothing renders after it, so the file ends with them.
+        None => {
+            let trailing = doc.trailing().as_str().unwrap_or("").to_string();
+            doc.set_trailing(format!("{comments}{trailing}"));
+        }
+    }
+}
+
 /// `[jack]` is implicit — we only ever write the `[jack.name]` children.
 fn jack_table(doc: &mut DocumentMut) -> Result<&mut Table, String> {
     let item = doc.entry("jack").or_insert_with(|| {
@@ -113,13 +162,15 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     if (original.is_none() || renaming) && jacks.contains_key(&name) {
         return Err(format!("there's already a jack named \"{name}\""));
     }
-    if renaming {
-        jacks.remove(original.as_deref().unwrap_or_default());
-    }
+    // Carried over, not dropped and rebuilt: a rename keeps the jack's comments,
+    // its place in the file, and any key the sheet can't edit — same as an edit does.
+    let previous = renaming
+        .then(|| jacks.remove(original.as_deref().unwrap_or_default()))
+        .flatten();
 
     let entry = jacks
         .entry(&name)
-        .or_insert_with(|| Item::Table(Table::new()));
+        .or_insert_with(|| previous.unwrap_or_else(|| Item::Table(Table::new())));
     let t = entry
         .as_table_mut()
         .ok_or_else(|| format!("[jack.{name}] isn't a table"))?;
@@ -165,9 +216,11 @@ pub fn delete_jack(name: &str) -> Result<(), String> {
 pub fn delete_jack_at(path: &Path, name: &str) -> Result<(), String> {
     let mut doc = read_doc(path)?;
     let jacks = jack_table(&mut doc)?;
-    if jacks.remove(name).is_none() {
+    if !jacks.contains_key(name) {
         return Err(format!("no jack named \"{name}\""));
     }
+    let orphan = orphan_comments(jacks, name);
+    rehome_comments(&mut doc, orphan);
     write_doc(path, &doc)
 }
 
@@ -266,7 +319,8 @@ pub fn save_defaults_at(file: &Path, d: &Defaults) -> Result<(), String> {
     // Nothing inherited means no section — an empty `[defaults]` left behind is
     // noise in a file people read. A hand-written key keeps the table alive.
     if empty {
-        doc.remove("defaults");
+        let orphan = orphan_comments(doc.as_table_mut(), "defaults");
+        rehome_comments(&mut doc, orphan);
     }
     write_doc(file, &doc)
 }
@@ -415,9 +469,11 @@ pub fn delete_vpn(path: &str) -> Result<(), String> {
 pub fn delete_vpn_at(file: &Path, path: &str) -> Result<(), String> {
     let mut doc = read_doc(file)?;
     let vpns = vpn_table(&mut doc)?;
-    if vpns.remove(path).is_none() {
+    if !vpns.contains_key(path) {
         return Err(format!("no vpn on \"{path}\""));
     }
+    let orphan = orphan_comments(vpns, path);
+    rehome_comments(&mut doc, orphan);
     write_doc(file, &doc)
 }
 
@@ -558,6 +614,39 @@ folders = ["prod/eu/web"]
         // empty `[defaults]` in a file people read.
         save_defaults_at(&p, &Defaults::default()).unwrap();
         assert!(!read(&p).contains("[defaults]"), "got {}", read(&p));
+    }
+
+    #[test]
+    fn comments_outlive_the_table_they_sat_above() {
+        let p = scratch("comments");
+        save_defaults_at(&p, &Defaults::default()).unwrap();
+        let out = read(&p);
+        assert!(!out.contains("[defaults]"), "got {out}");
+        assert!(out.contains("# my hosts"), "the file header went with it:\n{out}");
+        assert!(
+            out.find("# my hosts") < out.find("[jack.bastion]"),
+            "the header should still be on top:\n{out}"
+        );
+
+        delete_jack_at(&p, "bastion").unwrap();
+        let out = read(&p);
+        assert!(out.contains("# my hosts"), "got {out}");
+        assert!(out.contains("# the way in"), "got {out}");
+        assert!(out.find("# my hosts") < out.find("[jack.web]"), "got {out}");
+
+        // Nothing renders after the last jack, so its comments end up at the end
+        // rather than nowhere.
+        delete_jack_at(&p, "web").unwrap();
+        assert!(read(&p).contains("# my hosts"), "got {}", read(&p));
+    }
+
+    #[test]
+    fn renaming_a_jack_takes_its_comment_along() {
+        let p = scratch("rename-comment");
+        save_jack_at(&p, Some("bastion".into()), input("gateway", "bastion.example")).unwrap();
+        let out = read(&p);
+        assert!(out.contains("# the way in"), "got {out}");
+        assert!(out.find("# the way in") < out.find("[jack.gateway]"), "got {out}");
     }
 
     #[test]
