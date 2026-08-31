@@ -13,6 +13,7 @@
       <nav id="tree"></nav>
       <div class="side-foot">
         <button class="flat" id="newgroup"></button>
+        <button class="flat" id="settings"></button>
         <button class="flat" id="editcfg"></button>
       </div>
     </aside>
@@ -52,6 +53,7 @@
         <label class="f wide"><span>Jump via</span><input name="jump" spellcheck="false" list="jacknames" placeholder="another jack, or user@host"></label>
         <label class="f wide"><span>OS / kind</span><input name="os" spellcheck="false" list="oschoices" placeholder="ubuntu, synology, proxmox…"></label>
         <datalist id="oschoices"></datalist>
+        <label class="f wide"><span>Web UI</span><input name="url" spellcheck="false" placeholder="https://10.0.0.20:5001"></label>
         <label class="f wide"><span>Folders</span><input name="tags" spellcheck="false" placeholder="prod/eu/web, customer-facing"></label>
         <label class="f wide"><span>Forwards</span><input name="forward" spellcheck="false" placeholder="8080:localhost:80"></label>
         <label class="f wide"><span>Description</span><input name="desc" placeholder="optional"></label>
@@ -62,6 +64,73 @@
         <button type="button" class="danger" id="jf-delete" hidden></button>
         <span style="flex:1"></span>
         <button type="button" id="jf-cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="setwrap" hidden>
+    <form class="sheet" id="setform" autocomplete="off">
+      <div class="sheet-head">Settings</div>
+      <div class="sheet-body one">
+        <div class="d-sec">VPN</div>
+        <label class="opt"><input type="checkbox" name="vpn_auto_connect">
+          <span><b>Connect a folder's VPN automatically</b>
+          Opening a session brings its VPN up first, so connecting is one action rather than two.</span></label>
+        <label class="opt"><input type="checkbox" name="vpn_auto_disconnect">
+          <span><b>Disconnect when a folder's last session closes</b>
+          Tidy, but it will cut a tunnel you were still using elsewhere — a browser tab, a mounted share.</span></label>
+        <div class="provider-list" id="provider-list"></div>
+
+        <div class="d-sec">Devices</div>
+        <label class="opt"><input type="checkbox" name="probe">
+          <span><b>Check reachability</b>
+          Opens a TCP connection to each device's first hop every 30 seconds to drive the status dots.
+          Nothing is sent; the socket is opened and dropped.</span></label>
+        <label class="opt"><input type="checkbox" name="connect_in_terminal">
+          <span><b>Connect in the system terminal</b>
+          Hands the ssh command to Terminal / Windows Terminal instead of opening a tab here.</span></label>
+
+        <div class="d-sec">Appearance</div>
+        <label class="opt"><input type="checkbox" name="os_colors">
+          <span><b>Colour device icons by OS</b>
+          Uses each brand's own colour, adjusted so it stays readable on this theme.
+          Override any of them below — every device with that OS follows.</span></label>
+        <div class="swatches" id="swatches"></div>
+
+        <div class="d-sec">Config file</div>
+        <p class="page-note">Everything here is stored in this file. It's plain TOML — edit it by hand
+        whenever you prefer; patchbay keeps your comments and formatting.</p>
+        <div class="mono" id="cfgpath"></div>
+        <div class="btns"><button type="button" class="ghost" id="page-openconfig"></button></div>
+      </div>
+      <p class="sheet-err" id="set-err" hidden></p>
+      <div class="sheet-foot">
+        <span style="flex:1"></span>
+        <button type="button" id="set-cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="vpnwrap" hidden>
+    <form class="sheet small" id="vpnform" autocomplete="off">
+      <div class="sheet-head" id="vpn-title"></div>
+      <div class="sheet-body">
+        <label class="f wide"><span>Provider</span><select name="provider"></select></label>
+        <label class="f wide" id="vpn-profile-row"><span>Profile</span>
+          <input name="profile" spellcheck="false" list="vpn-profiles" placeholder="acme"><datalist id="vpn-profiles"></datalist></label>
+        <label class="f wide"><span>Connect</span><input name="up" spellcheck="false" placeholder="wg-quick up acme"></label>
+        <label class="f wide"><span>Disconnect</span><input name="down" spellcheck="false" placeholder="wg-quick down acme"></label>
+        <label class="f wide"><span>Check (optional)</span><input name="check" spellcheck="false" placeholder="wg show acme — exit 0 means up"></label>
+        <p class="hint">These run as written, like a shell alias. Without a check command the
+        switch shows what patchbay last did, not what is actually up.</p>
+      </div>
+      <p class="sheet-err" id="vpn-err" hidden></p>
+      <div class="sheet-foot">
+        <button type="button" class="danger" id="vpn-delete" hidden></button>
+        <span style="flex:1"></span>
+        <button type="button" id="vpn-cancel">Cancel</button>
         <button type="submit" class="primary">Save</button>
       </div>
     </form>

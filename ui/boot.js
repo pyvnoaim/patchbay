@@ -7,8 +7,11 @@ searchBtn.addEventListener("click", () => openPalette());
 $("newjack").addEventListener("click", () => openJack(null, group));
 $("newgroup").addEventListener("click", () => newGroup(null));
 $("editcfg").addEventListener("click", () => invoke("open_config"));
+$("settings").addEventListener("click", openSettings);
 
 treeEl.addEventListener("click", (e) => {
+  const sw = e.target.closest("[data-vpn]");
+  if (sw) { e.stopPropagation(); return toggleVpn(sw.dataset.vpn); }
   const el = e.target.closest(".group");
   if (!el) return;
   const path = el.dataset.path || null;
@@ -19,6 +22,7 @@ treeEl.addEventListener("click", (e) => {
     group = path;
     if (el.dataset.hasKids === "true") expanded.add(path);
     sel = 0;
+    detailMode = "group";   // the pane describes the folder, not its first device
   }
   render();
 });
@@ -26,21 +30,29 @@ treeEl.addEventListener("click", (e) => {
 listEl.addEventListener("click", (e) => {
   const row = e.target.closest(".jack");
   if (!row) return;
-  sel = +row.dataset.i;
-  render();
-});
-listEl.addEventListener("dblclick", (e) => {
-  const row = e.target.closest(".jack");
-  if (row) connect(shown[+row.dataset.i].name);
+  select(+row.dataset.i);
+  // e.detail is the click count, so this survives a re-render landing mid-gesture
+  // in a way a separate dblclick listener does not.
+  if (e.detail === 2) connect(shown[sel].name);
 });
 
 detailEl.addEventListener("click", async (e) => {
+  const gact = e.target.closest("[data-gact]")?.dataset.gact;
+  if (gact) {
+    if (gact === "new") openJack(null, group);
+    if (gact === "vpn") toggleVpn(group);
+    if (gact === "vpnedit") openVpn(group);
+    if (gact === "rename") renameGroup(group);
+    if (gact === "del") removeGroup(group);
+    return;
+  }
   const act = e.target.closest("[data-act]")?.dataset.act;
   const live = activeId !== null ? sessions.get(activeId) : null;
   const j = live ? all.find((x) => x.name === live.name) : shown[sel];
   if (!j) return;
   if (act === "connect") connect(j.name);
   if (act === "disconnect") closeSession(activeId);
+  if (act === "web") openWeb(j.name);
   if (act === "edit") openJack(j);
   if (act === "copy") {
     const btn = e.target.closest("[data-act]");
@@ -64,14 +76,21 @@ document.addEventListener("keydown", (e) => {
   const mod = e.metaKey || e.ctrlKey;
 
   // A sheet is modal: let it have the keyboard, bar Escape.
-  if (!sheetWrap.hidden || !askWrap.hidden) {
-    if (e.key === "Escape") { e.preventDefault(); askWrap.hidden ? closeJack() : closeAsk(null); }
+  if (!sheetWrap.hidden || !askWrap.hidden || !vpnWrap.hidden || !setWrap.hidden) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      if (!askWrap.hidden) closeAsk(null);
+      else if (!vpnWrap.hidden) closeVpn();
+      else if (!setWrap.hidden) closeSettings();
+      else closeJack();
+    }
     return;
   }
   if (!ctxEl.hidden && e.key === "Escape") { e.preventDefault(); return hideCtx(); }
 
   if (mod && e.key === "k") { e.preventDefault(); return palOpen() ? closePalette() : openPalette(); }
   if (mod && e.key === "n") { e.preventDefault(); return openJack(null, group); }
+  if (mod && e.key === ",") { e.preventDefault(); return openSettings(); }
   if (mod && e.key === "[") { e.preventDefault(); return cycleSession(-1); }
   if (mod && e.key === "]") { e.preventDefault(); return cycleSession(1); }
 
@@ -105,6 +124,10 @@ document.addEventListener("keydown", (e) => {
 // ── load ───────────────────────────────────────────────────────────────────
 async function load() {
   try {
+    // Preferences and provider detection first: the rest of the UI reads them.
+    prefs = await invoke("settings").catch(() => ({}));
+    if (!providers.length) providers = await invoke("vpn_providers").catch(() => []);
+    colors = await invoke("colors").catch(() => ({}));
     all = await invoke("jacks");
     // Open the first level once, on the first load only — doing it every time
     // would re-open folders the moment the window regains focus.
@@ -114,6 +137,7 @@ async function load() {
     }
     render();
     refreshProbes();
+    refreshVpns();
   } catch (e) {
     treeEl.innerHTML = "";
     listEl.innerHTML = `<p class="empty">${esc(e)}</p>`;
@@ -121,9 +145,34 @@ async function load() {
 }
 
 const PROBE_EVERY = 30_000;
+async function toggleVpn(path) {
+  const v = vpns.get(path);
+  if (!v || vpnBusy.has(path)) return;
+  vpnBusy.add(path);
+  renderTree();
+  try {
+    await invoke("vpn_toggle", { path, on: !v.up });
+    vpns.set(path, { ...v, up: !v.up });
+  } catch (e) {
+    alertish(e);
+  } finally {
+    vpnBusy.delete(path);
+    renderTree();
+    refreshVpns();
+  }
+}
+
+async function refreshVpns() {
+  try {
+    vpns = new Map((await invoke("vpns")).map((v) => [v.path, v]));
+    renderTree();
+  } catch { /* no [vpn] section is the normal case */ }
+}
+
 async function refreshProbes() {
   // Throttled because load() runs on every window focus, and a sweep opens a
   // socket to every jack. Alt-tabbing shouldn't hammer the whole estate.
+  if (prefs.probe === false) return;
   if (Date.now() - lastProbe < PROBE_EVERY) return;
   lastProbe = Date.now();
   try {
@@ -134,5 +183,6 @@ async function refreshProbes() {
 
 load();
 setInterval(refreshProbes, PROBE_EVERY);
+setInterval(refreshVpns, PROBE_EVERY);
 // The config is a file you edit by hand, so pick up changes when the window comes back.
 window.addEventListener("focus", load);

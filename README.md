@@ -82,6 +82,27 @@ The app is a launcher, not a client: it renders the list and hands the `ssh` com
 to your real terminal. Nothing is embedded, so there's no terminal emulator and no
 second SSH implementation to keep alive.
 
+## Folders, VPNs and web UIs
+
+Folders are tags: a tag with slashes (`prod/eu/web`) nests in the sidebar, and a device
+can sit in several branches. A folder can carry a VPN, which is how one-customer-per-folder
+works — flip the switch, or let it come up on its own when you connect.
+
+```toml
+[vpn.acme]
+provider = "tailscale"          # or tunnelblick / wireguard / custom
+profile  = "acme"
+
+[jack.acme-nas]
+host = "10.80.0.20"
+os   = "synology"               # picks the icon, and its colour
+url  = "https://10.80.0.20:5001"   # opens in your browser
+tags = ["acme/prod"]
+```
+
+A `custom` VPN runs whatever `up`/`down`/`check` you give it, so treat a config
+someone sends you the way you'd treat their shell script.
+
 ## What it deliberately isn't
 
 Real credentials live in your ssh agent and your existing keys — patchbay stores

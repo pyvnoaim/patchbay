@@ -35,12 +35,12 @@ document.addEventListener("contextmenu", (e) => {
   const groupRow = e.target.closest(".group");
 
   if (jackRow) {
-    sel = +jackRow.dataset.i;
-    render();
+    select(+jackRow.dataset.i);
     const j = shown[sel];
     return showCtx(e.clientX, e.clientY, j.name, [
       { icon: "square-terminal", label: "Connect", run: () => connect(j.name) },
       { icon: "external-link", label: "Open in Terminal", run: () => connect(j.name, true) },
+      ...(j.url ? [{ icon: "globe", label: "Open web UI", run: () => openWeb(j.name) }] : []),
       { icon: "copy", label: "Copy ssh command", run: () => navigator.clipboard.writeText(j.command).catch(() => {}) },
       "-",
       { icon: "pencil", label: "Edit…", run: () => openJack(j) },
@@ -56,6 +56,7 @@ document.addEventListener("contextmenu", (e) => {
       { icon: "folder-plus", label: "New subfolder…", run: () => newGroup(path) },
       "-",
       { icon: "pencil", label: "Rename…", run: () => renameGroup(path) },
+      { icon: "plug", label: vpns.has(path) ? "VPN settings…" : "Add a VPN…", run: () => openVpn(path) },
       { icon: "trash-2", label: "Delete folder", danger: true, run: () => removeGroup(path) },
     ]);
   }
@@ -103,11 +104,12 @@ function openJack(j, prefillGroup) {
   f.key.value = j?.key ?? "";
   f.jump.value = j?.jump ?? "";
   f.os.value = j?.os ?? "";
+  f.url.value = j?.url ?? "";
   f.desc.value = j?.desc ?? "";
   f.tags.value = (j?.tags ?? (prefillGroup && prefillGroup !== "\0untagged" ? [prefillGroup] : [])).join(", ");
   f.forward.value = (j?.forward ?? []).join(", ");
   $("jacknames").innerHTML = all.map((x) => `<option value="${esc(x.name)}">`).join("");
-  $("oschoices").innerHTML = OS_CHOICES.map((o) => `<option value="${o}">`).join("");
+  $("oschoices").innerHTML = OS_CHOICES.map((o) => `<option value="${esc(o)}">`).join("");
   sheetWrap.hidden = false;
   f.name.focus();
 }
@@ -130,6 +132,7 @@ jackForm.addEventListener("submit", async (e) => {
         key: f.key.value.trim() || null,
         jump: f.jump.value.trim() || null,
         os: f.os.value.trim() || null,
+        url: f.url.value.trim() || null,
         desc: f.desc.value.trim() || null,
         tags: list2(f.tags.value),
         forward: list2(f.forward.value),
@@ -191,4 +194,147 @@ async function removeGroup(path) {
 function alertish(e) {
   const box = detailEl.querySelector(".mono");
   if (box) { box.textContent = String(e); box.classList.add("err"); }
+}
+
+// ── vpn sheet ──────────────────────────────────────────────────────────────
+let vpnEditing = null;
+
+function vpnFields() {
+  const f = vpnForm.elements;
+  const p = providers.find((x) => x.id === f.provider.value);
+  const custom = !p || p.id === "custom";
+  // Presets derive the commands, so only Custom shows the raw three.
+  for (const name of ["up", "down", "check"]) f[name].closest(".f").hidden = !custom;
+  $("vpn-profile-row").hidden = custom || !p.needs_profile;
+  $("vpn-profiles").innerHTML = (p?.profiles ?? []).map((n) => `<option value="${esc(n)}">`).join("");
+}
+
+async function openVpn(path) {
+  vpnEditing = path;
+  $("vpn-title").textContent = `VPN for ${path}`;
+  vpnErr.hidden = true;
+  vpnDelete.hidden = !vpns.has(path);
+  vpnDelete.innerHTML = `${icon("trash-2")}Remove`;
+  const f = vpnForm.elements;
+  f.provider.innerHTML = providers
+    .map((p) => `<option value="${esc(p.id)}"${p.installed ? "" : " disabled"}>${esc(p.label)}${p.installed ? "" : " — not installed"}</option>`)
+    .join("");
+  f.provider.value = "custom";
+  f.profile.value = f.up.value = f.down.value = f.check.value = "";
+  vpnFields();
+  vpnWrap.hidden = false;
+  try {
+    const def = await invoke("vpn_def", { path });
+    if (def && vpnEditing === path) {
+      f.provider.value = def.provider ?? "custom";
+      f.profile.value = def.profile ?? "";
+      f.up.value = def.up ?? "";
+      f.down.value = def.down ?? "";
+      f.check.value = def.check ?? "";
+      vpnFields();
+    }
+  } catch (e) { showErr(vpnErr, String(e)); }
+}
+vpnForm.elements.provider.addEventListener("change", vpnFields);
+const closeVpn = () => { vpnWrap.hidden = true; };
+
+vpnForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = vpnForm.elements;
+  try {
+    await invoke("save_vpn", {
+      path: vpnEditing,
+      def: {
+        provider: f.provider.value,
+        profile: f.profile.value.trim() || null,
+        up: f.up.value.trim() || null,
+        down: f.down.value.trim() || null,
+        check: f.check.value.trim() || null,
+      },
+    });
+    closeVpn();
+    await refreshVpns();
+  } catch (err) { showErr(vpnErr, String(err)); }
+});
+$("vpn-cancel").addEventListener("click", closeVpn);
+vpnWrap.addEventListener("mousedown", (e) => { if (e.target === vpnWrap) closeVpn(); });
+vpnDelete.addEventListener("click", async () => {
+  const path = vpnEditing;
+  if ((await ask(`Remove the VPN on "${path}"? The folder and its devices stay.`, path, "Remove")) !== path) return;
+  closeVpn();
+  try { await invoke("delete_vpn", { path }); await refreshVpns(); }
+  catch (e) { alertish(e); }
+});
+
+// ── settings ───────────────────────────────────────────────────────────────
+async function openSettings() {
+  setErr.hidden = true;
+  for (const [k, v] of Object.entries(prefs)) {
+    if (setForm.elements[k]) setForm.elements[k].checked = !!v;
+  }
+  // Show what this machine can actually drive, so "why is Tunnelblick greyed out?"
+  // has an answer without leaving the sheet.
+  $("provider-list").innerHTML = providers
+    .filter((p) => p.id !== "custom")
+    .map((p) => `<span class="prov ${p.installed ? "on" : ""}">${icon(p.installed ? "check" : "x")}${esc(p.label)}</span>`)
+    .join("");
+  renderSwatches();
+  $("page-openconfig").innerHTML = `${icon("file-pen-line")}Open config file`;
+  setWrap.hidden = false;
+  try { $("cfgpath").textContent = await invoke("config_path"); } catch { /* shown blank */ }
+}
+const closeSettings = () => { setWrap.hidden = true; };
+
+setForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const next = {};
+  for (const el of setForm.querySelectorAll("input[type=checkbox]")) next[el.name] = el.checked;
+  try {
+    const wasProbing = prefs.probe !== false;
+    await invoke("save_settings", { next });
+    prefs = next;
+    closeSettings();
+    render();
+    // The throttle would otherwise hold the first sweep back by up to 30s.
+    if (!wasProbing && next.probe) { lastProbe = 0; refreshProbes(); }
+  } catch (err) { showErr(setErr, String(err)); }
+});
+$("set-cancel").addEventListener("click", closeSettings);
+$("page-openconfig").addEventListener("click", () => invoke("open_config"));
+setWrap.addEventListener("mousedown", (e) => { if (e.target === setWrap) closeSettings(); });
+
+// Every OS actually in use, plus anything already overridden.
+function renderSwatches() {
+  const inUse = [...new Set(all.map((j) => osKey(j.os)).filter(Boolean))];
+  const keys = [...new Set([...inUse, ...Object.keys(colors)])].sort();
+  $("swatches").innerHTML = keys.length
+    ? keys.map((k) => {
+        const shown = osColor(k) ?? "#8b8b95";
+        const overridden = k in colors;
+        return `<span class="sw" data-os="${esc(k)}">
+          <input type="color" value="${esc(/^#[0-9a-f]{6}$/i.test(shown) ? shown : "#8b8b95")}">
+          <span class="mark" style="color:${esc(shown)}">${osIcon(k)}</span>${esc(k)}
+          ${overridden ? `<i class="reset" data-reset="${esc(k)}" data-tip="Back to the brand colour">${icon("x")}</i>` : ""}
+        </span>`;
+      }).join("")
+    : `<p class="page-note">No devices have an <code>os</code> set yet.</p>`;
+}
+
+$("swatches").addEventListener("input", async (e) => {
+  const sw = e.target.closest("[data-os]");
+  if (!sw || e.target.type !== "color") return;
+  await setColor(sw.dataset.os, e.target.value);
+});
+$("swatches").addEventListener("click", async (e) => {
+  const key = e.target.closest("[data-reset]")?.dataset.reset;
+  if (key) await setColor(key, null);
+});
+
+async function setColor(os, hex) {
+  try {
+    await invoke("save_color", { os, hex });
+    colors = await invoke("colors");
+    renderSwatches();
+    render();
+  } catch (err) { showErr(setErr, String(err)); }
 }

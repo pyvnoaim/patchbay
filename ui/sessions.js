@@ -44,6 +44,7 @@ async function openSession(name) {
   activeId = id;
   showTab();
   renderTabs();
+  renderTree();
   fit.fit();
 
   term.onData((d) => invoke("write_session", { id, data: d }).catch(() => {}));
@@ -55,6 +56,7 @@ async function openSession(name) {
       s.dead = true;
       term.write(`\r\n\x1b[2m── ssh exited (${e.payload}) · ⌘W to close ──\x1b[0m\r\n`);
       renderTabs();
+      renderTree();
     }));
   } catch (err) {
     // `listen` is a core command and needs src-tauri/capabilities — without it the
@@ -63,6 +65,19 @@ async function openSession(name) {
     term.write(`\x1b[31mcould not subscribe to the session: ${String(err)}\x1b[0m\r\n`);
     renderTabs();
     return;
+  }
+
+  // Bring the folder's VPN up first, so connecting is one action, not two.
+  const vpath = prefs.vpn_auto_connect !== false ? vpnFor(name) : null;
+  if (vpath && !vpns.get(vpath)?.up) {
+    term.write(`\x1b[2m── ${vpath} VPN is down, connecting… ──\x1b[0m\r\n`);
+    try {
+      await invoke("vpn_toggle", { path: vpath, on: true });
+      await refreshVpns();
+      term.write(`\x1b[2m── VPN up ──\x1b[0m\r\n`);
+    } catch (err) {
+      term.write(`\x1b[31m── VPN failed: ${String(err)} ──\x1b[0m\r\n`);
+    }
   }
 
   try {
@@ -81,6 +96,7 @@ async function openSession(name) {
 function closeSession(id) {
   const s = sessions.get(id);
   if (!s) return;
+  const vpath = prefs.vpn_auto_disconnect === true ? vpnFor(s.name) : null;
   invoke("close_session", { id }).catch(() => {});
   s.unlisten.forEach((f) => f());
   s.term.dispose();
@@ -89,6 +105,12 @@ function closeSession(id) {
   if (activeId === id) activeId = [...sessions.keys()].pop() ?? null;
   showTab();
   renderTabs();
+  renderTree();
+
+  // Only once nothing else in that folder is still connected.
+  if (vpath && ![...sessions.values()].some((o) => vpnFor(o.name) === vpath)) {
+    invoke("vpn_toggle", { path: vpath, on: false }).then(refreshVpns).catch(() => {});
+  }
 }
 
 // activeId === null is the "All jacks" tab; anything else is a session.
@@ -113,7 +135,7 @@ function renderTabs() {
       <div class="tab ${s.dead ? "dead" : ""}" data-id="${s.id}" aria-selected="${s.id === activeId}">
         <span class="dot ${s.dead ? "down" : "up"}"></span>
         <span class="lbl">${esc(s.name)}</span>
-        <span class="x" data-close="${s.id}">${icon("x")}</span>
+        <span class="x" data-close="${s.id}" data-tip="Close  ⌘W">${icon("x")}</span>
       </div>`).join("");
 }
 
