@@ -10,7 +10,7 @@ bay                   pick a jack (fzf) or list them
 bay prod-web          connect — a unique substring is enough
 bay prod-web -n       print the ssh command instead of running it
 bay prod-web -- uptime  run one command instead of a shell
-bay ls [filter]       list jacks, filtered by name or tag
+bay ls [filter]       list jacks, filtered by name or folder
 bay edit              open the config
 ```
 
@@ -78,14 +78,17 @@ npm run cli -- local         # actually connect, if you have sshd running
 `-n` works on the installed `bay` too — it's the fastest way to see what a jump
 chain expands to. To try the real command, `npm link`, then `bay ls`.
 
-The app is a launcher, not a client: it renders the list and hands the `ssh` command
-to your real terminal. Nothing is embedded, so there's no terminal emulator and no
-second SSH implementation to keep alive.
+The app opens sessions in its own window — the system `ssh` on a real pty, with the
+same argv the CLI builds, streamed to xterm.js. Your agent, `~/.ssh/config` and
+host-key prompts all still work, because it *is* your ssh. "Open in Terminal" is on
+the context menu when you'd rather have your own terminal.
 
 ## Folders, VPNs and web UIs
 
 A folder with slashes (`prod/eu/web`) nests in the sidebar, and `folders` is a list,
-so a device can sit in several branches at once. A folder can carry a VPN, which is how one-customer-per-folder
+so a device can sit in several branches at once. A device says how it is reached —
+`ssh` (on by default), `rdp = <port>`, `url` — and `primary` picks what Enter and a
+double-click do. A folder can carry a VPN, which is how one-customer-per-folder
 works — flip the switch, or let it come up on its own when you connect.
 
 ```toml
@@ -98,6 +101,13 @@ host = "10.80.0.20"
 os   = "synology"               # picks the icon, and its colour
 url  = "https://10.80.0.20:5001"   # opens in your browser
 folders = ["acme/prod"]
+
+[jack.acme-dc]
+host = "10.80.0.5"
+rdp  = 3389                     # remote desktop, in a tab
+ssh  = false
+primary = "rdp"                 # what Enter opens
+folders = ["acme/prod"]
 ```
 
 A `custom` VPN runs whatever `up`/`down`/`check` you give it, so treat a config
@@ -106,5 +116,10 @@ someone sends you the way you'd treat their shell script.
 ## What it deliberately isn't
 
 Real credentials live in your ssh agent and your existing keys — patchbay stores
-none, so there's nothing here to leak or sync. RDP and VNC aren't in yet; when
-they land, RDP will hand off to the system client before it ever embeds FreeRDP.
+none, so there's nothing here to leak or sync. There is no SSH implementation in
+here and never will be: a session is `/usr/bin/ssh` on a pty, in a tab.
+
+Remote desktop is a tab too. That one decodes RDP itself — IronRDP, pure Rust,
+painted onto a canvas — so there is still no FreeRDP and no embedded graphics
+toolkit, which was always the actual objection. "Remote desktop in system client"
+hands a `.rdp` file to mstsc / Windows App / xfreerdp if you'd rather. VNC isn't in.

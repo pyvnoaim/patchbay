@@ -72,7 +72,7 @@ if (cmd === "-h" || cmd === "--help") {
 bay <name>       connect — substring is enough
 bay <name> -n    print the ssh command instead of running it
 bay <name> -- <cmd>   run a command instead of a shell
-bay ls [filter]  list jacks, filtered by name or tag
+bay ls [filter]  list jacks, filtered by name or folder
 bay edit         open ${configPath()}`);
   process.exit(0);
 }

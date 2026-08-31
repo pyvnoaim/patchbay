@@ -14,6 +14,8 @@ Two front ends over one config format:
 - `server/src/main.rs` — the team server. One shared config document per team, no accounts, seat limit enforced here. Never parses the TOML.
 - `src-tauri/src/pty.rs` — in-app sessions: ssh on a real pty, streamed to xterm.js as `pty:<id>` events.
 - `src-tauri/src/rdp.rs` — remote desktop by handoff: writes a `.rdp`, and forwards a local port over the jump chain when there is one.
+- `src-tauri/src/rdp_session.rs` — the other remote desktop: IronRDP decoded to a framebuffer and blitted onto a `<canvas>`, the way `pty.rs` streams a terminal. The only place patchbay speaks a protocol itself.
+- `src-tauri/src/clipboard.rs` — the CLIPRDR backend behind `rdp_session.rs`. Text only, both directions lazy.
 - `src-tauri/capabilities/default.json` — grants `core:default`. Load-bearing; see Non-obvious.
 - `src-tauri/src/terminal.rs` — the other path: hands the ssh command to the *system* terminal.
 - `src-tauri/src/main.rs` — Tauri setup and the `#[tauri::command]` surface. Thin; logic belongs in `patchbay.rs`.
@@ -124,8 +126,6 @@ aren't obvious from reading:
 
 We shell out to `/usr/bin/ssh` on purpose — the agent, `~/.ssh/config` and
 `known_hosts` come free. Do not add an ssh2 client or a credential store.
-RDP, when it lands, hands off to the system client; embedding FreeRDP is the
-thing this project exists to avoid.
 
 There **is** a GUI now (Tauri, not Electron), and it **does** host sessions in-app:
 `pty.rs` spawns `/usr/bin/ssh` on a real pty and streams it to xterm.js. That is a
@@ -135,11 +135,16 @@ the CLI builds, so the agent, `~/.ssh/config` and `known_hosts` still do the wor
 and a real tty means password and host-key prompts behave. "Open in Terminal" is
 still there on the context menu.
 
-The Royal TS failure mode is still the thing to avoid, but it was about embedding
-*RDP* — a graphics stack — not a text terminal. So: never embed an ssh protocol
-implementation, never embed FreeRDP. RDP, when it lands, hands off to the system
-client. Watch memory per session; xterm scrollback is capped at 5000 lines on
-purpose.
+Remote desktop went the same way, and further: `rdp_session.rs` decodes RDP itself
+via IronRDP and paints it on a canvas. Read the objection precisely before calling
+that a reversal — the Royal TS failure mode was bundling *FreeRDP*, a C graphics
+stack with its own toolkit, window handling and CVE feed. IronRDP is pure Rust, no C
+dependency, and the pixels land in the webview we already ship. So the rule that
+stands is: **never embed an ssh protocol implementation, never link FreeRDP.**
+`rdp.rs` keeps the handoff to mstsc / Windows App / xfreerdp, and it stays — an
+in-window session is the default, not the only way. Watch memory per session; xterm
+scrollback is capped at 5000 lines on purpose, and an RDP session holds a full
+framebuffer.
 
 Grouping is a `folders` list on each jack — a string with slashes (`prod/eu/web`)
 nests in the sidebar. It's a **list**, and that's the load-bearing part: a jack sits
