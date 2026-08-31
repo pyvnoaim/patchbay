@@ -4,6 +4,7 @@
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
 const treeEl = $("tree"), listEl = $("list"), detailEl = $("d-body");
+const detailPane = $("detail"), dActions = $("d-actions");
 const searchBtn = $("searchbtn");
 const paletteEl = $("palette"), pq = $("pq"), presultsEl = $("presults");
 const ctxEl = $("ctx");
@@ -36,6 +37,8 @@ let detailMode = "jack";      // what the right pane describes: "jack" or "group
 let prefs = {};               // [settings] from the config
 let providers = [];           // VPN presets this machine can drive
 let colors = {};              // [colors] overrides, os key -> hex
+let cfgPath = "";             // where the config lives, shown on first run
+let tunnels = [];             // live ssh -L forwards holding RDP open
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 

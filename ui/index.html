@@ -33,29 +33,46 @@
     </section>
 
     <aside id="detail">
-      <div class="drag" data-tauri-drag-region></div>
+      <div class="drag dbar" data-tauri-drag-region><div class="dactions" id="d-actions"></div></div>
       <div class="d-body" id="d-body"></div>
     </aside>
   </div>
 
   <!-- right-click menu; replaces the webview's own Reload/Inspect one -->
   <div id="ctx" hidden></div>
+  <div id="tip"></div>
 
   <div id="sheetwrap" hidden>
     <form class="sheet" id="jackform" autocomplete="off">
       <div class="sheet-head" id="sheet-title"></div>
       <div class="sheet-body">
+        <div class="how">
+          <span class="how-q">How do you reach it?</span>
+          <label class="how-opt"><input type="checkbox" name="use_ssh"><span>Terminal</span></label>
+          <label class="how-opt"><input type="checkbox" name="use_rdp"><span>Remote desktop</span></label>
+          <label class="how-opt"><input type="checkbox" name="use_web"><span>Web UI</span></label>
+        </div>
         <label class="f wide"><span>Name</span><input name="name" spellcheck="false" placeholder="prod-web"></label>
         <label class="f wide"><span>Host</span><input name="host" spellcheck="false" placeholder="10.0.0.4"></label>
-        <label class="f"><span>User</span><input name="user" spellcheck="false" placeholder="inherits [defaults]"></label>
-        <label class="f"><span>Port</span><input name="port" inputmode="numeric" placeholder="22"></label>
-        <label class="f wide"><span>Key</span><input name="key" spellcheck="false" placeholder="~/.ssh/id_ed25519"></label>
-        <label class="f wide"><span>Jump via</span><input name="jump" spellcheck="false" list="jacknames" placeholder="another jack, or user@host"></label>
+        <label class="f" data-need="ssh rdp"><span>User</span><input name="user" spellcheck="false" placeholder="inherits [defaults]"></label>
+        <label class="f" data-need="ssh"><span>SSH port</span><input name="port" inputmode="numeric" placeholder="22"></label>
+        <label class="f wide" data-need="ssh"><span>Key</span><input name="key" spellcheck="false" placeholder="~/.ssh/id_ed25519"></label>
+        <label class="f wide" data-need="ssh"><span>Jump via</span><input name="jump" spellcheck="false" list="jacknames" placeholder="another jack, or user@host"></label>
+        <label class="f wide" data-need="ssh"><span>Forwards</span><input name="forward" spellcheck="false" placeholder="8080:localhost:80"></label>
+        <label class="f" data-need="rdp"><span>RDP port</span><input name="rdp" inputmode="numeric" placeholder="3389"></label>
+        <label class="f wide" data-need="web"><span>URL</span>
+          <span class="withprefix">
+            <button type="button" class="prefix" id="url-scheme" data-tip="Switch to http://">https://</button>
+            <input name="url" spellcheck="false" placeholder="10.0.0.20:5001">
+          </span></label>
+        <label class="f wide" id="primary-row"><span>Opens on double-click</span>
+          <select name="primary"></select></label>
         <label class="f wide"><span>OS / kind</span><input name="os" spellcheck="false" list="oschoices" placeholder="ubuntu, synology, proxmox…"></label>
         <datalist id="oschoices"></datalist>
-        <label class="f wide"><span>Web UI</span><input name="url" spellcheck="false" placeholder="https://10.0.0.20:5001"></label>
-        <label class="f wide"><span>Folders</span><input name="tags" spellcheck="false" placeholder="prod/eu/web, customer-facing"></label>
-        <label class="f wide"><span>Forwards</span><input name="forward" spellcheck="false" placeholder="8080:localhost:80"></label>
+        <label class="f wide"><span>Folders</span>
+          <input name="tags" spellcheck="false" list="folders" placeholder="prod/eu/web, customer-facing">
+          <datalist id="folders"></datalist></label>
+        <div class="crumbs" id="crumbs"></div>
         <label class="f wide"><span>Description</span><input name="desc" placeholder="optional"></label>
         <datalist id="jacknames"></datalist>
       </div>

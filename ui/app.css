@@ -163,6 +163,13 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
 /* ── detail ────────────────────────────────────────────────── */
 #detail { display: flex; flex-direction: column; min-width: 0; overflow-y: auto; scrollbar-width: thin; }
 #detail .drag { height: 46px; border-bottom: 1px solid var(--line); }
+/* The strip was 46px of nothing. Actions live here now, so they stay put instead
+   of sitting after a body whose length depends on how much the device has. */
+.dbar { display: flex; align-items: center; justify-content: flex-end; padding: 0 12px; }
+.dactions { display: flex; align-items: center; gap: 6px; -webkit-app-region: no-drag; }
+.dactions button { flex: none; height: 27px; padding: 0 11px; border-radius: 7px; }
+.dactions button.ghost { padding: 0 8px; }
+.dactions:empty { display: none; }
 body:not([data-os="macos"]) #detail .drag { height: 40px; }
 .d-body { padding: 14px 16px 16px; }
 .d-name { font-size: 16px; font-weight: 650; letter-spacing: -.015em; }
@@ -374,31 +381,20 @@ button:disabled { opacity: .5; }
 .prov .i { width: 11px; height: 11px; }
 .page-note { margin: 2px 0 8px; font-size: 12px; line-height: 1.5; color: var(--fg-dim); }
 
-/* Tooltips. Native `title` is unreliable in a webview — slow to appear and
-   sometimes not at all — so icon-only controls carry data-tip instead. */
-[data-tip] { position: relative; }
-[data-tip]::after {
-  content: attr(data-tip);
-  position: absolute; bottom: calc(100% + 7px); left: 50%;
-  transform: translateX(-50%) translateY(2px);
+/* Tooltips. Native `title` is unreliable in a webview, and a ::after tooltip
+   cannot escape an overflow:hidden ancestor — inside a sheet it gets clipped.
+   So there is one element at body level, positioned in JS. */
+#tip {
+  position: fixed; z-index: 60; top: 0; left: 0;
   padding: 4px 8px; border-radius: 6px;
   background: var(--tip); color: var(--tip-fg);
   font-size: 11.5px; font-weight: 450; line-height: 1.35;
-  white-space: nowrap; letter-spacing: 0;
+  max-width: 260px; white-space: nowrap;
   box-shadow: 0 6px 20px rgba(0,0,0,.35);
-  opacity: 0; pointer-events: none; z-index: 40;
-  transition: opacity .1s ease, transform .1s ease;
-  transition-delay: .35s;
+  pointer-events: none; opacity: 0;
+  transition: opacity .1s ease;
 }
-[data-tip]:hover::after { opacity: 1; transform: translateX(-50%) translateY(0); }
-/* Anchored ones would run off the window edge if centred. */
-[data-tip][data-tip-at="left"]::after { left: 0; transform: translateX(0) translateY(2px); }
-[data-tip][data-tip-at="left"]:hover::after { transform: translateX(0) translateY(0); }
-[data-tip][data-tip-at="right"]::after { left: auto; right: 0; transform: translateX(0) translateY(2px); }
-[data-tip][data-tip-at="right"]:hover::after { transform: translateX(0) translateY(0); }
-/* Rows clip horizontally, so a row tooltip has to escape its own overflow. */
-.jack { overflow: visible; }
-.tab [data-tip]::after { bottom: auto; top: calc(100% + 7px); }
+#tip.on { opacity: 1; }
 
 /* Per-OS colour swatches in settings. */
 .swatches { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px 26px; }
@@ -418,3 +414,55 @@ button:disabled { opacity: .5; }
 .sw .reset { display: flex; opacity: .5; margin-left: 1px; }
 .sw .reset:hover { opacity: 1; }
 .sw .reset .i { width: 10px; height: 10px; }
+
+/* First run: no config yet. */
+.firstrun { max-width: 380px; margin: 12vh auto 0; text-align: center; color: var(--fg-dim); }
+.fr-mark { display: flex; justify-content: center; color: var(--fg-faint); margin-bottom: 12px; }
+.fr-mark .i { width: 30px; height: 30px; }
+.firstrun h3 { margin: 0 0 6px; font-size: 15px; font-weight: 620; color: var(--fg); }
+.firstrun p { margin: 0 0 14px; font-size: 12.5px; line-height: 1.55; }
+.firstrun .mono { text-align: left; margin-bottom: 14px; }
+.firstrun .btns { justify-content: center; }
+.firstrun .btns button { flex: none; padding: 7px 14px; }
+
+/* "How do you reach it?" — the form only shows the fields that answer follows. */
+.how {
+  grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding-bottom: 10px; margin-bottom: 2px; border-bottom: 1px solid var(--line);
+}
+.how-q { font-size: 11px; color: var(--fg-faint); font-weight: 550; margin-right: 2px; }
+.how-opt {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 20px;
+  background: var(--row); color: var(--fg-dim); font-size: 12px;
+}
+.how-opt:hover { background: var(--row-hover); }
+.how-opt input { accent-color: var(--accent); margin: 0; }
+.how-opt:has(input:checked) { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--fg); }
+.f[hidden] { display: none !important; }
+
+/* A fixed scheme rather than something to mistype. */
+.withprefix { display: flex; align-items: stretch; }
+.withprefix .prefix {
+  flex: none; padding: 0 9px; border-radius: 7px 0 0 7px;
+  background: var(--row-hover); color: var(--fg-dim);
+  font: inherit; font-size: 12px;
+  border-right: 1px solid var(--line);
+}
+.withprefix .prefix:hover { color: var(--fg); }
+.withprefix input { border-radius: 0 7px 7px 0; }
+
+/* What you have actually entered, as paths. Nothing when the field is empty,
+   so it costs no room until it has something to say. */
+.crumbs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; margin: -2px 0 2px; }
+.crumbs:empty { display: none; }
+.crumb-tag {
+  display: flex; align-items: center; gap: 1px;
+  padding: 2px 4px 2px 9px; border-radius: 20px;
+  background: var(--row); color: var(--fg-dim); font-size: 11.5px;
+}
+.crumb-tag .sep { color: var(--fg-faint); margin: 0 2px; }
+.crumb-tag .leafname { color: var(--fg); font-weight: 550; }
+.crumb-tag .drop { display: flex; padding: 2px; border-radius: 50%; opacity: .5; }
+.crumb-tag .drop:hover { opacity: 1; background: var(--row-hover); }
+.crumb-tag .drop .i { width: 10px; height: 10px; }

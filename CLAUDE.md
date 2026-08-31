@@ -12,6 +12,7 @@ Two front ends over one config format:
 - `src-tauri/src/config.rs` — the only code that *writes* the config. Everything else reads. Also owns `[settings]` and `[colors]`.
 - `src-tauri/src/vpn.rs` — per-folder VPN toggles: provider presets, and running the up/down/check commands.
 - `src-tauri/src/pty.rs` — in-app sessions: ssh on a real pty, streamed to xterm.js as `pty:<id>` events.
+- `src-tauri/src/rdp.rs` — remote desktop by handoff: writes a `.rdp`, and forwards a local port over the jump chain when there is one.
 - `src-tauri/capabilities/default.json` — grants `core:default`. Load-bearing; see Non-obvious.
 - `src-tauri/src/terminal.rs` — the other path: hands the ssh command to the *system* terminal.
 - `src-tauri/src/main.rs` — Tauri setup and the `#[tauri::command]` surface. Thin; logic belongs in `patchbay.rs`.
@@ -83,6 +84,9 @@ aren't obvious from reading:
 - Icons are Lucide via `icon("name")`. Add the name to `USED` in `scripts/icons.mjs` and run `npm run icons` — don't paste SVG into `app.js`, and don't add `lucide-react` (there is no React here, and it wraps the same artwork).
 - A jack's `os = "..."` renders through `osIcon()`: a simple-icons brand mark if one exists, else a Lucide shape from `BRAND_FALLBACKS`, else `server`. Both maps live in `scripts/brands.mjs`; run `npm run brands`. Matching is loose on purpose so `"Ubuntu 22.04"` and `"ubuntu"` land on the same glyph. Brand marks are *filled* paths, Lucide ones are *stroked* — `.i.brand` clears the stroke.
 - Don't fetch favicons from devices to use as icons. It needs an HTTP client and TLS in the app, nearly every appliance ships a self-signed cert, half of them sit behind a bastion where the app can't reach them anyway, and it turns opening the window into outbound requests to every host. The curated set covers the real cases.
+- A device declares how it is reached: `ssh` (default true), `rdp = <port>`, `url`. `primary` picks what Enter and a double-click do, resolved in Rust so an option pointing at something the device no longer has falls back rather than doing nothing.
+- **Anything spawned detached must be killed on exit.** A pty session dies when its master fd closes, but `ssh -N -L` does not — `RunEvent::Exit` calls `close_all()`, or tunnels outlive the window holding their ports.
+- `.rdp` is line-based, so a newline in a host or username injects directives — `alternate shell:s:` runs a program. Control characters are rejected before anything is written.
 - Brand colours are unusable raw — nine of the 29 fail contrast on one theme. `readable()` nudges lightness until a colour clears 3:1 against the current surface; never paint a brand hex directly.
 - A new full-screen overlay must be added to the `#sheetwrap, #askwrap, #vpnwrap` rule in `app.css`, not just to `index.html`. Left out, it has no `position: fixed` and sits in normal flow at the end of `<body>` — it escapes the window and stretches the layout behind it.
 - One render path: mutate state, call `render()`. No targeted DOM patching — the lists are tens of rows, not thousands.

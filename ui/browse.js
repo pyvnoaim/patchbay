@@ -115,7 +115,19 @@ function render() {
   $("settings").dataset.tipAt = "right";
 
   if (!shown.length) {
-    listEl.innerHTML = `<p class="empty">${all.length ? "nothing here" : "no jacks yet — <code>bay edit</code>"}</p>`;
+    listEl.innerHTML = all.length
+      ? `<p class="empty">nothing here</p>`
+      : `<div class="firstrun">
+          <span class="fr-mark">${icon("server")}</span>
+          <h3>No devices yet</h3>
+          <p>Add one here, or write the file by hand — patchbay creates it either way,
+             and keeps your comments and formatting if you edit it later.</p>
+          <div class="mono">${esc(cfgPath)}</div>
+          <div class="btns">
+            <button class="primary" data-first="new">${icon("plus")}Add a device</button>
+            <button class="ghost" data-first="cfg">${icon("file-pen-line")}Open config file</button>
+          </div>
+        </div>`;
     renderDetail();   // a session tab still has something to describe
     return;
   }
@@ -186,17 +198,17 @@ function renderGroup() {
           ${icon("plug")}${busy ? "working…" : v.up ? "Disconnect" : "Connect VPN"}</button>
       </div>` : ""}
 
-    <div class="d-sec">${icon("folder")}Folder</div>
-    <div class="btns">
-      <button class="primary" data-gact="new">${icon("plus")}Device</button>
-      ${real ? `<button class="ghost" data-gact="vpnedit" data-tip="${v ? "VPN settings" : "Add a VPN"}">${icon("plug")}</button>
-      <button class="ghost" data-gact="rename" data-tip="Rename folder">${icon("pencil")}</button>
-      <button class="ghost danger" data-gact="del" data-tip="Delete folder" data-tip-at="right">${icon("trash-2")}</button>` : ""}
-    </div>`;
+`;
+
+  dActions.innerHTML = `
+    <button class="primary" data-gact="new">${icon("plus")}Device</button>
+    ${real ? `<button class="ghost" data-gact="vpnedit" data-tip="${v ? "VPN settings" : "Add a VPN"}">${icon("plug")}</button>
+    <button class="ghost" data-gact="rename" data-tip="Rename folder">${icon("pencil")}</button>
+    <button class="ghost danger" data-gact="del" data-tip="Delete folder" data-tip-at="right">${icon("trash-2")}</button>` : ""}`;
 }
 
 function renderJack(j, live) {
-  if (!j) return (detailEl.innerHTML = "");
+  if (!j) { detailEl.innerHTML = ""; dActions.innerHTML = ""; return; }
   const p = probes.get(j.name);
   const reach = prefs.probe === false ? `<span style="color:var(--fg-faint)">not checked</span>`
     : !p ? `<span style="color:var(--fg-faint)">checking…</span>`
@@ -204,6 +216,7 @@ function renderJack(j, live) {
     : `<span style="color:var(--up)">up</span> · ${esc(p.target)} · ${p.ms}ms`;
 
   const stops = [...j.hops, j.user ? `${j.user}@${j.host}` : j.host];
+  const mine = tunnels.filter((t) => t.jack === j.name);
   detailEl.innerHTML = `
     <div class="d-name"><span class="d-os"${
       osColor(j.os) ? ` style="color:${esc(osColor(j.os))}"` : ""}>${osIcon(j.os)}</span>${esc(j.name)}</div>
@@ -216,7 +229,13 @@ function renderJack(j, live) {
       ${j.port ? `<div class="d-row"><dt>port</dt><dd>${j.port}</dd></div>` : ""}
       ${j.key ? `<div class="d-row"><dt>key</dt><dd>${esc(j.key)}</dd></div>` : ""}
       ${j.url ? `<div class="d-row"><dt>web</dt><dd>${esc(j.url)}</dd></div>` : ""}
+      ${j.rdp ? `<div class="d-row"><dt>rdp</dt><dd>${j.rdp}</dd></div>` : ""}
     </dl>
+    ${mine.length ? `<div class="d-sec">${icon("waypoints")}Tunnel</div>
+      <div class="route">${mine.map((t) => `<span class="last"><i class="pip"></i>127.0.0.1:${t.local}
+        <i class="arm">via ${esc(t.via)}</i></span>`).join("")}</div>
+      <div class="btns"><button class="ghost danger" data-act="untunnel"
+        data-tip="Close the forward">${icon("unplug")}Close tunnel</button></div>` : ""}
 
     <div class="d-sec">${icon("waypoints")}Route</div>
     <div class="route">
@@ -231,16 +250,21 @@ function renderJack(j, live) {
     <div class="d-sec">${icon("plug")}Reachable</div>
     <div style="font-size:12.5px">${reach}</div>
 
-    <div class="d-sec">${icon("square-terminal")}Command</div>
-    <div class="mono ${j.command.startsWith("ssh ") ? "" : "err"}">${esc(j.command)}</div>
-    <div class="btns">
-      ${live
-        ? `<button class="primary" data-act="disconnect">${icon("x")}${live.dead ? "Close tab" : "Disconnect"}</button>`
-        : `<button class="primary" data-act="connect">${icon("square-terminal")}Connect</button>`}
-      ${j.url ? `<button class="ghost" data-act="web" data-tip="Open web UI">${icon("globe")}</button>` : ""}
-      <button class="ghost" data-act="edit" data-tip="Edit device">${icon("pencil")}</button>
-      <button class="ghost" data-act="copy" data-tip="Copy ssh command">${icon("copy")}</button>
-    </div>`;
+    ${j.ssh ? `<div class="d-sec">${icon("square-terminal")}Command</div>
+    <div class="mono ${j.command.startsWith("ssh ") ? "" : "err"}">${esc(j.command)}</div>` : ""}
+`;
+
+  dActions.innerHTML = `
+    ${live
+      ? `<button class="primary" data-act="disconnect">${icon("x")}${live.dead ? "Close" : "Disconnect"}</button>`
+      : j.primary === "rdp" ? `<button class="primary" data-act="rdp">${icon("monitor")}Connect</button>`
+      : j.primary === "web" ? `<button class="primary" data-act="web">${icon("globe")}Open</button>`
+      : `<button class="primary" data-act="connect">${icon("square-terminal")}Connect</button>`}
+    ${j.ssh && j.primary !== "ssh" ? `<button class="ghost" data-act="connect" data-tip="Connect over ssh">${icon("square-terminal")}</button>` : ""}
+    ${j.url && j.primary !== "web" ? `<button class="ghost" data-act="web" data-tip="Open web UI">${icon("globe")}</button>` : ""}
+    ${j.rdp && j.primary !== "rdp" ? `<button class="ghost" data-act="rdp" data-tip="Remote desktop">${icon("monitor")}</button>` : ""}
+    <button class="ghost" data-act="edit" data-tip="Edit device">${icon("pencil")}</button>
+    ${j.ssh ? `<button class="ghost" data-act="copy" data-tip="Copy ssh command" data-tip-at="right">${icon("copy")}</button>` : ""}`;
 }
 
 // Selection must not rebuild the list: replacing innerHTML destroys the row under
@@ -258,6 +282,27 @@ const move = (d) => select(sel + d);
 
 async function openWeb(name) {
   try { await invoke("open_url", { name }); } catch (e) { alertish(e); }
+}
+
+async function openRdp(name) {
+  try {
+    await invoke("open_rdp", { name });
+    await refreshTunnels();
+  } catch (e) { alertish(e); }
+}
+
+async function refreshTunnels() {
+  try { tunnels = await invoke("tunnels"); render(); } catch { /* none is normal */ }
+}
+
+/// What Enter, a double-click and the palette do: ssh if it has it, else remote
+/// desktop, else the web UI. Connect is meaningless on a web-only NAS.
+function primary(name) {
+  const j = all.find((x) => x.name === name);
+  if (!j) return;
+  if (j.primary === "rdp") return openRdp(name);
+  if (j.primary === "web") return openWeb(name);
+  return connect(name);
 }
 
 /// The most specific folder VPN covering this device, or null.

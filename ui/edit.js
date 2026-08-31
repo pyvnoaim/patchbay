@@ -41,6 +41,7 @@ document.addEventListener("contextmenu", (e) => {
       { icon: "square-terminal", label: "Connect", run: () => connect(j.name) },
       { icon: "external-link", label: "Open in Terminal", run: () => connect(j.name, true) },
       ...(j.url ? [{ icon: "globe", label: "Open web UI", run: () => openWeb(j.name) }] : []),
+      ...(j.rdp ? [{ icon: "monitor", label: "Remote desktop", run: () => openRdp(j.name) }] : []),
       { icon: "copy", label: "Copy ssh command", run: () => navigator.clipboard.writeText(j.command).catch(() => {}) },
       "-",
       { icon: "pencil", label: "Edit…", run: () => openJack(j) },
@@ -97,6 +98,10 @@ function openJack(j, prefillGroup) {
   jfDelete.innerHTML = `${icon("trash-2")}Delete`;
   jfErr.hidden = true;
   const f = jackForm.elements;
+  // Editing reflects what the device already has; a new one starts at terminal.
+  f.use_ssh.checked = j ? j.ssh : true;
+  f.use_rdp.checked = !!j?.rdp;
+  f.use_web.checked = !!j?.url;
   f.name.value = j?.name ?? "";
   f.host.value = j?.host ?? "";
   f.user.value = j?.user ?? "";
@@ -104,12 +109,19 @@ function openJack(j, prefillGroup) {
   f.key.value = j?.key ?? "";
   f.jump.value = j?.jump ?? "";
   f.os.value = j?.os ?? "";
-  f.url.value = j?.url ?? "";
+  // The scheme is a control, not something to type — and not something to typo.
+  const m = /^(https?:\/\/)(.*)$/i.exec(j?.url ?? "");
+  setScheme(m ? m[1].toLowerCase() : "https://");
+  f.url.value = m ? m[2] : "";
+  f.rdp.value = j?.rdp ?? "";
+  f.primary.value = j?.primary ?? "ssh";
   f.desc.value = j?.desc ?? "";
   f.tags.value = (j?.tags ?? (prefillGroup && prefillGroup !== "\0untagged" ? [prefillGroup] : [])).join(", ");
   f.forward.value = (j?.forward ?? []).join(", ");
   $("jacknames").innerHTML = all.map((x) => `<option value="${esc(x.name)}">`).join("");
   $("oschoices").innerHTML = OS_CHOICES.map((o) => `<option value="${esc(o)}">`).join("");
+  renderTagSuggestions();
+  jackFields();
   sheetWrap.hidden = false;
   f.name.focus();
 }
@@ -119,8 +131,12 @@ const list2 = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
 jackForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = jackForm.elements;
+  const on = { ssh: f.use_ssh.checked, rdp: f.use_rdp.checked, web: f.use_web.checked };
+  if (!on.ssh && !on.rdp && !on.web) return showErr(jfErr, "pick at least one way to reach it");
   const port = f.port.value.trim();
-  if (port && !/^\d+$/.test(port)) return showErr(jfErr, "port has to be a number");
+  const rdp = on.rdp ? f.rdp.value.trim() : "";
+  if (on.ssh && port && !/^\d+$/.test(port)) return showErr(jfErr, "ssh port has to be a number");
+  if (on.rdp && !/^\d+$/.test(rdp)) return showErr(jfErr, "rdp port has to be a number");
   try {
     await invoke("save_jack", {
       original: editing,
@@ -128,14 +144,22 @@ jackForm.addEventListener("submit", async (e) => {
         name: f.name.value.trim(),
         host: f.host.value.trim(),
         user: f.user.value.trim() || null,
-        port: port ? +port : null,
-        key: f.key.value.trim() || null,
-        jump: f.jump.value.trim() || null,
+        // A protocol that is off must clear its fields, not leave them lying about.
+        port: on.ssh && port ? +port : null,
+        key: on.ssh ? f.key.value.trim() || null : null,
+        jump: on.ssh ? f.jump.value.trim() || null : null,
+        forward: on.ssh ? list2(f.forward.value) : [],
         os: f.os.value.trim() || null,
-        url: f.url.value.trim() || null,
+        url: on.web && f.url.value.trim() ? scheme + f.url.value.trim() : null,
+        rdp: rdp ? +rdp : null,
+        ssh: on.ssh ? null : false,
+        // Only stored when it differs from "the first one it has".
+        primary: (() => {
+          const first = ["ssh", "rdp", "web"].find((k) => on[k]);
+          return f.primary.value !== first ? f.primary.value : null;
+        })(),
         desc: f.desc.value.trim() || null,
         tags: list2(f.tags.value),
-        forward: list2(f.forward.value),
       },
     });
     for (const t of list2(f.tags.value)) pending.delete(t);
@@ -198,6 +222,24 @@ function alertish(e) {
 
 // ── vpn sheet ──────────────────────────────────────────────────────────────
 let vpnEditing = null;
+
+/// Show only the fields the chosen protocols actually need.
+function jackFields() {
+  const f = jackForm.elements;
+  const on = { ssh: f.use_ssh.checked, rdp: f.use_rdp.checked, web: f.use_web.checked };
+  for (const el of jackForm.querySelectorAll("[data-need]")) {
+    el.hidden = !el.dataset.need.split(" ").some((k) => on[k]);
+  }
+  // Sensible starting point rather than an empty box you have to know to fill.
+  if (on.rdp && !f.rdp.value.trim()) f.rdp.value = "3389";
+
+  // Only worth asking when there is actually a choice to make.
+  const opts = [["ssh", "Terminal"], ["rdp", "Remote desktop"], ["web", "Web UI"]].filter(([k]) => on[k]);
+  $("primary-row").hidden = opts.length < 2;
+  const keep = f.primary.value;
+  f.primary.innerHTML = opts.map(([k, l]) => `<option value="${k}">${l}</option>`).join("");
+  f.primary.value = opts.some(([k]) => k === keep) ? keep : opts[0]?.[0] ?? "ssh";
+}
 
 function vpnFields() {
   const f = vpnForm.elements;
@@ -338,3 +380,48 @@ async function setColor(os, hex) {
     render();
   } catch (err) { showErr(setErr, String(err)); }
 }
+
+for (const n of ["use_ssh", "use_rdp", "use_web"]) {
+  jackForm.elements[n].addEventListener("change", jackFields);
+}
+
+// ── url scheme + folders ───────────────────────────────────────────────────
+let scheme = "https://";
+function setScheme(next) {
+  scheme = next;
+  const btn = $("url-scheme");
+  btn.textContent = scheme;
+  btn.dataset.tip = `Switch to ${scheme === "https://" ? "http://" : "https://"}`;
+}
+$("url-scheme").addEventListener("click", () =>
+  setScheme(scheme === "https://" ? "http://" : "https://"));
+
+// Suggestions are a plain datalist, same as the OS field. What you have entered
+// is shown underneath as paths, so nesting is legible without a popup panel.
+function renderTagSuggestions() {
+  const used = [...new Set(all.flatMap((j) => j.tags))].sort();
+  $("folders").innerHTML = used.map((t) => `<option value="${esc(t)}">`).join("");
+  renderCrumbs();
+}
+
+const enteredTags = () =>
+  jackForm.elements.tags.value.split(",").map((x) => x.trim()).filter(Boolean);
+
+function renderCrumbs() {
+  $("crumbs").innerHTML = enteredTags().map((t) => {
+    const parts = t.split("/").filter(Boolean);
+    const path = parts
+      .map((p, i) => `<span class="${i === parts.length - 1 ? "leafname" : ""}">${esc(p)}</span>`)
+      .join(`<span class="sep">›</span>`);
+    return `<span class="crumb-tag">${path}<i class="drop" data-drop="${esc(t)}"
+      data-tip="Remove">${icon("x")}</i></span>`;
+  }).join("");
+}
+
+jackForm.elements.tags.addEventListener("input", renderCrumbs);
+$("crumbs").addEventListener("click", (e) => {
+  const tag = e.target.closest("[data-drop]")?.dataset.drop;
+  if (!tag) return;
+  jackForm.elements.tags.value = enteredTags().filter((t) => t !== tag).join(", ");
+  renderCrumbs();
+});

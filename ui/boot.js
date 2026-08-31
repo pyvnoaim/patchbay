@@ -28,15 +28,18 @@ treeEl.addEventListener("click", (e) => {
 });
 
 listEl.addEventListener("click", (e) => {
+  const act = e.target.closest("[data-first]")?.dataset.first;
+  if (act === "new") return openJack(null, group);
+  if (act === "cfg") return invoke("open_config");
   const row = e.target.closest(".jack");
   if (!row) return;
   select(+row.dataset.i);
   // e.detail is the click count, so this survives a re-render landing mid-gesture
   // in a way a separate dblclick listener does not.
-  if (e.detail === 2) connect(shown[sel].name);
+  if (e.detail === 2) primary(shown[sel].name);
 });
 
-detailEl.addEventListener("click", async (e) => {
+detailPane.addEventListener("click", async (e) => {
   const gact = e.target.closest("[data-gact]")?.dataset.gact;
   if (gact) {
     if (gact === "new") openJack(null, group);
@@ -53,6 +56,11 @@ detailEl.addEventListener("click", async (e) => {
   if (act === "connect") connect(j.name);
   if (act === "disconnect") closeSession(activeId);
   if (act === "web") openWeb(j.name);
+  if (act === "rdp") openRdp(j.name);
+  if (act === "untunnel") {
+    for (const t of tunnels.filter((x) => x.jack === j.name)) await invoke("close_tunnel", { id: t.id });
+    refreshTunnels();
+  }
   if (act === "edit") openJack(j);
   if (act === "copy") {
     const btn = e.target.closest("[data-act]");
@@ -106,13 +114,13 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") { e.preventDefault(); closePalette(); }
     else if (e.key === "ArrowDown") { e.preventDefault(); palSel = (palSel + 1) % Math.max(1, rows.length); renderPalette(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); palSel = (palSel - 1 + rows.length) % Math.max(1, rows.length); renderPalette(); }
-    else if (e.key === "Enter" && rows[palSel]) { e.preventDefault(); const n = rows[palSel].name; closePalette(); connect(n); }
+    else if (e.key === "Enter" && rows[palSel]) { e.preventDefault(); const n = rows[palSel].name; closePalette(); primary(n); }
     return;
   }
 
   if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "n")) { e.preventDefault(); move(1); }
   else if (e.key === "ArrowUp" || (e.ctrlKey && e.key === "p")) { e.preventDefault(); move(-1); }
-  else if (e.key === "Enter" && shown[sel]) { e.preventDefault(); connect(shown[sel].name); }
+  else if (e.key === "Enter" && shown[sel]) { e.preventDefault(); primary(shown[sel].name); }
   else if (e.key === "Escape") { group = null; sel = 0; render(); }
   else if (shown[sel] && (e.key === "Backspace" || e.key === "Delete")) { e.preventDefault(); removeJack(shown[sel].name); }
   else if (mod && e.key === "e") { e.preventDefault(); invoke("open_config"); }
@@ -128,6 +136,8 @@ async function load() {
     prefs = await invoke("settings").catch(() => ({}));
     if (!providers.length) providers = await invoke("vpn_providers").catch(() => []);
     colors = await invoke("colors").catch(() => ({}));
+    cfgPath = await invoke("config_path").catch(() => "");
+    tunnels = await invoke("tunnels").catch(() => []);
     all = await invoke("jacks");
     // Open the first level once, on the first load only — doing it every time
     // would re-open folders the moment the window regains focus.
@@ -186,3 +196,37 @@ setInterval(refreshProbes, PROBE_EVERY);
 setInterval(refreshVpns, PROBE_EVERY);
 // The config is a file you edit by hand, so pick up changes when the window comes back.
 window.addEventListener("focus", load);
+
+// ── tooltips ───────────────────────────────────────────────────────────────
+// One element at body level so it escapes every overflow:hidden ancestor —
+// a sheet clips a ::after tooltip, which is how this started.
+const tipEl = $("tip");
+let tipTimer = null;
+
+function hideTip() {
+  clearTimeout(tipTimer);
+  tipEl.classList.remove("on");
+}
+
+document.addEventListener("mouseover", (e) => {
+  const el = e.target.closest("[data-tip]");
+  if (!el || !el.dataset.tip) return hideTip();
+  clearTimeout(tipTimer);
+  tipTimer = setTimeout(() => {
+    tipEl.textContent = el.dataset.tip;
+    tipEl.classList.add("on");
+    const t = el.getBoundingClientRect();
+    const r = tipEl.getBoundingClientRect();
+    const gap = 7;
+    // Above unless there is no room, and never past a window edge.
+    const below = t.top - r.height - gap < 4;
+    const at = el.dataset.tipAt;
+    let left = at === "left" ? t.left : at === "right" ? t.right - r.width : t.left + (t.width - r.width) / 2;
+    left = Math.max(6, Math.min(left, innerWidth - r.width - 6));
+    tipEl.style.left = `${Math.round(left)}px`;
+    tipEl.style.top = `${Math.round(below ? t.bottom + gap : t.top - r.height - gap)}px`;
+  }, 350);
+});
+document.addEventListener("mouseout", (e) => { if (e.target.closest("[data-tip]")) hideTip(); });
+document.addEventListener("mousedown", hideTip);
+addEventListener("blur", hideTip);
