@@ -17,9 +17,17 @@ const BRANDS = {
   postgres: "Postgresql", gitlab: "Gitlab",
 };
 
-// No simple-icons mark (trademark, or just not a brand) — use a Lucide name instead.
+// Marks simple-icons won't ship. Microsoft asked for its logos to be removed over
+// trademark, so the four-pane flag is drawn here instead — nominative use, the same
+// way every connection manager labels a Windows box.
+const CUSTOM = {
+  windows:
+    "M0 3.449 9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699" +
+    "M10.949 12.6H24V24l-12.9-1.801",
+};
+
+// No mark at all (not a brand) — use a Lucide name instead.
 const FALLBACKS = {
-  windows: "app-window",
   router: "router",
   switch: "network",
   nas: "hard-drive",
@@ -30,11 +38,17 @@ const FALLBACKS = {
   server: "server",
 };
 
-const brands = {};
+// simple-icons carries each brand's official colour, so "Synology is blue" needs
+// no configuration — it is just the mark's own hex. Overridable in [colors].
+const CUSTOM_COLORS = { windows: "#0078D4" };
+
+const brands = { ...CUSTOM };
+const colors = { ...CUSTOM_COLORS };
 for (const [key, slug] of Object.entries(BRANDS)) {
   const entry = si[`si${slug}`];
   if (!entry) throw new Error(`simple-icons has no si${slug} — fix scripts/brands.mjs`);
   brands[key] = entry.path;
+  if (entry.hex) colors[key] = `#${entry.hex}`;
 }
 
 mkdirSync("ui/gen", { recursive: true });
@@ -44,6 +58,7 @@ writeFileSync(
     `// Regenerate with: npm run brands\n` +
     `const BRANDS = ${JSON.stringify(brands, null, 0)};\n` +
     `const BRAND_FALLBACKS = ${JSON.stringify(FALLBACKS, null, 0)};\n` +
-    `const OS_CHOICES = ${JSON.stringify([...Object.keys(BRANDS), ...Object.keys(FALLBACKS)].sort())};\n`,
+    `const BRAND_COLORS = ${JSON.stringify(colors, null, 0)};\n` +
+    `const OS_CHOICES = ${JSON.stringify([...Object.keys(brands), ...Object.keys(FALLBACKS)].sort())};\n`,
 );
 console.log(`wrote ui/gen/brands.js (${Object.keys(brands).length} marks, ${Object.keys(FALLBACKS).length} fallbacks)`);
