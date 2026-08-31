@@ -2,6 +2,7 @@
   "name": "patchbay",
   "version": "0.0.1",
   "description": "Every host, one jack away.",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "bay": "src/cli.ts"

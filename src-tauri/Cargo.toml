@@ -2,6 +2,7 @@
 name = "patchbay-app"
 version = "0.0.1"
 edition = "2021"
+license = "MIT"
 rust-version = "1.89"   # ironrdp 0.17 (in-app RDP) needs it
 description = "Every host, one jack away."
 
