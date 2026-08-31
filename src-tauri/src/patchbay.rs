@@ -29,6 +29,9 @@ pub struct Jack {
     /// What Enter and a double-click do: "ssh" | "rdp" | "web". Absent picks the
     /// first one the device actually has.
     pub primary: Option<String>,
+    pub folders: Option<Vec<String>>,
+    /// ponytail: the old name for `folders`. Read so existing files still work,
+    /// never written; drop it once nobody has one.
     pub tags: Option<Vec<String>>,
     pub desc: Option<String>,
     pub forward: Option<Vec<String>>,
@@ -85,7 +88,11 @@ pub fn parse(src: &str) -> Result<Jacks, String> {
                 rdp: j.rdp.or(d.rdp),
                 ssh: j.ssh.or(d.ssh),
                 primary: j.primary.or_else(|| d.primary.clone()),
-                tags: j.tags.or_else(|| d.tags.clone()),
+                folders: j
+                    .folders
+                    .or(j.tags)
+                    .or_else(|| d.folders.clone().or_else(|| d.tags.clone())),
+                tags: None,
                 desc: j.desc.or_else(|| d.desc.clone()),
                 forward: j.forward.or_else(|| d.forward.clone()),
             };
@@ -164,7 +171,34 @@ pub fn entry(name: &str, jacks: &Jacks) -> Result<(String, u16), String> {
             }
         }
     }
-    Ok((cur.host.clone(), cur.port.unwrap_or(22)))
+    Ok((cur.host.clone(), probe_port(cur)))
+}
+
+/// Which port the status dot should test. A device that declares `ssh = false` has
+/// nothing listening on 22, so probing it anyway reported every RDP-only and
+/// web-only device as down while they were perfectly reachable.
+fn probe_port(j: &Jack) -> u16 {
+    if j.ssh.unwrap_or(true) {
+        return j.port.unwrap_or(22);
+    }
+    if let Some(p) = j.rdp {
+        return p;
+    }
+    j.url.as_deref().and_then(url_port).unwrap_or(443)
+}
+
+/// The port a `url` points at: explicit if it has one, else the scheme's default.
+fn url_port(url: &str) -> Option<u16> {
+    let (scheme, rest) = url.split_once("://")?;
+    let host = rest.split('/').next()?;
+    // An IPv6 literal is bracketed, so only a colon past the bracket can be a port.
+    let after = host.rsplit_once(']').map_or(host, |(_, a)| a);
+    if let Some((_, p)) = after.rsplit_once(':') {
+        if let Ok(p) = p.parse() {
+            return Some(p);
+        }
+    }
+    Some(if scheme.eq_ignore_ascii_case("http") { 80 } else { 443 })
 }
 
 pub fn ssh_args(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
@@ -273,6 +307,37 @@ mod tests {
     }
 
     #[test]
+    fn a_device_without_ssh_is_probed_where_it_actually_listens() {
+        let j = parse(
+            r#"
+            [jack.dc]
+            host = "10.0.0.26"
+            ssh = false
+            rdp = 3389
+
+            [jack.nas]
+            host = "10.0.0.20"
+            ssh = false
+            url = "https://10.0.0.20:5001"
+
+            [jack.gateway]
+            host = "10.0.0.1"
+            ssh = false
+            url = "https://10.0.0.1"
+
+            [jack.both]
+            host = "10.0.0.9"
+            rdp = 3389
+            "#,
+        )
+        .unwrap();
+        assert_eq!(entry("dc", &j).unwrap().1, 3389);
+        assert_eq!(entry("nas", &j).unwrap().1, 5001);
+        assert_eq!(entry("gateway", &j).unwrap().1, 443, "https with no port");
+        assert_eq!(entry("both", &j).unwrap().1, 22, "ssh is still the way in when it has it");
+    }
+
+    #[test]
     fn tilde_expands_and_unknown_jump_passes_through_raw() {
         let j = fixture();
         let joined = ssh_args("web", &j).unwrap().join(" ");
@@ -314,6 +379,44 @@ mod tests {
         .unwrap();
         assert_eq!(j["a"].user.as_deref(), Some("root"));
         assert_eq!(j["b"].user.as_deref(), Some("me"));
+    }
+
+    #[test]
+    fn tags_still_reads_as_folders_and_folders_wins_when_both_are_there() {
+        let j = parse(
+            r#"
+            [jack.old]
+            host = "h1"
+            tags = ["prod/eu"]
+
+            [jack.new]
+            host = "h2"
+            folders = ["prod/us"]
+            tags = ["stale"]
+            "#,
+        )
+        .unwrap();
+        assert_eq!(j["old"].folders.as_deref(), Some(&["prod/eu".to_string()][..]));
+        assert_eq!(j["new"].folders.as_deref(), Some(&["prod/us".to_string()][..]));
+        // Normalised away on load, so nothing downstream has to know the old name.
+        assert!(j["old"].tags.is_none() && j["new"].tags.is_none());
+    }
+
+    #[test]
+    fn a_jacks_own_tags_beats_folders_inherited_from_defaults() {
+        let j = parse(
+            r#"
+            [defaults]
+            folders = ["inherited"]
+
+            [jack.a]
+            host = "h1"
+            tags = ["mine"]
+            "#,
+        )
+        .unwrap();
+        // Mirrors the TypeScript test of the same name — the two disagreed here once.
+        assert_eq!(j["a"].folders.as_deref(), Some(&["mine".to_string()][..]));
     }
 
     #[test]

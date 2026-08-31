@@ -22,7 +22,7 @@ pub struct JackInput {
     pub primary: Option<String>,
     pub desc: Option<String>,
     #[serde(default)]
-    pub tags: Vec<String>,
+    pub folders: Vec<String>,
     #[serde(default)]
     pub forward: Vec<String>,
 }
@@ -132,7 +132,8 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     set_str(t, "url", j.url.as_deref());
     set_str(t, "primary", j.primary.as_deref());
     set_str(t, "desc", j.desc.as_deref());
-    set_arr(t, "tags", &j.tags);
+    set_arr(t, "folders", &j.folders);
+    t.remove("tags");   // migrates a jack written before folders had their own key
     set_arr(t, "forward", &j.forward);
     // Only written when false; the default keeps configs uncluttered.
     match j.ssh {
@@ -206,6 +207,68 @@ impl Default for Settings {
             os_colors: true,
         }
     }
+}
+
+/// `[defaults]` merges into every jack, so it accepts any jack key. The sheet only
+/// offers the four worth inheriting — anything else someone wrote there by hand is
+/// left exactly where it is.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct Defaults {
+    pub user: Option<String>,
+    pub port: Option<u16>,
+    pub key: Option<String>,
+    pub jump: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawDefaults {
+    #[serde(default)]
+    defaults: Defaults,
+}
+
+pub fn load_defaults() -> Defaults {
+    load_defaults_at(&patchbay::config_path())
+}
+
+/// Never fails, for the same reason `load_settings_at` doesn't: the sheet has to
+/// open even when the file it is about to fix is broken.
+pub fn load_defaults_at(file: &Path) -> Defaults {
+    std::fs::read_to_string(file)
+        .ok()
+        .and_then(|s| toml::from_str::<RawDefaults>(&s).ok())
+        .map(|r| r.defaults)
+        .unwrap_or_default()
+}
+
+pub fn save_defaults(d: &Defaults) -> Result<(), String> {
+    save_defaults_at(&patchbay::config_path(), d)
+}
+
+pub fn save_defaults_at(file: &Path, d: &Defaults) -> Result<(), String> {
+    let mut doc = read_doc(file)?;
+    let empty = {
+        let t = doc
+            .entry("defaults")
+            .or_insert_with(|| Item::Table(Table::new()))
+            .as_table_mut()
+            .ok_or("`defaults` in the config isn't a table")?;
+        set_str(t, "user", d.user.as_deref());
+        set_str(t, "key", d.key.as_deref());
+        set_str(t, "jump", d.jump.as_deref());
+        match d.port {
+            Some(p) => t["port"] = value(p as i64),
+            None => {
+                t.remove("port");
+            }
+        }
+        t.is_empty()
+    };
+    // Nothing inherited means no section — an empty `[defaults]` left behind is
+    // noise in a file people read. A hand-written key keeps the table alive.
+    if empty {
+        doc.remove("defaults");
+    }
+    write_doc(file, &doc)
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -358,36 +421,40 @@ pub fn delete_vpn_at(file: &Path, path: &str) -> Result<(), String> {
     write_doc(file, &doc)
 }
 
-/// Rewrite every tag that is `path` or sits under `path/`. `to` of None deletes them.
-/// This is what folder rename/delete means when folders are just slash-delimited tags.
-fn map_tags(file: &Path, path: &str, to: Option<&str>) -> Result<usize, String> {
+/// Rewrite every folder that is `path` or sits under `path/`. `to` of None deletes
+/// them. This is what folder rename/delete means when a folder is only ever a string
+/// on the jacks that are in it.
+fn map_folders(file: &Path, path: &str, to: Option<&str>) -> Result<usize, String> {
     let mut doc = read_doc(file)?;
     let jacks = jack_table(&mut doc)?;
     let mut touched = 0;
 
     for (_, item) in jacks.iter_mut() {
         let Some(t) = item.as_table_mut() else { continue };
-        let Some(arr) = t.get("tags").and_then(|i| i.as_array()) else { continue };
+        // ponytail: `tags` is the old key for the same list, so a rename still works
+        // on a file written before the change. Drop when no old files are left.
+        let key = if t.contains_key("folders") { "folders" } else { "tags" };
+        let Some(arr) = t.get(key).and_then(|i| i.as_array()) else { continue };
 
         let mut next = Array::new();
         let mut changed = false;
-        for tag in arr.iter().filter_map(|v| v.as_str()) {
-            let under = tag == path || tag.starts_with(&format!("{path}/"));
+        for folder in arr.iter().filter_map(|v| v.as_str()) {
+            let under = folder == path || folder.starts_with(&format!("{path}/"));
             if !under {
-                next.push(tag);
+                next.push(folder);
                 continue;
             }
             changed = true;
             if let Some(to) = to {
-                next.push(format!("{to}{}", &tag[path.len()..]).as_str());
+                next.push(format!("{to}{}", &folder[path.len()..]).as_str());
             }
         }
         if changed {
             touched += 1;
             if next.is_empty() {
-                t.remove("tags");
+                t.remove(key);
             } else {
-                t["tags"] = value(next);
+                t[key] = value(next);
             }
         }
     }
@@ -407,7 +474,7 @@ pub fn rename_group_at(file: &Path, from: &str, to: &str) -> Result<usize, Strin
     if to.is_empty() {
         return Err("a folder needs a name".into());
     }
-    let touched = map_tags(file, from, Some(to))?;
+    let touched = map_folders(file, from, Some(to))?;
     // A [vpn."old/path"] would otherwise be orphaned by the rename.
     let mut doc = read_doc(file)?;
     let vpns = vpn_table(&mut doc)?;
@@ -432,7 +499,7 @@ pub fn delete_group(path: &str) -> Result<usize, String> {
 }
 
 pub fn delete_group_at(file: &Path, path: &str) -> Result<usize, String> {
-    map_tags(file, path, None)
+    map_folders(file, path, None)
 }
 
 #[cfg(test)]
@@ -447,12 +514,12 @@ user = "root"          # trailing comment
 [jack.bastion]
 host = "bastion.example"
 port = 2222
-tags = ["prod/eu", "entrypoint"]
+folders = ["prod/eu", "entrypoint"]
 
 [jack.web]
 host = "10.0.0.4"
 jump = "bastion"
-tags = ["prod/eu/web"]
+folders = ["prod/eu/web"]
 "#;
 
     fn scratch(name: &str) -> std::path::PathBuf {
@@ -467,8 +534,42 @@ tags = ["prod/eu/web"]
         JackInput {
             name: name.into(), host: host.into(),
             user: None, port: None, key: None, jump: None, os: None, url: None, rdp: None, ssh: None, primary: None, desc: None,
-            tags: vec![], forward: vec![],
+            folders: vec![], forward: vec![],
         }
+    }
+
+    #[test]
+    fn defaults_round_trip_and_vanish_once_nothing_is_set() {
+        let p = scratch("defaults");
+        let d = Defaults {
+            user: Some("ops".into()),
+            port: Some(2222),
+            key: None,
+            jump: None,
+        };
+        save_defaults_at(&p, &d).unwrap();
+
+        let back = load_defaults_at(&p);
+        assert_eq!(back.user.as_deref(), Some("ops"));
+        assert_eq!(back.port, Some(2222));
+        assert!(read(&p).contains("keep this comment"));
+
+        // Clearing every field takes the section with it rather than leaving an
+        // empty `[defaults]` in a file people read.
+        save_defaults_at(&p, &Defaults::default()).unwrap();
+        assert!(!read(&p).contains("[defaults]"), "got {}", read(&p));
+    }
+
+    #[test]
+    fn a_hand_written_default_the_sheet_cannot_edit_survives() {
+        let p = scratch("defaults-extra");
+        std::fs::write(&p, "[defaults]\nuser = \"root\"\nos = \"debian\"\n").unwrap();
+
+        save_defaults_at(&p, &Defaults::default()).unwrap();
+
+        let out = read(&p);
+        assert!(out.contains("os = \"debian\""), "got {out}");
+        assert!(!out.contains("user"), "got {out}");
     }
 
     #[test]
@@ -488,7 +589,7 @@ tags = ["prod/eu/web"]
     fn editing_clears_keys_that_were_emptied() {
         let p = scratch("edit");
         let mut j = input("bastion", "bastion.example");
-        j.tags = vec!["prod/eu".into()];
+        j.folders = vec!["prod/eu".into()];
         save_jack_at(&p, Some("bastion".into()), j).unwrap();
         let out = read(&p);
         assert!(!out.contains("port = 2222"), "cleared port should be gone:\n{out}");
@@ -524,20 +625,20 @@ tags = ["prod/eu/web"]
         let out = read(&p);
         assert!(out.contains(r#""prod/emea""#), "{out}");
         assert!(out.contains(r#""prod/emea/web""#), "children move too:\n{out}");
-        assert!(out.contains(r#""entrypoint""#), "unrelated tags untouched");
+        assert!(out.contains(r#""entrypoint""#), "unrelated folders untouched");
     }
 
     #[test]
-    fn deleting_a_group_drops_the_tags_but_keeps_the_jacks() {
+    fn deleting_a_group_drops_the_folders_but_keeps_the_jacks() {
         let p = scratch("group-delete");
         assert_eq!(delete_group_at(&p, "prod/eu").unwrap(), 2);
         let out = read(&p);
         assert!(!out.contains("prod/eu"));
         assert!(out.contains("[jack.bastion]"), "the device stays");
         assert!(out.contains("[jack.web]"), "the device stays");
-        assert!(out.contains(r#"tags = ["entrypoint"]"#), "its other tag stays");
+        assert!(out.contains(r#"folders = ["entrypoint"]"#), "its other folder stays");
         // web's only tag was under the folder, so the key goes entirely
-        assert!(!out.contains(r#"tags = []"#));
+        assert!(!out.contains(r#"folders = []"#));
     }
 
     #[test]

@@ -28,7 +28,7 @@ const USED = [
   "globe",
   "monitor",
   "unplug",
-  "cog",
+  "settings",
   "router",
   "network",
   "hard-drive",

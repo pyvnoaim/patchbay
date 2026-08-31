@@ -2,7 +2,7 @@
 name = "patchbay-app"
 version = "0.0.1"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.89"   # ironrdp 0.17 (in-app RDP) needs it
 description = "Every host, one jack away."
 
 [build-dependencies]
@@ -21,6 +21,19 @@ toml_edit = "0.22"
 portable-pty = "0.9"
 indexmap = { version = "2", features = ["serde"] }
 dirs = "5"
+ironrdp = { version = "0.17", features = ["connector", "session", "graphics", "input", "svc", "dvc"] }
+ironrdp-blocking = "0.10.0"
+ironrdp-pdu = "0.9.0"
+ironrdp-graphics = "0.9.0"
+rustls = "0.23.43"
+tokio-rustls = "0.26.4"
+sspi = { version = "0.21.3", features = ["network_client"] }
+x509-cert = "0.2"
+ironrdp-input = "0.7.0"
+ironrdp-cliprdr = "0.7.0"
+arboard = "3.6.1"
+ironrdp-core = "0.2.1"
+sha2 = "0.11.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.5"

@@ -52,14 +52,14 @@
           <label class="how-opt"><input type="checkbox" name="use_rdp"><span>Remote desktop</span></label>
           <label class="how-opt"><input type="checkbox" name="use_web"><span>Web UI</span></label>
         </div>
-        <label class="f wide"><span>Name</span><input name="name" spellcheck="false" placeholder="prod-web"></label>
-        <label class="f wide"><span>Host</span><input name="host" spellcheck="false" placeholder="10.0.0.4"></label>
+        <label class="f wide req"><span>Name</span><input name="name" spellcheck="false" placeholder="prod-web"></label>
+        <label class="f wide req"><span>Host</span><input name="host" spellcheck="false" placeholder="10.0.0.4"></label>
         <label class="f" data-need="ssh rdp"><span>User</span><input name="user" spellcheck="false" placeholder="inherits [defaults]"></label>
         <label class="f" data-need="ssh"><span>SSH port</span><input name="port" inputmode="numeric" placeholder="22"></label>
-        <label class="f wide" data-need="ssh"><span>Key</span><input name="key" spellcheck="false" placeholder="~/.ssh/id_ed25519"></label>
-        <label class="f wide" data-need="ssh"><span>Jump via</span><input name="jump" spellcheck="false" list="jacknames" placeholder="another jack, or user@host"></label>
-        <label class="f wide" data-need="ssh"><span>Forwards</span><input name="forward" spellcheck="false" placeholder="8080:localhost:80"></label>
-        <label class="f" data-need="rdp"><span>RDP port</span><input name="rdp" inputmode="numeric" placeholder="3389"></label>
+        <label class="f wide" data-need="ssh"><span>Private key file</span><input name="key" spellcheck="false" list="sshkeys" placeholder="only if it isn't your default"></label>
+        <label class="f wide" data-need="ssh"><span>Jump host</span><input name="jump" spellcheck="false" list="jacknames" placeholder="another device, or user@host"></label>
+        <label class="f wide" data-need="ssh"><span>Port forwards</span><input name="forward" spellcheck="false" placeholder="8080:localhost:80 — reach a remote port locally"></label>
+        <label class="f req" data-need="rdp"><span>RDP port</span><input name="rdp" inputmode="numeric" placeholder="3389"></label>
         <label class="f wide" data-need="web"><span>URL</span>
           <span class="withprefix">
             <button type="button" class="prefix" id="url-scheme" data-tip="Switch to http://">https://</button>
@@ -70,11 +70,12 @@
         <label class="f wide"><span>OS / kind</span><input name="os" spellcheck="false" list="oschoices" placeholder="ubuntu, synology, proxmox…"></label>
         <datalist id="oschoices"></datalist>
         <label class="f wide"><span>Folders</span>
-          <input name="tags" spellcheck="false" list="folders" placeholder="prod/eu/web, customer-facing">
-          <datalist id="folders"></datalist></label>
+          <input name="folders" spellcheck="false" list="folderlist" placeholder="prod/eu/web, customer-facing">
+          <datalist id="folderlist"></datalist></label>
         <div class="crumbs" id="crumbs"></div>
         <label class="f wide"><span>Description</span><input name="desc" placeholder="optional"></label>
         <datalist id="jacknames"></datalist>
+        <datalist id="sshkeys"></datalist>
       </div>
       <p class="sheet-err" id="jf-err" hidden></p>
       <div class="sheet-foot">
@@ -108,6 +109,17 @@
           <span><b>Connect in the system terminal</b>
           Hands the ssh command to Terminal / Windows Terminal instead of opening a tab here.</span></label>
 
+        <div class="d-sec">Inherited by every device</div>
+        <p class="page-note">Left empty, nothing is inherited and each device stands on its own.
+        Anything set here applies to every device that doesn't override it — and your
+        <code>~/.ssh/config</code> still applies underneath either way.</p>
+        <div class="grid2">
+          <label class="f"><span>User</span><input name="def_user" spellcheck="false" placeholder="none"></label>
+          <label class="f"><span>SSH port</span><input name="def_port" inputmode="numeric" placeholder="22"></label>
+          <label class="f wide"><span>Private key file</span><input name="def_key" spellcheck="false" list="sshkeys" placeholder="none"></label>
+          <label class="f wide"><span>Jump host</span><input name="def_jump" spellcheck="false" list="jacknames" placeholder="none"></label>
+        </div>
+
         <div class="d-sec">Appearance</div>
         <label class="opt"><input type="checkbox" name="os_colors">
           <span><b>Colour device icons by OS</b>
@@ -135,9 +147,9 @@
       <div class="sheet-head" id="vpn-title"></div>
       <div class="sheet-body">
         <label class="f wide"><span>Provider</span><select name="provider"></select></label>
-        <label class="f wide" id="vpn-profile-row"><span>Profile</span>
+        <label class="f wide req" id="vpn-profile-row"><span>Profile</span>
           <input name="profile" spellcheck="false" list="vpn-profiles" placeholder="acme"><datalist id="vpn-profiles"></datalist></label>
-        <label class="f wide"><span>Connect</span><input name="up" spellcheck="false" placeholder="wg-quick up acme"></label>
+        <label class="f wide req"><span>Connect</span><input name="up" spellcheck="false" placeholder="wg-quick up acme"></label>
         <label class="f wide"><span>Disconnect</span><input name="down" spellcheck="false" placeholder="wg-quick down acme"></label>
         <label class="f wide"><span>Check (optional)</span><input name="check" spellcheck="false" placeholder="wg show acme — exit 0 means up"></label>
         <p class="hint">These run as written, like a shell alias. Without a check command the

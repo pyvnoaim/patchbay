@@ -12,7 +12,7 @@ user = "root"
 
 [jack.example]
 host = "192.0.2.10"
-tags = ["demo"]
+folders = ["demo"]
 desc = "delete me"
 
 # [jack.prod-web]
@@ -35,8 +35,8 @@ function list(jacks: Jacks, filter?: string) {
   if (!rows.length) return die(filter ? `nothing matches "${filter}"` : "no jacks configured");
   const w = Math.max(...rows.map(([n]) => n.length));
   for (const [name, j] of rows) {
-    const tags = j.tags?.length ? c("dim", ` [${j.tags.join(" ")}]`) : "";
-    console.log(`${c("yellow", name.padEnd(w))}  ${c("dim", j.host)}${tags}`);
+    const folders = j.folders?.length ? c("dim", ` [${j.folders.join(" ")}]`) : "";
+    console.log(`${c("yellow", name.padEnd(w))}  ${c("dim", j.host)}${folders}`);
   }
 }
 

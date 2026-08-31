@@ -113,10 +113,6 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
 .twist.leaf { visibility: hidden; }
 .group > .gi { display: flex; flex: none; color: var(--fg-dim); }
 .group[aria-current="true"] > .gi { color: var(--accent); }
-.side-title {
-  padding: 12px 10px 4px; font-size: 10.5px; font-weight: 650;
-  letter-spacing: .06em; text-transform: uppercase; color: var(--fg-dim);
-}
 
 /* ── list ──────────────────────────────────────────────────── */
 /* Two surfaces only: the sidebar is vibrant (transparent, letting the macOS
@@ -149,16 +145,16 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
 }
 .jack:hover { background: var(--row-hover); }
 .jack[aria-selected="true"] { background: var(--accent); color: #fff; }
-.jack[aria-selected="true"] .host, .jack[aria-selected="true"] .tag { color: rgba(255,255,255,.82); }
-.jack[aria-selected="true"] .tag { background: rgba(255,255,255,.2); }
+.jack[aria-selected="true"] .host, .jack[aria-selected="true"] .folder { color: rgba(255,255,255,.82); }
+.jack[aria-selected="true"] .folder { background: rgba(255,255,255,.2); }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--fg-faint); align-self: center; }
 .dot.up { background: var(--up); }
 .dot.down { background: var(--down); }
 .dot.unknown { background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg-faint); }
 .name { font-weight: 560; letter-spacing: -.005em; }
 .host { color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; }
-.tags { margin-left: auto; display: flex; gap: 4px; flex: none; }
-.tag { background: var(--row); color: var(--fg-dim); padding: 1px 7px; border-radius: 20px; font-size: 11px; }
+.folders { margin-left: auto; display: flex; gap: 4px; flex: none; }
+.folder { background: var(--row); color: var(--fg-dim); padding: 1px 7px; border-radius: 20px; font-size: 11px; }
 
 /* ── detail ────────────────────────────────────────────────── */
 #detail { display: flex; flex-direction: column; min-width: 0; overflow-y: auto; scrollbar-width: thin; }
@@ -291,6 +287,8 @@ button.flat:hover { background: var(--row-hover); color: var(--fg); }
 .f { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .f.wide { grid-column: 1 / -1; }
 .f > span { font-size: 11px; color: var(--fg-faint); font-weight: 550; }
+/* Required, and only where saving actually refuses without it. */
+.f.req > span:first-child::after { content: "*"; color: var(--down); margin-left: 3px; }
 .f input {
   width: 100%; padding: 7px 10px;
   background: var(--row); color: var(--fg);
@@ -358,7 +356,16 @@ button:disabled { opacity: .5; }
 /* Settings + option rows. */
 #setwrap { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.34);
            display: flex; justify-content: center; align-items: center; padding: 5vh 16px; }
+/* The desktop keeps its aspect ratio and sits on black, the way every remote
+   desktop client letterboxes a session that doesn't match the window. */
+.rdphost { display: grid; place-items: center; background: #000; overflow: hidden; }
+.rdphost canvas { max-width: 100%; max-height: 100%; outline: none; }
+.tabkind { display: inline-flex; opacity: .55; }
+.tabkind svg { width: 12px; height: 12px; }
+
 .sheet-body.one { display: block; }
+/* The settings sheet is a single column, so a row of fields needs its own grid. */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
 .opt { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; }
 .opt input { margin: 2px 0 0; flex: none; accent-color: var(--accent); }
 .opt span { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; color: var(--fg-dim); }
@@ -440,6 +447,8 @@ button:disabled { opacity: .5; }
 .how-opt input { accent-color: var(--accent); margin: 0; }
 .how-opt:has(input:checked) { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--fg); }
 .f[hidden] { display: none !important; }
+/* A confirmation has nothing to type, so the body goes with the field. */
+.sheet-body[hidden] { display: none; }
 
 /* A fixed scheme rather than something to mistype. */
 .withprefix { display: flex; align-items: stretch; }
@@ -456,13 +465,13 @@ button:disabled { opacity: .5; }
    so it costs no room until it has something to say. */
 .crumbs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; margin: -2px 0 2px; }
 .crumbs:empty { display: none; }
-.crumb-tag {
+.crumb {
   display: flex; align-items: center; gap: 1px;
   padding: 2px 4px 2px 9px; border-radius: 20px;
   background: var(--row); color: var(--fg-dim); font-size: 11.5px;
 }
-.crumb-tag .sep { color: var(--fg-faint); margin: 0 2px; }
-.crumb-tag .leafname { color: var(--fg); font-weight: 550; }
-.crumb-tag .drop { display: flex; padding: 2px; border-radius: 50%; opacity: .5; }
-.crumb-tag .drop:hover { opacity: 1; background: var(--row-hover); }
-.crumb-tag .drop .i { width: 10px; height: 10px; }
+.crumb .sep { color: var(--fg-faint); margin: 0 2px; }
+.crumb .leafname { color: var(--fg); font-weight: 550; }
+.crumb .drop { display: flex; padding: 2px; border-radius: 50%; opacity: .5; }
+.crumb .drop:hover { opacity: 1; background: var(--row-hover); }
+.crumb .drop .i { width: 10px; height: 10px; }

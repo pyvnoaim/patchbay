@@ -122,11 +122,19 @@ pub fn load(path: &Path) -> Result<Vpns, String> {
 const RUN_TIMEOUT: Duration = Duration::from_secs(45);
 const CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// What a caller's command is expected to do, appended to the timeout message.
+const RUN_ADVICE: &str = "the command has to return. A foreground `openvpn` never \
+    does; use Tunnelblick's AppleScript, `openvpn3 session-start`, or a service manager.";
+
 /// Waits for a child, killing it past the deadline. A bare `openvpn --config x`
 /// never returns, and without this the toggle would hang for the session.
 /// ponytail: reads stderr after exit, so a command that floods the pipe could
 /// block itself — fine for connect/disconnect, revisit if anything chatty shows up.
-fn wait_within(mut child: Child, limit: Duration) -> Result<(ExitStatus, String), String> {
+fn wait_within(
+    mut child: Child,
+    limit: Duration,
+    advice: &str,
+) -> Result<(ExitStatus, String), String> {
     let deadline = Instant::now() + limit;
     loop {
         match child.try_wait().map_err(|e| e.to_string())? {
@@ -139,12 +147,7 @@ fn wait_within(mut child: Child, limit: Duration) -> Result<(ExitStatus, String)
             }
             None if Instant::now() >= deadline => {
                 let _ = child.kill();
-                return Err(format!(
-                    "gave up after {}s — the command has to return. A foreground \
-                     `openvpn` never does; use Tunnelblick's AppleScript, `openvpn3 \
-                     session-start`, or a service manager.",
-                    limit.as_secs()
-                ));
+                return Err(format!("gave up after {}s — {advice}", limit.as_secs()));
             }
             None => std::thread::sleep(Duration::from_millis(50)),
         }
@@ -158,7 +161,7 @@ pub fn run(cmd: &str) -> Result<(), String> {
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("could not run `{cmd}`: {e}"))?;
-    let (status, err) = wait_within(child, RUN_TIMEOUT)?;
+    let (status, err) = wait_within(child, RUN_TIMEOUT, RUN_ADVICE)?;
     if status.success() {
         return Ok(());
     }
@@ -189,7 +192,7 @@ pub fn is_up(v: &Vpn) -> Option<bool> {
         .spawn()
         .ok()?;
     // A check that hangs reports "down" rather than stalling every sweep.
-    Some(matches!(wait_within(child, CHECK_TIMEOUT), Ok((s, _)) if s.success()))
+    Some(matches!(wait_within(child, CHECK_TIMEOUT, RUN_ADVICE), Ok((s, _)) if s.success()))
 }
 
 #[derive(Serialize)]
@@ -332,7 +335,7 @@ mod tests {
     fn a_command_that_never_returns_is_killed_and_explained() {
         let started = Instant::now();
         let child = shell("sleep 30").stderr(Stdio::piped()).spawn().unwrap();
-        let err = wait_within(child, Duration::from_millis(300)).unwrap_err();
+        let err = wait_within(child, Duration::from_millis(300), RUN_ADVICE).unwrap_err();
         assert!(err.contains("has to return"), "got {err:?}");
         assert!(started.elapsed() < Duration::from_secs(5), "should not have waited it out");
     }

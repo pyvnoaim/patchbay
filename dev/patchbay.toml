@@ -2,8 +2,8 @@
 # `local` actually connects if you have an sshd running (macOS: Settings →
 # General → Sharing → Remote Login). The rest exercise the tree and the route pane.
 #
-# A tag with slashes nests in the sidebar: "prod/eu/web" is prod → eu → web.
-# A jack can sit in more than one branch — that's the point of tags over folders.
+# A folder with slashes nests in the sidebar: "prod/eu/web" is prod → eu → web.
+# `folders` is a list, so a jack can sit in more than one branch.
 
 [defaults]
 user = "root"
@@ -12,14 +12,12 @@ user = "root"
 os = "macos"
 host = "localhost"
 user = "you"          # your own account — [defaults] root won't work here
-tags = ["dev"]
 desc = "your own box, if Remote Login is on"
 
 [jack.bastion]
 os = "debian"
 host = "bastion.example"
 port = 2222
-tags = ["prod/eu", "entrypoint"]
 desc = "the way in"
 
 [jack.web]
@@ -29,7 +27,6 @@ user = "deploy"
 key = "~/.ssh/prod"
 jump = "bastion"
 forward = ["8080:localhost:80"]
-tags = ["prod/eu/web", "customer-facing"]
 desc = "two hops: bastion, then here"
 
 [jack.db]
@@ -37,56 +34,48 @@ os = "postgres"
 host = "10.0.0.5"
 jump = "web"
 forward = ["5432:localhost:5432"]
-tags = ["prod/eu/db"]
 desc = "three hops — check the route pane's order"
 
 [jack.web-us]
 os = "ubuntu"
 host = "10.1.0.4"
 user = "deploy"
-tags = ["prod/us/web", "customer-facing"]
 
 [jack.db-us]
 os = "postgres"
 host = "10.1.0.5"
-tags = ["prod/us/db"]
 
 [jack.staging-web]
 os = "alpine"
 host = "10.2.0.4"
 user = "deploy"
-tags = ["staging/web"]
 
 [jack.scratch]
 os = "synology"
 host = "10.9.9.9"
-desc = "no tags — lands under Untagged"
+desc = "no folders — only shows under All jacks"
 
 [jack.nas]
 host = "10.0.0.20"
 os = "synology"
 url = "https://10.0.0.20:5001"   # DSM, opens in your browser
 primary = "web"                  # ssh is there too, but DSM is what you usually want
-tags = ["home"]
 desc = "DS920+"
 
 [jack.hypervisor]
 host = "10.0.0.30"
 os = "proxmox"
 url = "https://10.0.0.30:8006"
-tags = ["home"]
 
 [jack.gateway]
 host = "10.0.0.1"
 os = "opnsense"
 ssh = false                      # web UI only — no Connect button, no ssh fields
 url = "https://10.0.0.1"
-tags = ["home"]
 
 [jack.pi]
 host = "10.0.0.40"
 os = "raspberrypi"
-tags = ["home"]
 
 [jack.windows]
 host = "1.1.1.1"
@@ -124,12 +113,10 @@ check = "false"
 host = "10.80.0.10"
 user = "deploy"
 os   = "debian"
-tags = ["acme/prod"]
 
 [jack.acme-db]
 host = "10.80.0.11"
 os   = "postgres"
-tags = ["acme/prod"]
 
 [jack.acme-dc]
 host = "10.80.0.50"
@@ -137,5 +124,12 @@ user = "administrator"
 os   = "windows"
 rdp  = 3389                      # RDP has no ProxyJump, so patchbay forwards a port
 jump = "bastion"
-tags = ["acme/prod"]
 desc = "reached through the bastion — check the Tunnel row after clicking RDP"
+
+[jack.Testo]
+host = "10.0.0.26"
+user = "Acme"
+os = "Windows"
+folders = ["Büro"]
+ssh = false
+rdp = 3389

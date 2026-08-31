@@ -39,7 +39,7 @@ async function openSession(name) {
   term.loadAddon(fit);
   term.open(host);
 
-  const s = { id, name, term, fit, host, dead: false, unlisten: [] };
+  const s = { id, name, kind: "term", term, fit, host, dead: false, unlisten: [] };
   sessions.set(id, s);
   activeId = id;
   showTab();
@@ -97,9 +97,9 @@ function closeSession(id) {
   const s = sessions.get(id);
   if (!s) return;
   const vpath = prefs.vpn_auto_disconnect === true ? vpnFor(s.name) : null;
-  invoke("close_session", { id }).catch(() => {});
+  invoke(s.kind === "rdp" ? "close_rdp_session" : "close_session", { id }).catch(() => {});
   s.unlisten.forEach((f) => f());
-  s.term.dispose();
+  s.term?.dispose();
   s.host.remove();
   sessions.delete(id);
   if (activeId === id) activeId = [...sessions.keys()].pop() ?? null;
@@ -121,19 +121,21 @@ function showTab() {
   if (activeId !== null) {
     const s = sessions.get(activeId);
     // The pane only has its real size once it's visible, so fit after the swap.
-    requestAnimationFrame(() => { s.fit.fit(); s.term.focus(); });
+    // A canvas scales itself in CSS and just needs the keyboard.
+    requestAnimationFrame(() => { s.fit?.fit(); (s.term ?? s.canvas).focus(); });
   }
   renderDetail();
 }
 
 function renderTabs() {
   // The browse tab is the crumb — it names the selected folder and counts it.
-  const label = group === null ? "All jacks" : group === "\0untagged" ? "Untagged" : group.split("/").join(" / ");
+  const label = group === null ? "All jacks" : group.split("/").join(" / ");
   const browse = `<div class="tab" data-id="" aria-selected="${activeId === null}">
       ${icon("layers")}<span class="lbl">${esc(label)}</span><span class="n">${shown.length}</span></div>`;
   tabsEl.innerHTML = browse + [...sessions.values()].map((s) => `
       <div class="tab ${s.dead ? "dead" : ""}" data-id="${s.id}" aria-selected="${s.id === activeId}">
         <span class="dot ${s.dead ? "down" : "up"}"></span>
+        ${s.kind === "rdp" ? `<span class="tabkind">${icon("monitor")}</span>` : ""}
         <span class="lbl">${esc(s.name)}</span>
         <span class="x" data-close="${s.id}" data-tip="Close  ⌘W">${icon("x")}</span>
       </div>`).join("");
@@ -150,7 +152,7 @@ tabsEl.addEventListener("click", (e) => {
 });
 
 addEventListener("resize", () => {
-  if (activeId !== null) sessions.get(activeId)?.fit.fit();
+  if (activeId !== null) sessions.get(activeId)?.fit?.fit();
 });
 
 function cycleSession(d) {
@@ -160,4 +162,147 @@ function cycleSession(d) {
   activeId = ids[(i + d + ids.length) % ids.length];
   showTab();
   renderTabs();
+}
+
+// ── remote desktop tabs ────────────────────────────────────────────────────
+// Same tab strip as a terminal, but the pane is a <canvas> that Rust paints
+// dirty rectangles onto. See src-tauri/src/rdp_session.rs for the other half.
+
+// The browser names keys; RDP wants PC/AT set 1 scancodes. 0xE0__ marks the
+// extended ones, which is exactly what Scancode::from_u16 looks for.
+const SCANCODES = {
+  Escape: 0x01, Digit1: 0x02, Digit2: 0x03, Digit3: 0x04, Digit4: 0x05, Digit5: 0x06,
+  Digit6: 0x07, Digit7: 0x08, Digit8: 0x09, Digit9: 0x0a, Digit0: 0x0b, Minus: 0x0c,
+  Equal: 0x0d, Backspace: 0x0e, Tab: 0x0f, KeyQ: 0x10, KeyW: 0x11, KeyE: 0x12,
+  KeyR: 0x13, KeyT: 0x14, KeyY: 0x15, KeyU: 0x16, KeyI: 0x17, KeyO: 0x18, KeyP: 0x19,
+  BracketLeft: 0x1a, BracketRight: 0x1b, Enter: 0x1c, ControlLeft: 0x1d, KeyA: 0x1e,
+  KeyS: 0x1f, KeyD: 0x20, KeyF: 0x21, KeyG: 0x22, KeyH: 0x23, KeyJ: 0x24, KeyK: 0x25,
+  KeyL: 0x26, Semicolon: 0x27, Quote: 0x28, Backquote: 0x29, ShiftLeft: 0x2a,
+  Backslash: 0x2b, KeyZ: 0x2c, KeyX: 0x2d, KeyC: 0x2e, KeyV: 0x2f, KeyB: 0x30,
+  KeyN: 0x31, KeyM: 0x32, Comma: 0x33, Period: 0x34, Slash: 0x35, ShiftRight: 0x36,
+  NumpadMultiply: 0x37, AltLeft: 0x38, Space: 0x39, CapsLock: 0x3a,
+  F1: 0x3b, F2: 0x3c, F3: 0x3d, F4: 0x3e, F5: 0x3f, F6: 0x40, F7: 0x41, F8: 0x42,
+  F9: 0x43, F10: 0x44, NumLock: 0x45, ScrollLock: 0x46,
+  Numpad7: 0x47, Numpad8: 0x48, Numpad9: 0x49, NumpadSubtract: 0x4a,
+  Numpad4: 0x4b, Numpad5: 0x4c, Numpad6: 0x4d, NumpadAdd: 0x4e,
+  Numpad1: 0x4f, Numpad2: 0x50, Numpad3: 0x51, Numpad0: 0x52, NumpadDecimal: 0x53,
+  F11: 0x57, F12: 0x58,
+  ControlRight: 0xe01d, AltRight: 0xe038, NumpadDivide: 0xe035, NumpadEnter: 0xe01c,
+  Home: 0xe047, ArrowUp: 0xe048, PageUp: 0xe049, ArrowLeft: 0xe04b,
+  ArrowRight: 0xe04d, End: 0xe04f, ArrowDown: 0xe050, PageDown: 0xe051,
+  Insert: 0xe052, Delete: 0xe053, MetaLeft: 0xe05b, MetaRight: 0xe05c,
+};
+
+// Kept for the window's lifetime only, never written anywhere. Cleared on quit
+// because it lives nowhere else.
+const rdpPasswords = new Map();
+
+async function openRdpSession(name) {
+  const j = all.find((x) => x.name === name);
+  if (!j?.user) return alertish(`"${name}" needs a user to sign in with`);
+
+  let password = rdpPasswords.get(name);
+  if (password === undefined) {
+    password = await ask(`Password for ${j.user}@${j.host}`, "", "Connect", "password");
+    if (!password) return;
+  }
+
+  const id = nextId++;
+  const host = document.createElement("div");
+  host.className = "termhost rdphost";
+  const canvas = document.createElement("canvas");
+  canvas.tabIndex = 0;   // so it can take the keyboard at all
+  host.append(canvas);
+  termsEl.append(host);
+  const ctx = canvas.getContext("2d");
+
+  const s = { id, name, kind: "rdp", canvas, host, dead: false, unlisten: [] };
+  sessions.set(id, s);
+  activeId = id;
+  showTab();
+  renderTabs();
+  renderTree();
+
+  // Tiles start arriving before the invoke resolves, and setting canvas.width
+  // *clears* the canvas — so anything painted before the size is known would be
+  // wiped. Hold them until the server has told us how big the desktop is.
+  let pending = [];
+  const paint = (buf) => {
+    const head = new DataView(buf, 0, 8);
+    // 8-byte header (x, y, w, h as little-endian u16), then raw RGBA.
+    const w = head.getUint16(4, true), h = head.getUint16(6, true);
+    ctx.putImageData(
+      new ImageData(new Uint8ClampedArray(buf, 8), w, h),
+      head.getUint16(0, true),
+      head.getUint16(2, true),
+    );
+  };
+  const chan = new window.__TAURI__.core.Channel();
+  chan.onmessage = (msg) => {
+    const buf = msg instanceof ArrayBuffer ? msg : new Uint8Array(msg).buffer;
+    pending ? pending.push(buf) : paint(buf);
+  };
+
+  try {
+    const screen = await invoke("open_rdp_session", {
+      id, name, password, width: 1280, height: 1024, onTile: chan,
+    });
+    // The server picks the size; asking for one is only a suggestion.
+    canvas.width = screen.width;
+    canvas.height = screen.height;
+    const held = pending;
+    pending = null;
+    held.forEach(paint);
+    rdpPasswords.set(name, password);
+  } catch (err) {
+    s.dead = true;
+    // A rejected password must not be remembered, or the next attempt reuses it.
+    rdpPasswords.delete(name);
+    renderTabs();
+    return alertish(err);
+  }
+
+  // The pump thread ends when the far end hangs up; without this the picture just
+  // freezes and the tab keeps showing a live dot.
+  try {
+    s.unlisten.push(await listen(`rdp-exit:${id}`, (e) => {
+      s.dead = true;
+      renderTabs();
+      renderTree();
+      if (e.payload) alertish(e.payload);
+    }));
+  } catch { /* no capability means no exit notice, not a broken session */ }
+
+  const send = (kind, a = 0, b = 0, down = false) =>
+    invoke("rdp_input", { id, kind, a, b, down }).catch(() => {});
+  // The canvas is letterboxed to fit the pane, so pointer coordinates have to come
+  // back through that scale before the far end sees them.
+  const at = (e) => {
+    const r = canvas.getBoundingClientRect();
+    return [
+      Math.round((e.clientX - r.left) * (canvas.width / r.width)),
+      Math.round((e.clientY - r.top) * (canvas.height / r.height)),
+    ];
+  };
+  canvas.addEventListener("mousemove", (e) => send("move", ...at(e)));
+  canvas.addEventListener("mousedown", (e) => { canvas.focus(); send("button", e.button, 0, true); });
+  canvas.addEventListener("mouseup", (e) => send("button", e.button, 0, false));
+  canvas.addEventListener("contextmenu", (e) => e.stopPropagation());
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    send("wheel", e.deltaY > 0 ? -120 : 120);
+  }, { passive: false });
+  for (const [type, down] of [["keydown", true], ["keyup", false]]) {
+    canvas.addEventListener(type, (e) => {
+      const code = SCANCODES[e.code];
+      if (code === undefined) return;
+      // ⌘W and friends stay ours; everything else belongs to the remote desktop.
+      if ((e.metaKey || e.ctrlKey) && ["w", "k", "n", "[", "]"].includes(e.key)) return;
+      e.preventDefault();
+      send("key", code, 0, down);
+    });
+  }
+
+  renderTabs();
+  canvas.focus();
 }

@@ -39,7 +39,7 @@ user = "root"
 [jack.bastion]
 host = "bastion.example"
 port = 2222
-tags = ["prod"]
+folders = ["prod"]
 
 [jack.prod-web]
 host = "10.0.0.4"
@@ -47,7 +47,7 @@ user = "deploy"
 key  = "~/.ssh/prod"
 jump = "bastion"                 # another jack name, or a raw user@host
 forward = ["8080:localhost:80"]
-tags = ["prod", "web"]
+folders = ["prod", "web"]
 desc = "main web box"
 ```
 
@@ -84,8 +84,8 @@ second SSH implementation to keep alive.
 
 ## Folders, VPNs and web UIs
 
-Folders are tags: a tag with slashes (`prod/eu/web`) nests in the sidebar, and a device
-can sit in several branches. A folder can carry a VPN, which is how one-customer-per-folder
+A folder with slashes (`prod/eu/web`) nests in the sidebar, and `folders` is a list,
+so a device can sit in several branches at once. A folder can carry a VPN, which is how one-customer-per-folder
 works — flip the switch, or let it come up on its own when you connect.
 
 ```toml
@@ -97,7 +97,7 @@ profile  = "acme"
 host = "10.80.0.20"
 os   = "synology"               # picks the icon, and its colour
 url  = "https://10.80.0.20:5001"   # opens in your browser
-tags = ["acme/prod"]
+folders = ["acme/prod"]
 ```
 
 A `custom` VPN runs whatever `up`/`down`/`check` you give it, so treat a config

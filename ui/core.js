@@ -10,6 +10,7 @@ const paletteEl = $("palette"), pq = $("pq"), presultsEl = $("presults");
 const ctxEl = $("ctx");
 const sheetWrap = $("sheetwrap"), jackForm = $("jackform"), jfErr = $("jf-err"), jfDelete = $("jf-delete");
 const askWrap = $("askwrap"), askForm = $("askform"), askInput = $("ask-input"), askErr = $("ask-err");
+const askBody = askForm.querySelector(".sheet-body");
 const vpnWrap = $("vpnwrap"), vpnForm = $("vpnform"), vpnErr = $("vpn-err"), vpnDelete = $("vpn-delete");
 const setWrap = $("setwrap"), setForm = $("setform"), setErr = $("set-err");
 
@@ -38,6 +39,7 @@ let prefs = {};               // [settings] from the config
 let providers = [];           // VPN presets this machine can drive
 let colors = {};              // [colors] overrides, os key -> hex
 let cfgPath = "";             // where the config lives, shown on first run
+let sshKeys = [];             // private keys found in ~/.ssh, to suggest in the key field
 let tunnels = [];             // live ssh -L forwards holding RDP open
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -111,4 +113,4 @@ function osColor(os) {
 
 const hit = (j, f) =>
   !f || j.name.toLowerCase().includes(f) || j.host.toLowerCase().includes(f) ||
-  (j.desc ?? "").toLowerCase().includes(f) || j.tags.some((t) => t.toLowerCase().includes(f));
+  (j.desc ?? "").toLowerCase().includes(f) || j.folders.some((x) => x.toLowerCase().includes(f));

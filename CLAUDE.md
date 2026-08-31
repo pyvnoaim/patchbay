@@ -11,6 +11,7 @@ Two front ends over one config format:
 - `src-tauri/src/patchbay.rs` — **a port of `src/patchbay.ts`**, because the app can't import TypeScript. Same behaviour, same errors, same argv; its tests mirror the TS ones. Change one, change both.
 - `src-tauri/src/config.rs` — the only code that *writes* the config. Everything else reads. Also owns `[settings]` and `[colors]`.
 - `src-tauri/src/vpn.rs` — per-folder VPN toggles: provider presets, and running the up/down/check commands.
+- `server/src/main.rs` — the team server. One shared config document per team, no accounts, seat limit enforced here. Never parses the TOML.
 - `src-tauri/src/pty.rs` — in-app sessions: ssh on a real pty, streamed to xterm.js as `pty:<id>` events.
 - `src-tauri/src/rdp.rs` — remote desktop by handoff: writes a `.rdp`, and forwards a local port over the jump chain when there is one.
 - `src-tauri/capabilities/default.json` — grants `core:default`. Load-bearing; see Non-obvious.
@@ -26,7 +27,8 @@ Two front ends over one config format:
 ```sh
 npm run dev      # the app window, against dev/patchbay.toml
 npm run cli --   # the CLI, same sample config
-npm test         # test:cli (node:test) + test:app (cargo test)
+npm run server   # the team server on 127.0.0.1:8787
+npm test         # test:cli (node:test) + test:app + test:server (cargo test)
 npm run build    # patchbay.app / .exe / .deb
 npm run icon     # regenerate the app icon from scripts/icon.mjs
 npm run icons    # regenerate ui/gen/icons.js after editing USED in scripts/icons.mjs
@@ -107,7 +109,7 @@ aren't obvious from reading:
 - All writes go through `config.rs`, via `toml_edit` on a parsed `DocumentMut` — never re-serialize the struct. People hand-edit this file and their comments must survive; there's a test asserting exactly that.
 - Writes land as temp file + `rename` so a crash can't truncate someone's hosts.
 - Every write function has a `*_at(path, …)` twin that the tests drive against a scratch file. Add the twin when you add a writer, or it can't be tested without touching a real config.
-- Folder rename/delete are tag-prefix rewrites across every jack (`map_tags`) — deleting a folder drops the tag and keeps the device.
+- Folder rename/delete are prefix rewrites of the `folders` list on every jack (`map_folders`) — deleting a folder drops the entry and keeps the device.
 
 ## Non-obvious
 
@@ -139,6 +141,12 @@ implementation, never embed FreeRDP. RDP, when it lands, hands off to the system
 client. Watch memory per session; xterm scrollback is capped at 5000 lines on
 purpose.
 
-Grouping is tags, not folders: a tag with slashes (`prod/eu/web`) nests in the
-sidebar, and a jack can sit in several branches. Don't add a `group` field — one
-home per host is the thing that makes Royal TS's tree annoying to navigate.
+Grouping is a `folders` list on each jack — a string with slashes (`prod/eu/web`)
+nests in the sidebar. It's a **list**, and that's the load-bearing part: a jack sits
+in several branches at once. Don't collapse it to a single `group` field — one home
+per host is what makes Royal TS's tree annoying to navigate.
+
+There is no separate tag concept, and adding one was considered and rejected: a
+folder was the only thing anyone used it for, and two overlapping ways to group the
+same hosts is the confusion this app exists to avoid. `tags` is still *read* as an
+alias so old configs work; it is never written.

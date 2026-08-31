@@ -6,12 +6,12 @@
 // and toward more than one branch if it carries more than one tag.
 function buildTree() {
   const root = new Map();
-  const tagged = all.flatMap((j) => j.tags.map((t) => [j, t]));
-  for (const p of pending) tagged.push([null, p]);
-  for (const [j, tag] of tagged) {
+  const placed = all.flatMap((j) => j.folders.map((f) => [j, f]));
+  for (const p of pending) placed.push([null, p]);
+  for (const [j, folder] of placed) {
     {
       let level = root, path = "";
-      for (const part of tag.split("/").map((p) => p.trim()).filter(Boolean)) {
+      for (const part of folder.split("/").map((p) => p.trim()).filter(Boolean)) {
         path = path ? `${path}/${part}` : part;
         if (!level.has(part)) level.set(part, { name: part, path, members: new Set(), children: new Map() });
         const node = level.get(part);
@@ -23,16 +23,16 @@ function buildTree() {
   return root;
 }
 
-// A root node with children is a folder; one without is a flat label. Splitting
-// them stops the hierarchy being buried among alphabetically-interleaved tags.
+// Nested folders sort ahead of flat ones so a hierarchy doesn't get buried among
+// alphabetically-interleaved single names. They are the same kind of thing either
+// way — a folder is just a string a device carries.
 function renderTree() {
   const tree = buildTree();
   const live = new Set([...sessions.values()].filter((s) => !s.dead).map((s) => s.name));
-  const untagged = all.filter((j) => !j.tags.length).map((j) => j.name);
-  const leaf = (name, path, members, glyph) =>
-    row({ name, path, members: new Set(members), children: new Map() }, 0, glyph, live);
-
-  const rows = [leaf("All jacks", null, all.map((j) => j.name), "layers")];
+  const rows = [
+    row({ name: "All jacks", path: null, members: new Set(all.map((j) => j.name)), children: new Map() },
+        0, "layers", live),
+  ];
 
   const walk = (level, depth) => {
     for (const node of [...level.values()].sort((a, b) => a.name.localeCompare(b.name))) {
@@ -41,21 +41,13 @@ function renderTree() {
     }
   };
 
-  const roots = [...tree.values()].sort((a, b) => a.name.localeCompare(b.name));
-  const folders = roots.filter((n) => n.children.size);
-  const tags = roots.filter((n) => !n.children.size);
-
-  if (folders.length) {
-    rows.push(`<div class="side-title">Folders</div>`);
-    for (const node of folders) {
-      rows.push(row(node, 0, undefined, live));
-      if (expanded.has(node.path)) walk(node.children, 1);
-    }
+  const roots = [...tree.values()].sort(
+    (a, b) => (b.children.size > 0) - (a.children.size > 0) || a.name.localeCompare(b.name),
+  );
+  for (const node of roots) {
+    rows.push(row(node, 0, undefined, live));
+    if (expanded.has(node.path)) walk(node.children, 1);
   }
-
-  if (tags.length || untagged.length) rows.push(`<div class="side-title">Tags</div>`);
-  for (const node of tags) rows.push(row(node, 0, undefined, live));
-  if (untagged.length) rows.push(leaf("Untagged", "\0untagged", untagged, "circle-off"));
 
   treeEl.innerHTML = rows.join("");
 }
@@ -63,7 +55,7 @@ function renderTree() {
 function row(node, depth, glyph, live) {
   const kids = node.children.size > 0;
   const open = expanded.has(node.path);
-  const g = glyph ?? (kids ? (open ? "folder-open" : "folder") : "tag");
+  const g = glyph ?? (kids && open ? "folder-open" : "folder");
   // The dot is always in the layout so it can carry the auto margin; it is only
   // painted when something under this node has a session open.
   const on = live && [...node.members].some((n) => live.has(n));
@@ -91,15 +83,20 @@ function vpnSwitch(path) {
      data-tip="${esc(title)}" data-tip-at="right"><i></i></span>`;
 }
 
+// Something nested under it makes it a folder; a flat one is just a label. Same
+// test the sidebar splits Folders from Tags on, so the wording matches the tree.
 const inGroup = (j) =>
   group === null ? true
-  : group === "\0untagged" ? j.tags.length === 0
-  : j.tags.some((t) => t === group || t.startsWith(group + "/"));
+  : j.folders.some((f) => f === group || f.startsWith(group + "/"));
 
 // ── list ───────────────────────────────────────────────────────────────────
 function render() {
   renderTree();
   shown = all.filter(inGroup);
+  // Both the device sheet and the settings sheet suggest jump targets, so it's
+  // filled here rather than by whichever one happens to open first.
+  $("jacknames").innerHTML = all.map((x) => `<option value="${esc(x.name)}">`).join("");
+  $("sshkeys").innerHTML = sshKeys.map((k) => `<option value="${esc(k)}">`).join("");
 
   renderTabs();
   searchBtn.innerHTML = `${icon("search")}Search<kbd>${chord("k")}</kbd>`;
@@ -110,7 +107,7 @@ function render() {
   $("editcfg").innerHTML = icon("file-pen-line");
   $("editcfg").dataset.tip = `Open the config file  ${chord("e")}`;
   $("editcfg").dataset.tipAt = "left";
-  $("settings").innerHTML = icon("cog");
+  $("settings").innerHTML = icon("settings");
   $("settings").dataset.tip = `Settings  ${chord(",")}`;
   $("settings").dataset.tipAt = "right";
 
@@ -142,7 +139,7 @@ function render() {
       <span class="name">${esc(j.name)}</span>
       <span class="host">${esc(j.user ? j.user + "@" + j.host : j.host)}${j.port ? ":" + j.port : ""}</span>
       ${j.url ? `<span class="web" data-tip="${esc(j.url)}" data-tip-at="right">${icon("globe")}</span>` : ""}
-      <span class="tags">${j.tags.map((t) => `<span class="tag">${esc(t.split("/").pop())}</span>`).join("")}</span>
+      <span class="folders">${j.folders.map((f) => `<span class="folder">${esc(f.split("/").pop())}</span>`).join("")}</span>
     </div>`;
   }).join("");
   renderDetail();
@@ -158,7 +155,7 @@ function renderDetail() {
 }
 
 const groupLabel = () =>
-  group === null ? "All jacks" : group === "\0untagged" ? "Untagged" : group;
+  group === null ? "All jacks" : group;
 
 function renderGroup() {
   const members = all.filter(inGroup);
@@ -170,7 +167,7 @@ function renderGroup() {
   const down = members.filter((j) => state(j) === "down").length;
   const unknown = members.length - up - down;
   const open = [...sessions.values()].filter((s) => !s.dead && members.some((j) => j.name === s.name));
-  const real = group !== null && group !== "\0untagged";
+  const real = group !== null;
   const v = real && vpns.get(group);
   const busy = real && vpnBusy.has(group);
 
@@ -284,7 +281,14 @@ async function openWeb(name) {
   try { await invoke("open_url", { name }); } catch (e) { alertish(e); }
 }
 
+/// In a tab, like a terminal. "Open in Windows App" on the context menu is still
+/// the handoff, for when someone wants their own client's settings.
 async function openRdp(name) {
+  await openRdpSession(name);
+  await refreshTunnels();
+}
+
+async function handOffRdp(name) {
   try {
     await invoke("open_rdp", { name });
     await refreshTunnels();
@@ -311,7 +315,7 @@ function vpnFor(name) {
   if (!j) return null;
   let best = null;
   for (const path of vpns.keys()) {
-    const covers = j.tags.some((t) => t === path || t.startsWith(path + "/"));
+    const covers = j.folders.some((f) => f === path || f.startsWith(path + "/"));
     if (covers && (!best || path.length > best.length)) best = path;
   }
   return best;

@@ -135,6 +135,7 @@ async function load() {
     // Preferences and provider detection first: the rest of the UI reads them.
     prefs = await invoke("settings").catch(() => ({}));
     if (!providers.length) providers = await invoke("vpn_providers").catch(() => []);
+    if (!sshKeys.length) sshKeys = await invoke("ssh_keys").catch(() => []);
     colors = await invoke("colors").catch(() => ({}));
     cfgPath = await invoke("config_path").catch(() => "");
     tunnels = await invoke("tunnels").catch(() => []);
@@ -142,7 +143,7 @@ async function load() {
     // Open the first level once, on the first load only — doing it every time
     // would re-open folders the moment the window regains focus.
     if (!seeded) {
-      for (const j of all) for (const t of j.tags) expanded.add(t.split("/")[0]);
+      for (const j of all) for (const f of j.folders) expanded.add(f.split("/")[0]);
       seeded = true;
     }
     render();

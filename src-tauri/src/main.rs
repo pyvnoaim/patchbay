@@ -1,9 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod clipboard;
 mod config;
 mod patchbay;
 mod pty;
 mod rdp;
+mod rdp_session;
 mod terminal;
 mod vpn;
 
@@ -24,7 +26,7 @@ struct JackView {
     ssh: bool,
     primary: String,
     desc: Option<String>,
-    tags: Vec<String>,
+    folders: Vec<String>,
     forward: Vec<String>,
     /// Ordered hops, first one nearest us — what the detail pane draws as the route.
     hops: Vec<String>,
@@ -81,7 +83,7 @@ fn jacks() -> Result<Vec<JackView>, String> {
             },
             desc: j.desc.clone(),
             key: j.key.clone(),
-            tags: j.tags.clone().unwrap_or_default(),
+            folders: j.folders.clone().unwrap_or_default(),
             forward: j.forward.clone().unwrap_or_default(),
             hops: patchbay::hops(name, &jacks).unwrap_or_default(),
             // Shown in the detail pane, so you always see what you're about to run.
@@ -310,41 +312,106 @@ async fn open_rdp(
 ) -> Result<String, String> {
     let shared = tunnels.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let jacks = read()?;
-        let resolved = patchbay::resolve(&name, &jacks)?;
-        let j = jacks.get(&resolved).ok_or("no such device")?;
-        let port = j.rdp.ok_or_else(|| format!("\"{resolved}\" has no rdp port"))?;
-        let hops = patchbay::hops(&resolved, &jacks)?;
-
-        let addr = if hops.is_empty() {
-            format!("{}:{port}", j.host)
-        } else {
-            let local = rdp::free_port()?;
-            // -N: no shell, just the forward. Same -J chain the terminal would use.
-            let mut args = vec![
-                "-N".to_string(),
-                "-L".to_string(),
-                format!("127.0.0.1:{local}:{}:{port}", j.host),
-                "-J".to_string(),
-                hops.join(","),
-            ];
-            // The chain's far end is the box we tunnel from, not the target.
-            args.push(hops.last().cloned().unwrap_or_default());
-            // A clock-derived id can collide, and a collision would overwrite the
-            // map entry and leak the child with nothing left to kill it.
-            static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
-            let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            shared.open(id, &resolved, &args, local, hops.join(" → "))?;
-            format!("127.0.0.1:{local}")
-        };
-
-        let body = rdp::rdp_file(&addr, j.user.as_deref())?;
+        let (addr, resolved, user) = rdp_address(&shared, &name)?;
+        let body = rdp::rdp_file(&addr, user.as_deref())?;
         let path = rdp::write_file(&resolved, &body)?;
         os_open(path.as_os_str())?;
         Ok(addr)
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Where to dial a device for RDP, forwarding a local port over the jump chain when
+/// it sits behind one. Shared by the handoff above and the in-app session below, so
+/// both reach a bastioned host the same way.
+fn rdp_address(
+    shared: &rdp::SharedTunnels,
+    name: &str,
+) -> Result<(String, String, Option<String>), String> {
+    let jacks = read()?;
+    let resolved = patchbay::resolve(name, &jacks)?;
+    let j = jacks.get(&resolved).ok_or("no such device")?;
+    let port = j.rdp.ok_or_else(|| format!("\"{resolved}\" has no rdp port"))?;
+    let hops = patchbay::hops(&resolved, &jacks)?;
+
+    let addr = if hops.is_empty() {
+        format!("{}:{port}", j.host)
+    } else {
+        let local = rdp::free_port()?;
+        // -N: no shell, just the forward. Same -J chain the terminal would use.
+        let mut args = vec![
+            "-N".to_string(),
+            "-L".to_string(),
+            format!("127.0.0.1:{local}:{}:{port}", j.host),
+            "-J".to_string(),
+            hops.join(","),
+        ];
+        // The chain's far end is the box we tunnel from, not the target.
+        args.push(hops.last().cloned().unwrap_or_default());
+        // A clock-derived id can collide, and a collision would overwrite the
+        // map entry and leak the child with nothing left to kill it.
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+        let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        shared.open(id, &resolved, &args, local, hops.join(" → "))?;
+        format!("127.0.0.1:{local}")
+    };
+    Ok((addr, resolved, j.user.clone()))
+}
+
+/// Remote desktop in a tab instead of the system client. Connects synchronously so a
+/// wrong password is a returned error the sheet can show, then streams tiles.
+#[tauri::command]
+async fn open_rdp_session(
+    app: tauri::AppHandle,
+    tunnels: tauri::State<'_, rdp::SharedTunnels>,
+    sessions: tauri::State<'_, rdp_session::Shared>,
+    id: u32,
+    name: String,
+    password: String,
+    width: u16,
+    height: u16,
+    on_tile: tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>,
+) -> Result<rdp_session::Screen, String> {
+    let shared = tunnels.inner().clone();
+    let rdp_sessions = sessions.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (addr, resolved, user) = rdp_address(&shared, &name)?;
+        let (host, port) = addr
+            .rsplit_once(':')
+            .ok_or_else(|| format!("\"{addr}\" isn\'t a host and port"))?;
+        let port: u16 = port.parse().map_err(|_| format!("\"{addr}\" has no usable port"))?;
+        let user = user.ok_or_else(|| format!("\"{resolved}\" needs a user to sign in with"))?;
+        rdp_sessions.open(id, host, port, user, password, None, width, height, on_tile, app)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn close_rdp_session(sessions: tauri::State<'_, rdp_session::Shared>, id: u32) {
+    sessions.close(id);
+}
+
+/// Mouse and keyboard from the canvas. Fire-and-forget: an input that arrives after
+/// the session ended is not an error worth a dialog.
+#[tauri::command]
+fn rdp_input(
+    sessions: tauri::State<'_, rdp_session::Shared>,
+    id: u32,
+    kind: String,
+    a: i32,
+    b: i32,
+    down: bool,
+) {
+    let input = match kind.as_str() {
+        "move" => rdp_session::Input::Move { x: a.clamp(0, 65535) as u16, y: b.clamp(0, 65535) as u16 },
+        "button" => rdp_session::Input::Button { button: a.clamp(0, 255) as u8, down },
+        "wheel" => rdp_session::Input::Wheel { delta: a.clamp(-32768, 32767) as i16 },
+        "key" => rdp_session::Input::Key { scancode: a.clamp(0, 65535) as u16, down },
+        _ => return,
+    };
+    sessions.send(id, input);
 }
 
 #[tauri::command]
@@ -374,6 +441,47 @@ fn save_color(os: String, hex: Option<String>) -> Result<(), String> {
 #[tauri::command]
 fn settings() -> config::Settings {
     config::load_settings()
+}
+
+/// Private keys in `~/.ssh`, for the key field to suggest. A key is recognised by its
+/// `.pub` sibling, which leaves out `config` and `known_hosts` without naming them.
+///
+/// They come back `~`-prefixed on purpose: a key path ends up in a config a colleague
+/// may open, and their home directory isn't yours. Both front ends expand `~`.
+#[tauri::command]
+fn ssh_keys() -> Vec<String> {
+    match dirs::home_dir() {
+        Some(h) => keys_in(&h.join(".ssh")),
+        None => vec![],
+    }
+}
+
+fn keys_in(dir: &std::path::Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return vec![];
+    };
+    let mut keys: Vec<String> = entries
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().into_string().ok()?;
+            // The public half sits beside the private one, and that's the whole test.
+            // `.pub` on the end rules out the public halves themselves.
+            let paired = e.path().with_file_name(format!("{name}.pub")).is_file();
+            (!name.ends_with(".pub") && paired).then(|| format!("~/.ssh/{name}"))
+        })
+        .collect();
+    keys.sort();
+    keys
+}
+
+#[tauri::command]
+fn defaults() -> config::Defaults {
+    config::load_defaults()
+}
+
+#[tauri::command]
+fn save_defaults(next: config::Defaults) -> Result<(), String> {
+    config::save_defaults(&next)
 }
 
 #[tauri::command]
@@ -411,11 +519,13 @@ fn open_config() -> Result<(), String> {
     os_open(patchbay::config_path().as_os_str())
 }
 
+
 fn main() {
     tauri::Builder::default()
         .manage(pty::Shared::default())
         .manage(std::sync::Arc::<VpnState>::default())
         .manage(rdp::SharedTunnels::default())
+        .manage(rdp_session::Shared::default())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {
@@ -434,8 +544,8 @@ fn main() {
             jacks, connect, probe, config_path, open_config,
             save_jack, delete_jack, rename_group, delete_group, open_url,
             vpns, vpn_toggle, vpn_def, save_vpn, delete_vpn, vpn_providers,
-            settings, save_settings, colors, save_color,
-            open_rdp, tunnels, close_tunnel,
+            settings, save_settings, colors, save_color, defaults, save_defaults, ssh_keys,
+            open_rdp, open_rdp_session, close_rdp_session, rdp_input, tunnels, close_tunnel,
             open_session, write_session, resize_session, close_session
         ])
         .build(tauri::generate_context!())
@@ -451,7 +561,18 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::is_web_url;
+    use super::{is_web_url, keys_in};
+
+    #[test]
+    fn only_private_keys_with_a_public_half_are_suggested() {
+        let dir = std::env::temp_dir().join(format!("patchbay-keys-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for f in ["id_ed25519", "id_ed25519.pub", "known_hosts", "config", "work.key", "work.key.pub"] {
+            std::fs::write(dir.join(f), "x").unwrap();
+        }
+        assert_eq!(keys_in(&dir), ["~/.ssh/id_ed25519", "~/.ssh/work.key"]);
+    }
 
     #[test]
     fn only_http_and_https_are_openable() {

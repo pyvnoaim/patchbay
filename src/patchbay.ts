@@ -14,6 +14,9 @@ export type Jack = {
   rdp?: number;
   ssh?: boolean;
   primary?: string;
+  folders?: string[];
+  /** ponytail: the old name for `folders`. Read so existing files still work,
+      never written; drop it once nobody has one. */
   tags?: string[];
   desc?: string;
   forward?: string[];
@@ -39,8 +42,17 @@ export function load(path = configPath()): Jacks {
     defaults?: Partial<Jack>;
     jack?: Record<string, Jack>;
   };
+  // Normalised before merging, not after: spreading first lets a `folders` in
+  // [defaults] hide a jack's own legacy `tags`, and the jack has to win.
+  const folders = (j: Partial<Jack>): Partial<Jack> => {
+    const out = { ...j };
+    if (!out.folders && out.tags) out.folders = out.tags;
+    delete out.tags;
+    return out;
+  };
+  const defaults = folders(raw.defaults ?? {});
   return Object.fromEntries(
-    Object.entries(raw.jack ?? {}).map(([name, j]) => [name, { ...raw.defaults, ...j }]),
+    Object.entries(raw.jack ?? {}).map(([name, j]) => [name, { ...defaults, ...folders(j) }]),
   );
 }
 
@@ -94,4 +106,4 @@ export function resolve(query: string, jacks: Jacks): string {
 }
 
 export const matches = (j: Jack, name: string, filter?: string) =>
-  !filter || name.includes(filter) || (j.tags ?? []).some((t) => t.includes(filter));
+  !filter || name.includes(filter) || (j.folders ?? []).some((f) => f.includes(filter));

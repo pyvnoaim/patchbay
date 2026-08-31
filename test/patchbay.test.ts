@@ -81,3 +81,25 @@ test("[defaults] merge into jacks, jack wins", () => {
   assert.equal(loaded.a!.user, "root");
   assert.equal(loaded.b!.user, "me");
 });
+
+test("`tags` still reads as `folders`, and `folders` wins when both are there", () => {
+  const path = join(tmpdir(), `patchbay-folders-${process.pid}.toml`);
+  writeFileSync(
+    path,
+    `[jack.old]\nhost = "h1"\ntags = ["prod/eu"]\n\n` +
+      `[jack.new]\nhost = "h2"\nfolders = ["prod/us"]\ntags = ["stale"]\n`,
+  );
+  const loaded = load(path);
+  assert.deepEqual(loaded.old!.folders, ["prod/eu"]);
+  assert.deepEqual(loaded.new!.folders, ["prod/us"]);
+  // Normalised away on load, so nothing downstream has to know the old name.
+  assert.equal(loaded.old!.tags, undefined);
+  assert.equal(loaded.new!.tags, undefined);
+});
+
+test("a jack's own `tags` beats `folders` inherited from [defaults]", () => {
+  const path = join(tmpdir(), `patchbay-inherit-${process.pid}.toml`);
+  writeFileSync(path, `[defaults]\nfolders = ["inherited"]\n\n[jack.a]\nhost = "h1"\ntags = ["mine"]\n`);
+  // Mirrors the Rust test of the same name — the two disagreed here once.
+  assert.deepEqual(load(path).a!.folders, ["mine"]);
+});

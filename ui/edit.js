@@ -41,7 +41,10 @@ document.addEventListener("contextmenu", (e) => {
       { icon: "square-terminal", label: "Connect", run: () => connect(j.name) },
       { icon: "external-link", label: "Open in Terminal", run: () => connect(j.name, true) },
       ...(j.url ? [{ icon: "globe", label: "Open web UI", run: () => openWeb(j.name) }] : []),
-      ...(j.rdp ? [{ icon: "monitor", label: "Remote desktop", run: () => openRdp(j.name) }] : []),
+      ...(j.rdp ? [
+        { icon: "monitor", label: "Remote desktop", run: () => openRdp(j.name) },
+        { icon: "external-link", label: "Remote desktop in system client", run: () => handOffRdp(j.name) },
+      ] : []),
       { icon: "copy", label: "Copy ssh command", run: () => navigator.clipboard.writeText(j.command).catch(() => {}) },
       "-",
       { icon: "pencil", label: "Edit…", run: () => openJack(j) },
@@ -51,7 +54,7 @@ document.addEventListener("contextmenu", (e) => {
 
   if (groupRow) {
     const path = groupRow.dataset.path;
-    if (!path || path === "\0untagged") return;   // All jacks / Untagged aren't real folders
+    if (!path) return;   // "All jacks" isn't a real folder
     return showCtx(e.clientX, e.clientY, path, [
       { icon: "plus", label: "New device here…", run: () => openJack(null, path) },
       { icon: "folder-plus", label: "New subfolder…", run: () => newGroup(path) },
@@ -75,18 +78,27 @@ window.addEventListener("resize", hideCtx);
 
 // ── ask (one-line prompt) ──────────────────────────────────────────────────
 let askResolve = null;
-function ask(title, value = "", okLabel = "OK") {
+// A prompt when there is something to type, a plain confirmation when `value` is
+// null. Pre-filling a box with the answer and then checking you typed it back is
+// ceremony, not a safeguard — the button label already says what will happen.
+function ask(title, value = "", okLabel = "OK", type = "text") {
+  const confirming = value === null;
   $("ask-title").textContent = title;
-  askInput.value = value;
+  askBody.hidden = confirming;
+  askInput.type = type;
+  askInput.value = confirming ? "" : value;
   askErr.hidden = true;
   $("ask-ok").textContent = okLabel;
   askWrap.hidden = false;
-  askInput.focus();
-  askInput.select();
+  if (confirming) $("ask-ok").focus();
+  else { askInput.focus(); askInput.select(); }
   return new Promise((res) => (askResolve = res));
 }
 function closeAsk(v) { askWrap.hidden = true; askResolve?.(v); askResolve = null; }
-askForm.addEventListener("submit", (e) => { e.preventDefault(); closeAsk(askInput.value.trim() || null); });
+askForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  closeAsk(askBody.hidden ? true : askInput.value.trim() || null);
+});
 $("ask-cancel").addEventListener("click", () => closeAsk(null));
 askWrap.addEventListener("mousedown", (e) => { if (e.target === askWrap) closeAsk(null); });
 
@@ -116,11 +128,10 @@ function openJack(j, prefillGroup) {
   f.rdp.value = j?.rdp ?? "";
   f.primary.value = j?.primary ?? "ssh";
   f.desc.value = j?.desc ?? "";
-  f.tags.value = (j?.tags ?? (prefillGroup && prefillGroup !== "\0untagged" ? [prefillGroup] : [])).join(", ");
+  f.folders.value = (j?.folders ?? (prefillGroup ? [prefillGroup] : [])).join(", ");
   f.forward.value = (j?.forward ?? []).join(", ");
-  $("jacknames").innerHTML = all.map((x) => `<option value="${esc(x.name)}">`).join("");
   $("oschoices").innerHTML = OS_CHOICES.map((o) => `<option value="${esc(o)}">`).join("");
-  renderTagSuggestions();
+  renderFolderSuggestions();
   jackFields();
   sheetWrap.hidden = false;
   f.name.focus();
@@ -159,10 +170,10 @@ jackForm.addEventListener("submit", async (e) => {
           return f.primary.value !== first ? f.primary.value : null;
         })(),
         desc: f.desc.value.trim() || null,
-        tags: list2(f.tags.value),
+        folders: list2(f.folders.value),
       },
     });
-    for (const t of list2(f.tags.value)) pending.delete(t);
+    for (const f2 of list2(f.folders.value)) pending.delete(f2);
     closeJack();
     await load();
   } catch (err) { showErr(jfErr, String(err)); }
@@ -175,7 +186,7 @@ function showErr(el, msg) { el.textContent = msg; el.hidden = false; }
 
 // ── mutations ──────────────────────────────────────────────────────────────
 async function removeJack(name) {
-  if ((await ask(`Delete "${name}"? This edits your config file.`, name, "Delete")) !== name) return;
+  if (!(await ask(`Delete "${name}"? This edits your config file.`, null, "Delete"))) return;
   try { await invoke("delete_jack", { name }); sel = 0; await load(); }
   catch (e) { alertish(e); }
 }
@@ -191,7 +202,7 @@ async function newGroup(parent) {
 }
 
 async function renameGroup(path) {
-  const to = await ask(`Rename ${path} to`, path.split("/").pop(), "Rename");
+  const to = await ask(`Rename folder ${path} to`, path.split("/").pop(), "Rename");
   if (!to) return;
   const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
   const next = parent ? `${parent}/${to}` : to;
@@ -204,9 +215,9 @@ async function renameGroup(path) {
 }
 
 async function removeGroup(path) {
-  const n = all.filter((j) => j.tags.some((t) => t === path || t.startsWith(path + "/"))).length;
+  const n = all.filter((j) => j.folders.some((f) => f === path || f.startsWith(path + "/"))).length;
   const msg = `Remove folder "${path}" from ${n} device${n === 1 ? "" : "s"}? The devices stay.`;
-  if ((await ask(msg, path, "Remove")) !== path) return;
+  if (!(await ask(msg, null, "Remove"))) return;
   try {
     await invoke("delete_group", { path });
     pending.delete(path);
@@ -302,7 +313,7 @@ $("vpn-cancel").addEventListener("click", closeVpn);
 vpnWrap.addEventListener("mousedown", (e) => { if (e.target === vpnWrap) closeVpn(); });
 vpnDelete.addEventListener("click", async () => {
   const path = vpnEditing;
-  if ((await ask(`Remove the VPN on "${path}"? The folder and its devices stay.`, path, "Remove")) !== path) return;
+  if (!(await ask(`Remove the VPN on "${path}"? The folder and its devices stay.`, null, "Remove"))) return;
   closeVpn();
   try { await invoke("delete_vpn", { path }); await refreshVpns(); }
   catch (e) { alertish(e); }
@@ -320,6 +331,10 @@ async function openSettings() {
     .filter((p) => p.id !== "custom")
     .map((p) => `<span class="prov ${p.installed ? "on" : ""}">${icon(p.installed ? "check" : "x")}${esc(p.label)}</span>`)
     .join("");
+  // Read fresh rather than from state: nothing else in the app needs [defaults],
+  // and a hand-edit between openings should show up here.
+  const defs = await invoke("defaults").catch(() => ({}));
+  for (const k of DEFAULT_KEYS) setForm.elements[`def_${k}`].value = defs[k] ?? "";
   renderSwatches();
   $("page-openconfig").innerHTML = `${icon("file-pen-line")}Open config file`;
   setWrap.hidden = false;
@@ -327,16 +342,27 @@ async function openSettings() {
 }
 const closeSettings = () => { setWrap.hidden = true; };
 
+const DEFAULT_KEYS = ["user", "port", "key", "jump"];
+
 setForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const next = {};
   for (const el of setForm.querySelectorAll("input[type=checkbox]")) next[el.name] = el.checked;
+
+  const defs = {};
+  for (const k of DEFAULT_KEYS) defs[k] = setForm.elements[`def_${k}`].value.trim() || null;
+  if (defs.port && !/^\d+$/.test(defs.port)) return showErr(setErr, "ssh port has to be a number");
+  defs.port = defs.port ? +defs.port : null;
+
   try {
     const wasProbing = prefs.probe !== false;
     await invoke("save_settings", { next });
+    await invoke("save_defaults", { next: defs });
     prefs = next;
     closeSettings();
-    render();
+    // A reload, not a render: [defaults] merges into every jack, so changing it
+    // changes the user, port and route shown for all of them.
+    await load();
     // The throttle would otherwise hold the first sweep back by up to 30s.
     if (!wasProbing && next.probe) { lastProbe = 0; refreshProbes(); }
   } catch (err) { showErr(setErr, String(err)); }
@@ -398,30 +424,30 @@ $("url-scheme").addEventListener("click", () =>
 
 // Suggestions are a plain datalist, same as the OS field. What you have entered
 // is shown underneath as paths, so nesting is legible without a popup panel.
-function renderTagSuggestions() {
-  const used = [...new Set(all.flatMap((j) => j.tags))].sort();
-  $("folders").innerHTML = used.map((t) => `<option value="${esc(t)}">`).join("");
+function renderFolderSuggestions() {
+  const used = [...new Set(all.flatMap((j) => j.folders))].sort();
+  $("folderlist").innerHTML = used.map((f) => `<option value="${esc(f)}">`).join("");
   renderCrumbs();
 }
 
-const enteredTags = () =>
-  jackForm.elements.tags.value.split(",").map((x) => x.trim()).filter(Boolean);
+const enteredFolders = () =>
+  jackForm.elements.folders.value.split(",").map((x) => x.trim()).filter(Boolean);
 
 function renderCrumbs() {
-  $("crumbs").innerHTML = enteredTags().map((t) => {
-    const parts = t.split("/").filter(Boolean);
+  $("crumbs").innerHTML = enteredFolders().map((f) => {
+    const parts = f.split("/").filter(Boolean);
     const path = parts
       .map((p, i) => `<span class="${i === parts.length - 1 ? "leafname" : ""}">${esc(p)}</span>`)
       .join(`<span class="sep">›</span>`);
-    return `<span class="crumb-tag">${path}<i class="drop" data-drop="${esc(t)}"
+    return `<span class="crumb">${path}<i class="drop" data-drop="${esc(f)}"
       data-tip="Remove">${icon("x")}</i></span>`;
   }).join("");
 }
 
-jackForm.elements.tags.addEventListener("input", renderCrumbs);
+jackForm.elements.folders.addEventListener("input", renderCrumbs);
 $("crumbs").addEventListener("click", (e) => {
-  const tag = e.target.closest("[data-drop]")?.dataset.drop;
-  if (!tag) return;
-  jackForm.elements.tags.value = enteredTags().filter((t) => t !== tag).join(", ");
+  const dropped = e.target.closest("[data-drop]")?.dataset.drop;
+  if (!dropped) return;
+  jackForm.elements.folders.value = enteredFolders().filter((f) => f !== dropped).join(", ");
   renderCrumbs();
 });
