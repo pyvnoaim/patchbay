@@ -82,3 +82,7 @@ tags = ["home"]
 host = "10.0.0.40"
 os = "raspberrypi"
 tags = ["home"]
+
+[jack.windows]
+host = "1.1.1.1"
+os = "windows"

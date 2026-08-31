@@ -14,16 +14,16 @@
     "README.md"
   ],
   "scripts": {
-    "dev": "node --env-file=dev/dev.env scripts/tauri.mjs dev",
-    "build": "tauri build",
-    "icon": "node scripts/icon.mjs && tauri icon assets/icon.png",
-    "icons": "node scripts/icons.mjs",
-    "vendor": "node scripts/vendor.mjs",
-    "brands": "node scripts/brands.mjs",
-    "cli": "node --env-file=dev/dev.env --experimental-strip-types --disable-warning=ExperimentalWarning src/cli.ts",
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/dev.mjs build",
+    "cli": "node scripts/dev.mjs cli",
     "test": "npm run test:cli && npm run test:app",
     "test:cli": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test",
-    "test:app": "cargo test --manifest-path src-tauri/Cargo.toml"
+    "test:app": "node scripts/dev.mjs cargo test --manifest-path src-tauri/Cargo.toml",
+    "icon": "node scripts/icon.mjs && tauri icon assets/icon.png",
+    "icons": "node scripts/icons.mjs",
+    "brands": "node scripts/brands.mjs",
+    "vendor": "node scripts/vendor.mjs"
   },
   "dependencies": {
     "smol-toml": "^1.3.1"

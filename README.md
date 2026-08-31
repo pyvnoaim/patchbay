@@ -62,11 +62,12 @@ npm run build        # patchbay.app / .exe / .deb
 npm test             # both suites
 ```
 
-`npm run dev` needs Rust (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`).
-The first build compiles a few hundred crates and takes minutes; after that it's seconds.
+`npm run dev` needs Rust (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`) —
+no need to restart your shell, the dev script finds `~/.cargo/bin` itself. The first
+build compiles a few hundred crates and takes minutes; after that it's seconds.
 
-The CLI needs no toolchain at all — `npm run cli -- <args>` runs it against the same
-sample config, so you can poke at it without touching `~/.config`:
+`npm run cli -- <args>` runs the CLI against the same sample config, so you can poke
+at it without touching `~/.config`:
 
 ```sh
 npm run cli -- ls            # the sample jacks
