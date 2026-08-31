@@ -66,6 +66,7 @@ desc = "no tags — lands under Untagged"
 host = "10.0.0.20"
 os = "synology"
 url = "https://10.0.0.20:5001"   # DSM, opens in your browser
+primary = "web"                  # ssh is there too, but DSM is what you usually want
 tags = ["home"]
 desc = "DS920+"
 
@@ -78,6 +79,7 @@ tags = ["home"]
 [jack.gateway]
 host = "10.0.0.1"
 os = "opnsense"
+ssh = false                      # web UI only — no Connect button, no ssh fields
 url = "https://10.0.0.1"
 tags = ["home"]
 
@@ -128,3 +130,12 @@ tags = ["acme/prod"]
 host = "10.80.0.11"
 os   = "postgres"
 tags = ["acme/prod"]
+
+[jack.acme-dc]
+host = "10.80.0.50"
+user = "administrator"
+os   = "windows"
+rdp  = 3389                      # RDP has no ProxyJump, so patchbay forwards a port
+jump = "bastion"
+tags = ["acme/prod"]
+desc = "reached through the bastion — check the Tunnel row after clicking RDP"

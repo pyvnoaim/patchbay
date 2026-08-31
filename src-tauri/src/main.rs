@@ -3,6 +3,7 @@
 mod config;
 mod patchbay;
 mod pty;
+mod rdp;
 mod terminal;
 mod vpn;
 
@@ -19,6 +20,9 @@ struct JackView {
     jump: Option<String>,
     os: Option<String>,
     url: Option<String>,
+    rdp: Option<u16>,
+    ssh: bool,
+    primary: String,
     desc: Option<String>,
     tags: Vec<String>,
     forward: Vec<String>,
@@ -37,11 +41,10 @@ struct Probe {
 
 fn read() -> Result<patchbay::Jacks, String> {
     let path = patchbay::config_path();
+    // No config is not an error in the window — it's a first run, and the UI has
+    // somewhere to put that. A config that exists but won't parse still is one.
     if !path.exists() {
-        return Err(format!(
-            "no config at {} — run `bay edit` to start one",
-            path.display()
-        ));
+        return Ok(patchbay::Jacks::new());
     }
     patchbay::load(&path)
 }
@@ -59,6 +62,23 @@ fn jacks() -> Result<Vec<JackView>, String> {
             jump: j.jump.clone(),
             os: j.os.clone(),
             url: j.url.clone(),
+            rdp: j.rdp,
+            ssh: j.ssh.unwrap_or(true),
+            // Resolved here so both the window and any future front end agree.
+            primary: {
+                let has = |k: &str| match k {
+                    "ssh" => j.ssh.unwrap_or(true),
+                    "rdp" => j.rdp.is_some(),
+                    _ => j.url.is_some(),
+                };
+                j.primary
+                    .as_deref()
+                    .filter(|p| has(p))
+                    .map(str::to_string)
+                    .unwrap_or_else(|| {
+                        ["ssh", "rdp", "web"].iter().find(|k| has(k)).unwrap_or(&"ssh").to_string()
+                    })
+            },
             desc: j.desc.clone(),
             key: j.key.clone(),
             tags: j.tags.clone().unwrap_or_default(),
@@ -273,6 +293,74 @@ fn save_vpn(path: String, def: vpn::Vpn) -> Result<(), String> {
     config::save_vpn(&path, &def)
 }
 
+#[derive(Serialize)]
+struct TunnelView {
+    id: u32,
+    jack: String,
+    local: u16,
+    via: String,
+}
+
+/// Opens a device's remote desktop. If it sits behind a jump chain, forward a
+/// local port over that chain first — RDP has no ProxyJump of its own.
+#[tauri::command]
+async fn open_rdp(
+    tunnels: tauri::State<'_, rdp::SharedTunnels>,
+    name: String,
+) -> Result<String, String> {
+    let shared = tunnels.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let jacks = read()?;
+        let resolved = patchbay::resolve(&name, &jacks)?;
+        let j = jacks.get(&resolved).ok_or("no such device")?;
+        let port = j.rdp.ok_or_else(|| format!("\"{resolved}\" has no rdp port"))?;
+        let hops = patchbay::hops(&resolved, &jacks)?;
+
+        let addr = if hops.is_empty() {
+            format!("{}:{port}", j.host)
+        } else {
+            let local = rdp::free_port()?;
+            // -N: no shell, just the forward. Same -J chain the terminal would use.
+            let mut args = vec![
+                "-N".to_string(),
+                "-L".to_string(),
+                format!("127.0.0.1:{local}:{}:{port}", j.host),
+                "-J".to_string(),
+                hops.join(","),
+            ];
+            // The chain's far end is the box we tunnel from, not the target.
+            args.push(hops.last().cloned().unwrap_or_default());
+            // A clock-derived id can collide, and a collision would overwrite the
+            // map entry and leak the child with nothing left to kill it.
+            static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+            let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            shared.open(id, &resolved, &args, local, hops.join(" → "))?;
+            format!("127.0.0.1:{local}")
+        };
+
+        let body = rdp::rdp_file(&addr, j.user.as_deref())?;
+        let path = rdp::write_file(&resolved, &body)?;
+        os_open(path.as_os_str())?;
+        Ok(addr)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn tunnels(state: tauri::State<'_, rdp::SharedTunnels>) -> Vec<TunnelView> {
+    state
+        .list()
+        .into_iter()
+        .map(|(id, jack, local, via)| TunnelView { id, jack, local, via })
+        .collect()
+}
+
+#[tauri::command]
+fn close_tunnel(state: tauri::State<'_, rdp::SharedTunnels>, id: u32) {
+    state.close(id);
+}
+
 #[tauri::command]
 fn colors() -> std::collections::BTreeMap<String, String> {
     config::load_colors()
@@ -327,6 +415,7 @@ fn main() {
     tauri::Builder::default()
         .manage(pty::Shared::default())
         .manage(std::sync::Arc::<VpnState>::default())
+        .manage(rdp::SharedTunnels::default())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {
@@ -346,10 +435,18 @@ fn main() {
             save_jack, delete_jack, rename_group, delete_group, open_url,
             vpns, vpn_toggle, vpn_def, save_vpn, delete_vpn, vpn_providers,
             settings, save_settings, colors, save_color,
+            open_rdp, tunnels, close_tunnel,
             open_session, write_session, resize_session, close_session
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running patchbay");
+        .build(tauri::generate_context!())
+        .expect("error while building patchbay")
+        .run(|handle, event| {
+            // `ssh -N -L` has no parent to hang up on, so without this a tunnel
+            // outlives the window and keeps holding its forwarded port.
+            if matches!(event, tauri::RunEvent::Exit) {
+                handle.state::<rdp::SharedTunnels>().close_all();
+            }
+        });
 }
 
 #[cfg(test)]

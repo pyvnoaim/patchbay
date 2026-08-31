@@ -11,6 +11,9 @@ export type Jack = {
   jump?: string;
   os?: string;
   url?: string;
+  rdp?: number;
+  ssh?: boolean;
+  primary?: string;
   tags?: string[];
   desc?: string;
   forward?: string[];

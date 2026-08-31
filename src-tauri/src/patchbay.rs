@@ -22,6 +22,13 @@ pub struct Jack {
     pub os: Option<String>,
     /// Optional web UI — a NAS or router is one device with two ways in.
     pub url: Option<String>,
+    /// Port for remote desktop. Absent means this device has none.
+    pub rdp: Option<u16>,
+    /// Absent means yes — most devices are reached over ssh.
+    pub ssh: Option<bool>,
+    /// What Enter and a double-click do: "ssh" | "rdp" | "web". Absent picks the
+    /// first one the device actually has.
+    pub primary: Option<String>,
     pub tags: Option<Vec<String>>,
     pub desc: Option<String>,
     pub forward: Option<Vec<String>>,
@@ -75,6 +82,9 @@ pub fn parse(src: &str) -> Result<Jacks, String> {
                 jump: j.jump.or_else(|| d.jump.clone()),
                 os: j.os.or_else(|| d.os.clone()),
                 url: j.url.or_else(|| d.url.clone()),
+                rdp: j.rdp.or(d.rdp),
+                ssh: j.ssh.or(d.ssh),
+                primary: j.primary.or_else(|| d.primary.clone()),
                 tags: j.tags.or_else(|| d.tags.clone()),
                 desc: j.desc.or_else(|| d.desc.clone()),
                 forward: j.forward.or_else(|| d.forward.clone()),

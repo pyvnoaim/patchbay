@@ -17,6 +17,9 @@ pub struct JackInput {
     pub jump: Option<String>,
     pub os: Option<String>,
     pub url: Option<String>,
+    pub rdp: Option<u16>,
+    pub ssh: Option<bool>,
+    pub primary: Option<String>,
     pub desc: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
@@ -127,9 +130,23 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     set_str(t, "jump", j.jump.as_deref());
     set_str(t, "os", j.os.as_deref());
     set_str(t, "url", j.url.as_deref());
+    set_str(t, "primary", j.primary.as_deref());
     set_str(t, "desc", j.desc.as_deref());
     set_arr(t, "tags", &j.tags);
     set_arr(t, "forward", &j.forward);
+    // Only written when false; the default keeps configs uncluttered.
+    match j.ssh {
+        Some(false) => t["ssh"] = value(false),
+        _ => {
+            t.remove("ssh");
+        }
+    }
+    match j.rdp {
+        Some(p) => t["rdp"] = value(p as i64),
+        None => {
+            t.remove("rdp");
+        }
+    }
     match j.port {
         Some(p) => t["port"] = value(p as i64),
         None => {
@@ -449,7 +466,7 @@ tags = ["prod/eu/web"]
     fn input(name: &str, host: &str) -> JackInput {
         JackInput {
             name: name.into(), host: host.into(),
-            user: None, port: None, key: None, jump: None, os: None, url: None, desc: None,
+            user: None, port: None, key: None, jump: None, os: None, url: None, rdp: None, ssh: None, primary: None, desc: None,
             tags: vec![], forward: vec![],
         }
     }
