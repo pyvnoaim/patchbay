@@ -57,7 +57,7 @@ becomes one `ssh -J` list. Loops throw instead of hanging.
 ## Development
 
 ```sh
-npm run dev          # the app window, against patchbay.dev.toml
+npm run dev          # the app window, against dev/patchbay.toml
 npm run build        # patchbay.app / .exe / .deb
 npm test             # both suites
 ```
