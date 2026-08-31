@@ -359,6 +359,17 @@ fn rdp_address(
     Ok((addr, resolved, j.user.clone()))
 }
 
+/// `DOMAIN\user` is how Windows people write a domain login, but RDP wants the two
+/// as separate fields. A UPN (`user@domain`) is already one field, so it passes through.
+pub fn split_domain(user: &str) -> (Option<String>, String) {
+    let Some((domain, name)) = user.split_once('\\') else {
+        return (None, user.to_string());
+    };
+    // `.\alice` is how mstsc's box says "a local account", and it resolves that dot
+    // itself rather than putting a domain of "." on the wire.
+    ((!domain.is_empty() && domain != ".").then(|| domain.to_string()), name.to_string())
+}
+
 /// Remote desktop in a tab instead of the system client. Connects synchronously so a
 /// wrong password is a returned error the sheet can show, then streams tiles.
 #[tauri::command]
@@ -368,6 +379,7 @@ async fn open_rdp_session(
     sessions: tauri::State<'_, rdp_session::Shared>,
     id: u32,
     name: String,
+    user: String,
     password: String,
     width: u16,
     height: u16,
@@ -376,13 +388,19 @@ async fn open_rdp_session(
     let shared = tunnels.inner().clone();
     let rdp_sessions = sessions.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let (addr, resolved, user) = rdp_address(&shared, &name)?;
+        let (addr, resolved, cfg_user) = rdp_address(&shared, &name)?;
         let (host, port) = addr
             .rsplit_once(':')
             .ok_or_else(|| format!("\"{addr}\" isn\'t a host and port"))?;
         let port: u16 = port.parse().map_err(|_| format!("\"{addr}\" has no usable port"))?;
-        let user = user.ok_or_else(|| format!("\"{resolved}\" needs a user to sign in with"))?;
-        rdp_sessions.open(id, host, port, user, password, None, width, height, on_tile, app)
+        // The window asks for a sign-in, so a jack with no `user` still connects —
+        // the config's user is only what the field is prefilled with.
+        let user = Some(user)
+            .filter(|u| !u.is_empty())
+            .or(cfg_user)
+            .ok_or_else(|| format!("\"{resolved}\" needs a user to sign in with"))?;
+        let (domain, user) = split_domain(&user);
+        rdp_sessions.open(id, host, port, user, password, domain, width, height, on_tile, app)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -561,7 +579,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_web_url, keys_in};
+    use super::{is_web_url, keys_in, split_domain};
 
     #[test]
     fn only_private_keys_with_a_public_half_are_suggested() {
@@ -572,6 +590,20 @@ mod tests {
             std::fs::write(dir.join(f), "x").unwrap();
         }
         assert_eq!(keys_in(&dir), ["~/.ssh/id_ed25519", "~/.ssh/work.key"]);
+    }
+
+    #[test]
+    fn a_domain_login_splits_into_the_two_fields_rdp_wants() {
+        assert_eq!(split_domain("CORP\\alice"), (Some("CORP".into()), "alice".into()));
+        assert_eq!(split_domain("alice"), (None, "alice".into()));
+        assert_eq!(split_domain("alice@corp.example"), (None, "alice@corp.example".into()));
+        // Entra-joined boxes want the UPN kept whole behind the AzureAD prefix.
+        assert_eq!(
+            split_domain("AzureAD\\alice@corp.example"),
+            (Some("AzureAD".into()), "alice@corp.example".into())
+        );
+        assert_eq!(split_domain(".\\alice"), (None, "alice".into()), "a local account");
+        assert_eq!(split_domain("\\alice"), (None, "alice".into()));
     }
 
     #[test]

@@ -195,16 +195,19 @@ const SCANCODES = {
 
 // Kept for the window's lifetime only, never written anywhere. Cleared on quit
 // because it lives nowhere else.
-const rdpPasswords = new Map();
+const rdpCreds = new Map();
 
 async function openRdpSession(name) {
   const j = all.find((x) => x.name === name);
-  if (!j?.user) return alertish(`"${name}" needs a user to sign in with`);
+  if (!j) return;
 
-  let password = rdpPasswords.get(name);
-  if (password === undefined) {
-    password = await ask(`Password for ${j.user}@${j.host}`, "", "Connect", "password");
-    if (!password) return;
+  let creds = rdpCreds.get(name);
+  if (!creds) {
+    // The username is shown even when the config has one: a Windows box is usually
+    // reached as a different account than ssh uses, and `DOMAIN\user` is not
+    // something the file can guess.
+    creds = await ask(`Sign in to ${j.host}`, "", "Connect", "password", j.user ?? "");
+    if (!creds) return;
   }
 
   const id = nextId++;
@@ -245,7 +248,8 @@ async function openRdpSession(name) {
 
   try {
     const screen = await invoke("open_rdp_session", {
-      id, name, password, width: 1280, height: 1024, onTile: chan,
+      id, name, user: creds.user, password: creds.password,
+      width: 1280, height: 1024, onTile: chan,
     });
     // The server picks the size; asking for one is only a suggestion.
     canvas.width = screen.width;
@@ -253,11 +257,11 @@ async function openRdpSession(name) {
     const held = pending;
     pending = null;
     held.forEach(paint);
-    rdpPasswords.set(name, password);
+    rdpCreds.set(name, creds);
   } catch (err) {
     s.dead = true;
-    // A rejected password must not be remembered, or the next attempt reuses it.
-    rdpPasswords.delete(name);
+    // Rejected credentials must not be remembered, or the next attempt reuses them.
+    rdpCreds.delete(name);
     renderTabs();
     return alertish(err);
   }

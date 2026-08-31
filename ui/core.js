@@ -10,6 +10,7 @@ const paletteEl = $("palette"), pq = $("pq"), presultsEl = $("presults");
 const ctxEl = $("ctx");
 const sheetWrap = $("sheetwrap"), jackForm = $("jackform"), jfErr = $("jf-err"), jfDelete = $("jf-delete");
 const askWrap = $("askwrap"), askForm = $("askform"), askInput = $("ask-input"), askErr = $("ask-err");
+const askUserField = $("ask-user-field"), askUser = $("ask-user"), askLabel = $("ask-label");
 const askBody = askForm.querySelector(".sheet-body");
 const vpnWrap = $("vpnwrap"), vpnForm = $("vpnform"), vpnErr = $("vpn-err"), vpnDelete = $("vpn-delete");
 const setWrap = $("setwrap"), setForm = $("setform"), setErr = $("set-err");

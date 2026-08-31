@@ -168,7 +168,10 @@
   <div id="askwrap" hidden>
     <form class="sheet small" id="askform" autocomplete="off">
       <div class="sheet-head" id="ask-title"></div>
-      <div class="sheet-body"><label class="f wide"><input name="v" id="ask-input" spellcheck="false"></label></div>
+      <div class="sheet-body">
+        <label class="f wide" id="ask-user-field" hidden><span>Username</span><input id="ask-user" spellcheck="false"></label>
+        <label class="f wide"><span id="ask-label" hidden></span><input name="v" id="ask-input" spellcheck="false"></label>
+      </div>
       <p class="sheet-err" id="ask-err" hidden></p>
       <div class="sheet-foot">
         <span style="flex:1"></span>

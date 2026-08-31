@@ -81,23 +81,35 @@ let askResolve = null;
 // A prompt when there is something to type, a plain confirmation when `value` is
 // null. Pre-filling a box with the answer and then checking you typed it back is
 // ceremony, not a safeguard — the button label already says what will happen.
-function ask(title, value = "", okLabel = "OK", type = "text") {
+/// A `user` of null is the plain one-input prompt; a string (empty included) adds
+/// the username field above and resolves to `{ user, password }` instead.
+function ask(title, value = "", okLabel = "OK", type = "text", user = null) {
   const confirming = value === null;
   $("ask-title").textContent = title;
   askBody.hidden = confirming;
   askInput.type = type;
   askInput.value = confirming ? "" : value;
+  askUserField.hidden = user === null;
+  askUser.value = user ?? "";
+  askLabel.hidden = user === null;
+  askLabel.textContent = "Password";
   askErr.hidden = true;
   $("ask-ok").textContent = okLabel;
   askWrap.hidden = false;
   if (confirming) $("ask-ok").focus();
+  else if (user === "") askUser.focus();
   else { askInput.focus(); askInput.select(); }
   return new Promise((res) => (askResolve = res));
 }
 function closeAsk(v) { askWrap.hidden = true; askResolve?.(v); askResolve = null; }
 askForm.addEventListener("submit", (e) => {
   e.preventDefault();
-  closeAsk(askBody.hidden ? true : askInput.value.trim() || null);
+  if (askBody.hidden) return closeAsk(true);
+  if (askUserField.hidden) return closeAsk(askInput.value.trim() || null);
+  const user = askUser.value.trim();
+  if (!user) return showErr(askErr, "a username, or the desktop won't let you in");
+  // The password is the one field that isn't trimmed — a space in one is a character.
+  closeAsk(askInput.value ? { user, password: askInput.value } : null);
 });
 $("ask-cancel").addEventListener("click", () => closeAsk(null));
 askWrap.addEventListener("mousedown", (e) => { if (e.target === askWrap) closeAsk(null); });

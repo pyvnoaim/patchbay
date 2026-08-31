@@ -4,3 +4,4 @@ src-tauri/gen/
 server/target/
 server/*.db*
 src-tauri/rdp-frame.ppm
+dev/rdp_known_hosts
