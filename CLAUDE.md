@@ -9,7 +9,8 @@ Two front ends over one config format:
 - `src/cli.ts` — arg dispatch and process spawning. Keep it dumb.
 - `test/patchbay.test.ts` — `node:test` + `assert`.
 - `src-tauri/src/patchbay.rs` — **a port of `src/patchbay.ts`**, because the app can't import TypeScript. Same behaviour, same errors, same argv; its tests mirror the TS ones. Change one, change both.
-- `src-tauri/src/config.rs` — the only code that *writes* the config. Everything else reads.
+- `src-tauri/src/config.rs` — the only code that *writes* the config. Everything else reads. Also owns `[settings]` and `[colors]`.
+- `src-tauri/src/vpn.rs` — per-folder VPN toggles: provider presets, and running the up/down/check commands.
 - `src-tauri/src/pty.rs` — in-app sessions: ssh on a real pty, streamed to xterm.js as `pty:<id>` events.
 - `src-tauri/capabilities/default.json` — grants `core:default`. Load-bearing; see Non-obvious.
 - `src-tauri/src/terminal.rs` — the other path: hands the ssh command to the *system* terminal.
@@ -41,6 +42,11 @@ only if the review comes back clean.
 4. **Not clean → stop and tell me what you found.** Don't push and don't fix it silently; a behaviour change is my call. Trivial nits (a typo, dead code) you can just fix, mention, and carry on.
 
 Findings first, one line each. Don't push a "probably fine".
+
+**Never push unless I've asked for it in that message.** Not after a cleanup, not
+because the work looks finished, not because the tree is clean. Finishing a task is
+not permission to publish it — `git push` only ever runs when I say so. Committing
+locally is fine; pushing is mine to call.
 
 ## Conventions
 
@@ -77,12 +83,20 @@ aren't obvious from reading:
 - Icons are Lucide via `icon("name")`. Add the name to `USED` in `scripts/icons.mjs` and run `npm run icons` — don't paste SVG into `app.js`, and don't add `lucide-react` (there is no React here, and it wraps the same artwork).
 - A jack's `os = "..."` renders through `osIcon()`: a simple-icons brand mark if one exists, else a Lucide shape from `BRAND_FALLBACKS`, else `server`. Both maps live in `scripts/brands.mjs`; run `npm run brands`. Matching is loose on purpose so `"Ubuntu 22.04"` and `"ubuntu"` land on the same glyph. Brand marks are *filled* paths, Lucide ones are *stroked* — `.i.brand` clears the stroke.
 - Don't fetch favicons from devices to use as icons. It needs an HTTP client and TLS in the app, nearly every appliance ships a self-signed cert, half of them sit behind a bastion where the app can't reach them anyway, and it turns opening the window into outbound requests to every host. The curated set covers the real cases.
+- Brand colours are unusable raw — nine of the 29 fail contrast on one theme. `readable()` nudges lightness until a colour clears 3:1 against the current surface; never paint a brand hex directly.
+- A new full-screen overlay must be added to the `#sheetwrap, #askwrap, #vpnwrap` rule in `app.css`, not just to `index.html`. Left out, it has no `position: fixed` and sits in normal flow at the end of `<body>` — it escapes the window and stretches the layout behind it.
 - One render path: mutate state, call `render()`. No targeted DOM patching — the lists are tens of rows, not thousands.
 - The default `contextmenu` is suppressed app-wide (it's the webview's Reload/Inspect menu). Right-click is ours; new actions go in the `contextmenu` handler as well as a visible button, since a menu alone isn't discoverable.
 - Shortcut labels come from `chord("k")`, never a hardcoded `⌘` — it reads `Ctrl+K` off macOS.
 - **A live session owns the keyboard.** The global `keydown` handler returns early when `activeId !== null`; every keystroke belongs to ssh. Only window-level chords (⌘K, ⌘N, ⌘W, ⌘[/]) may be intercepted, and each one you add is a key someone can no longer send to their remote shell.
 - xterm needs a laid-out element to size itself, so `fit()` after the pane is visible, not before.
 - **Core commands need a capability; ours don't.** Anything declared with `#[tauri::command]` and listed in `generate_handler!` works with no permission at all, but Tauri's own APIs — `listen`, `emit`, clipboard, path — are denied unless `src-tauri/capabilities/*.json` grants them. Deleting that file doesn't break `invoke("jacks")`, it just makes sessions open and sit there mute, which reads like a UI bug and isn't. If a `window.__TAURI__` call rejects for no visible reason, check the capability first.
+
+**The config can now run commands**
+
+- `[vpn.<folder>]` `up`/`down`/`check` are executed as written. Before this, a `patchbay.toml` could only ever produce an `ssh` argv — receiving one from someone else now means more than it did. Presets (`provider = "tailscale"`) are generated in `vpn.rs`, so prefer adding a preset over telling people to paste shell.
+- Commands must **return**. A foreground `openvpn` is killed after 45s (5s for `check`) with an error naming the alternatives — without that the toggle hung for the rest of the session.
+- Anything that reaches a `style` attribute or the desktop opener is validated on the way in *and* on the way out: `[colors]` must be `#rrggbb`, a jack's `url` must be http(s). Both are checked in Rust on save and again in JS before use.
 
 **Writing the config**
 
