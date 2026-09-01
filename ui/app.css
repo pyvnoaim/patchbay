@@ -12,6 +12,9 @@
   --bg:        #17171a;   /* opaque fallback; macOS paints vibrancy behind instead */
   --tip:       #3a3a42;
   --tip-fg:    #f2f2f6;
+  /* Lucide's chevron-down, as a mask - it is painted with --fg-faint at the point
+     of use, so unlike the colours above it needs no light-mode twin. */
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 @media (prefers-color-scheme: light) {
   :root {
@@ -345,15 +348,31 @@ button.flat:hover { background: var(--row-hover); color: var(--fg); }
 .f > span { font-size: 11px; color: var(--fg-faint); font-weight: 550; }
 /* Required, and only where saving actually refuses without it. */
 .f.req > span:first-child::after { content: "*"; color: var(--down); margin-left: 3px; }
-.f input {
+/* One box for both, or they drift: WebKit's native `menulist` select ignores the
+   padding below and sizes itself, which is why Space sat shorter than every field
+   around it. `appearance: none` is what makes a select take these metrics at all. */
+.f input, .f select {
   width: 100%; padding: 7px 10px;
   background: var(--row); color: var(--fg);
   border: 1px solid transparent; border-radius: 7px;
   font: inherit; outline: none;
   -webkit-user-select: text; user-select: text;
 }
-.f input:focus { border-color: var(--accent); }
+.f input:focus, .f select:focus { border-color: var(--accent); }
 .f input::placeholder { color: var(--fg-faint); }
+/* Which costs us the native chevron, so draw one. A mask rather than an image, so
+   the colour is still a token and light mode needs no second copy. */
+.f select { -webkit-appearance: none; appearance: none; padding-right: 28px; }
+.f:has(select) { position: relative; }
+.f:has(select)::after {
+  content: ""; position: absolute; right: 10px; pointer-events: none;
+  /* The control's own padding + border, so the box lands exactly on its text line
+     and the mask centres itself in it - nothing here to re-tune if that changes. */
+  bottom: 8px; width: 12px; height: 17px; height: 1lh;
+  background: var(--fg-faint);
+  -webkit-mask: var(--chevron) center / 12px no-repeat;
+  mask: var(--chevron) center / 12px no-repeat;
+}
 .sheet-err {
   margin: 0 16px 10px; padding: 7px 10px; border-radius: 7px;
   background: color-mix(in srgb, var(--down) 16%, transparent);
@@ -469,9 +488,10 @@ button:disabled { opacity: .5; }
 .setnav .i { width: 14px; height: 14px; flex: none; }
 /* The pane it lands on is the one that needs answering, so say which. */
 .setnav button.warn { color: var(--down); }
-/* A floor, so the sheet doesn't jump size as you move between a short pane and a
-   tall one - the rail would move under the cursor that just clicked it. */
-.setpanes { flex: 1; min-width: 0; min-height: 420px; padding: 16px 20px; overflow-y: auto; scrollbar-width: thin; }
+/* One height for every pane, so the sheet doesn't jump size as you move between a
+   short pane and a tall one - the rail would move under the cursor that just
+   clicked it. A pane taller than that (spaces, once you have a few) scrolls. */
+.setpanes { flex: 1; min-width: 0; height: 420px; padding: 16px 20px; overflow-y: auto; scrollbar-width: thin; }
 /* The pane's own heading is its title - nothing above it to be spaced away from. */
 .pane > .d-sec:first-child { margin-top: 0; }
 /* The settings sheet is a single column, so a row of fields needs its own grid. */
@@ -480,12 +500,6 @@ button:disabled { opacity: .5; }
 .opt input { margin: 2px 0 0; flex: none; accent-color: var(--accent); }
 .opt span { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; color: var(--fg-dim); }
 .opt b { font-weight: 550; color: var(--fg); }
-.f select {
-  width: 100%; padding: 7px 10px; background: var(--row); color: var(--fg);
-  border: 1px solid transparent; border-radius: 7px; font: inherit; outline: none;
-}
-.f select:focus { border-color: var(--accent); }
-
 .page-note { margin: 2px 0 8px; font-size: 12px; line-height: 1.5; color: var(--fg-dim); }
 
 /* One block per space in the settings sheet: what it is, where it syncs, what you
