@@ -7,6 +7,7 @@ mod patchbay;
 mod pty;
 mod rdp;
 mod rdp_session;
+mod team;
 mod terminal;
 mod vpn;
 
@@ -655,6 +656,50 @@ fn vpn_def(path: String) -> Result<Option<vpn::Vpn>, String> {
     Ok(vpn::load(&patchbay::config_path())?.get(&path).cloned())
 }
 
+/// One call for the whole loop — fetch, then push or adopt, whichever applies. The
+/// window runs it on focus and after every edit; with no team it returns immediately
+/// and touches nothing.
+#[tauri::command]
+async fn team_sync() -> team::Status {
+    tauri::async_runtime::spawn_blocking(team::sync)
+        .await
+        .unwrap_or_else(|e| team::Status {
+            state: "offline",
+            url: String::new(),
+            code: String::new(),
+            seats: 0,
+            paid: false,
+            error: Some(e.to_string()),
+            changed: false,
+        })
+}
+
+#[tauri::command]
+async fn team_join(url: String, code: String) -> Result<team::Status, String> {
+    tauri::async_runtime::spawn_blocking(move || team::join(&url, &code))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn team_create(url: String) -> Result<team::Status, String> {
+    tauri::async_runtime::spawn_blocking(move || team::create(&url))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn team_resolve(keep: String) -> Result<team::Status, String> {
+    tauri::async_runtime::spawn_blocking(move || team::resolve(&keep))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn team_leave() -> Result<(), String> {
+    team::leave()
+}
+
 #[tauri::command]
 fn config_path() -> String {
     patchbay::config_path().display().to_string()
@@ -692,6 +737,7 @@ fn main() {
             vpns, vpn_toggle, vpn_def, save_vpn, delete_vpn, vpn_providers,
             settings, save_settings, colors, save_color, defaults, save_defaults, ssh_keys,
             ssh_hosts,
+            team_sync, team_join, team_create, team_resolve, team_leave,
             open_rdp, open_rdp_session, close_rdp_session, rdp_input, tunnels, close_tunnel,
             open_session, open_task, write_session, resize_session, close_session
         ])

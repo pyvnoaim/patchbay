@@ -16,6 +16,7 @@ const vpnWrap = $("vpnwrap"), vpnForm = $("vpnform"), vpnErr = $("vpn-err"), vpn
 const setWrap = $("setwrap"), setForm = $("setform"), setErr = $("set-err");
 const impWrap = $("importwrap"), impForm = $("importform"), impList = $("imp-list");
 const impNote = $("imp-note"), impErr = $("imp-err"), impOk = $("imp-ok");
+const teamErr = $("team-err");
 
 const isMac = navigator.userAgent.includes("Mac");
 if (isMac) document.body.dataset.os = "macos";
@@ -44,6 +45,7 @@ let colors = {};              // [colors] overrides, os key -> hex
 let cfgPath = "";             // where the config lives, shown on first run
 let sshKeys = [];             // private keys found in ~/.ssh, to suggest in the key field
 let tunnels = [];             // live ssh -L forwards holding RDP open
+let team = { state: "off" };  // last answer from team_sync
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 

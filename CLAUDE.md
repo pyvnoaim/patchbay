@@ -14,6 +14,7 @@ Two front ends over one config format:
 - `src-tauri/src/config.rs` — the only code that *writes* the config. Everything else reads. Also owns `[settings]` and `[colors]`.
 - `src-tauri/src/vpn.rs` — per-folder VPN toggles: provider presets, and running the up/down/check commands.
 - `server/src/main.rs` — the team server. One shared config document per team, no accounts, seat limit enforced here. Never parses the TOML.
+- `src-tauri/src/team.rs` — the client half: `team.toml` beside the config, and the fetch-then-push-or-adopt loop behind the single `team_sync` command. **The window syncs; `bay` doesn't** — the CLI reads whatever file the window last agreed on, because a round trip on every `bay web` is a launcher that waits on a server.
 - `src-tauri/src/pty.rs` — in-app sessions: ssh on a real pty, streamed to xterm.js as `pty:<id>` events.
 - `src-tauri/src/rdp.rs` — remote desktop by handoff: writes a `.rdp`, and forwards a local port over the jump chain when there is one.
 - `src-tauri/src/rdp_session.rs` — the other remote desktop: IronRDP decoded to a framebuffer and blitted onto a `<canvas>`, the way `pty.rs` streams a terminal. The only place patchbay speaks a protocol itself.
@@ -107,6 +108,13 @@ aren't obvious from reading:
 - `[vpn.<folder>]` `up`/`down`/`check` are executed as written. Before this, a `patchbay.toml` could only ever produce an `ssh` argv — receiving one from someone else now means more than it did. Presets (`provider = "tailscale"`) are generated in `vpn.rs`, so prefer adding a preset over telling people to paste shell.
 - Commands must **return**. A foreground `openvpn` is killed after 45s (5s for `check`) with an error naming the alternatives — without that the toggle hung for the rest of the session.
 - Anything that reaches a `style` attribute or the desktop opener is validated on the way in *and* on the way out: `[colors]` must be `#rrggbb`, a jack's `url` must be http(s). Both are checked in Rust on save and again in JS before use.
+
+**Teams**
+
+- The config file *is* the shared document, so the team code and device id live in `team.toml` beside it, never in it — a code in the config is a credential in a file the whole team reads.
+- `[settings]` is stripped on the way out and re-inserted on the way in. Everything else — jacks, folders, `[vpn]`, `[colors]`, `[defaults]` — is the team's. The hash that decides "did we change anything" is taken over the *stripped* document, or toggling a local preference asks for a push.
+- There is no merge. Both sides moved is a `conflict` the user resolves by picking a side, and whichever side loses is kept as `patchbay.toml.bak`. Don't invent a three-way merge for a file people hand-edit.
+- Everything routes through `team_sync`, which is idempotent — new callers just call it. It is never awaited by `load()`: a dead server must not hold the device list up for the timeout.
 
 **Writing the config**
 

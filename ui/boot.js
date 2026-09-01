@@ -152,10 +152,23 @@ async function load() {
     render();
     refreshProbes();
     refreshVpns();
+    syncTeam();
   } catch (e) {
     treeEl.innerHTML = "";
     listEl.innerHTML = `<p class="empty">${esc(e)}</p>`;
   }
+}
+
+/// Push what we changed, take what they changed. Deliberately not awaited by load():
+/// a team server that has gone away must not hold the list up for a timeout, and with
+/// no team configured this returns without touching the network at all.
+async function syncTeam() {
+  team = await invoke("team_sync").catch((e) => ({ state: "offline", error: String(e) }));
+  renderTeam();
+  // A pull rewrote the config under whatever just read it. One reload, and the next
+  // sync says nothing changed, so this can't loop.
+  if (team.changed) return load();
+  render();
 }
 
 const PROBE_EVERY = 30_000;

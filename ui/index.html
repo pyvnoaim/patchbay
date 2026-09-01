@@ -127,6 +127,31 @@
           Override any of them below — every device with that OS follows.</span></label>
         <div class="swatches" id="swatches"></div>
 
+        <div class="d-sec">Team</div>
+        <p class="page-note">One shared list on a server you run. Devices, folders, VPNs and colours
+        are the team's; the preferences above stay on this machine. The code is the only credential —
+        anyone who has it has the list.</p>
+        <div id="team-off">
+          <div class="grid2">
+            <label class="f wide"><span>Team server</span><input id="team-url" spellcheck="false" placeholder="https://patchbay.example"></label>
+            <label class="f wide"><span>Team code</span><input id="team-code" spellcheck="false" placeholder="from whoever made the team"></label>
+          </div>
+          <div class="btns">
+            <button type="button" class="primary" id="team-join">Join</button>
+            <button type="button" class="ghost" id="team-create">Create a team</button>
+          </div>
+        </div>
+        <div id="team-on" hidden>
+          <div class="mono" id="team-where"></div>
+          <p class="page-note" id="team-state"></p>
+          <div class="btns" id="team-fix" hidden>
+            <button type="button" class="ghost" id="team-theirs">Take the team's list</button>
+            <button type="button" class="ghost" id="team-mine">Push mine instead</button>
+          </div>
+          <div class="btns"><button type="button" class="ghost" id="team-leave"></button></div>
+        </div>
+        <p class="sheet-err" id="team-err" hidden></p>
+
         <div class="d-sec">Config file</div>
         <p class="page-note">Everything here is stored in this file. It's plain TOML — edit it by hand
         whenever you prefer; patchbay keeps your comments and formatting.</p>

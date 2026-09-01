@@ -404,6 +404,7 @@ vpnForm.addEventListener("submit", async (e) => {
     });
     closeVpn();
     await refreshVpns();
+    syncTeam();
   } catch (err) { showErr(vpnErr, String(err)); }
 });
 $("vpn-cancel").addEventListener("click", closeVpn);
@@ -412,7 +413,7 @@ vpnDelete.addEventListener("click", async () => {
   const path = vpnEditing;
   if (!(await ask(`Remove the VPN on "${path}"? The folder and its devices stay.`, null, "Remove"))) return;
   closeVpn();
-  try { await invoke("delete_vpn", { path }); await refreshVpns(); }
+  try { await invoke("delete_vpn", { path }); await refreshVpns(); syncTeam(); }
   catch (e) { alertish(e); }
 });
 
@@ -433,6 +434,9 @@ async function openSettings() {
   const defs = await invoke("defaults").catch(() => ({}));
   for (const k of DEFAULT_KEYS) setForm.elements[`def_${k}`].value = defs[k] ?? "";
   renderSwatches();
+  teamErr.hidden = true;
+  renderTeam();
+  syncTeam();   // seats and state, fresh, while the sheet is already up
   $("page-openconfig").innerHTML = `${icon("file-pen-line")}Open config file`;
   setWrap.hidden = false;
   try { $("cfgpath").textContent = await invoke("config_path"); } catch { /* shown blank */ }
@@ -468,6 +472,52 @@ $("set-cancel").addEventListener("click", closeSettings);
 $("page-openconfig").addEventListener("click", () => invoke("open_config"));
 setWrap.addEventListener("mousedown", (e) => { if (e.target === setWrap) closeSettings(); });
 
+// ── team ───────────────────────────────────────────────────────────────────
+// The config file is the shared document. Everything here is one call away from
+// team_sync, which is the only thing in the app that talks to the server.
+function renderTeam() {
+  const joined = team.state !== "off";
+  $("team-off").hidden = joined;
+  $("team-on").hidden = !joined;
+  if (!joined) return;
+  $("team-leave").innerHTML = `${icon("unplug")}Leave the team`;
+  $("team-where").textContent = `${team.code}   ${team.url}`;
+  $("team-fix").hidden = team.state !== "conflict";
+  const seats = `${team.seats} seat${team.seats === 1 ? "" : "s"}${team.paid ? "" : ", free up to three"}`;
+  $("team-state").textContent =
+    team.state === "conflict"
+      ? "Your list and the team's have both changed since they last agreed. Pick one — " +
+        "whichever you drop is kept beside your config as patchbay.toml.bak."
+      : team.state === "blocked"
+        ? `${team.error ?? ""} Your edits stay on this machine until the team has room for them.`
+        : team.state === "offline"
+          ? `Not reaching the server: ${team.error ?? ""} — your list still works, and changes go up when it answers.`
+          : `In sync · ${seats}`;
+}
+
+async function teamCall(fn) {
+  teamErr.hidden = true;
+  try {
+    team = await fn();
+    renderTeam();
+    await load();
+  } catch (e) { showErr(teamErr, String(e)); }
+}
+
+const teamUrl = () => $("team-url").value.trim();
+$("team-join").addEventListener("click", () =>
+  teamCall(() => invoke("team_join", { url: teamUrl(), code: $("team-code").value.trim() })));
+$("team-create").addEventListener("click", () =>
+  teamCall(() => invoke("team_create", { url: teamUrl() })));
+$("team-theirs").addEventListener("click", () =>
+  teamCall(() => invoke("team_resolve", { keep: "theirs" })));
+$("team-mine").addEventListener("click", () =>
+  teamCall(() => invoke("team_resolve", { keep: "mine" })));
+$("team-leave").addEventListener("click", async () => {
+  if (!(await ask("Leave the team? Your copy of the list stays on this machine.", null, "Leave"))) return;
+  teamCall(async () => { await invoke("team_leave"); return { state: "off" }; });
+});
+
 // Every OS actually in use, plus anything already overridden.
 function renderSwatches() {
   const inUse = [...new Set(all.map((j) => osKey(j.os)).filter(Boolean))];
@@ -501,6 +551,7 @@ async function setColor(os, hex) {
     colors = await invoke("colors");
     renderSwatches();
     render();
+    syncTeam();   // [colors] is the team's, and nothing here goes through load()
   } catch (err) { showErr(setErr, String(err)); }
 }
 

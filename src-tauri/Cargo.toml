@@ -35,6 +35,10 @@ ironrdp-cliprdr = "0.7.0"
 arboard = "3.6.1"
 ironrdp-core = "0.2.1"
 sha2 = "0.11.0"
+# The team server, and nothing else — blocking, because every call to it already
+# runs on a spawn_blocking thread. rustls rather than native-tls to keep the build
+# free of an openssl dependency; it is already here for RDP.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.5"

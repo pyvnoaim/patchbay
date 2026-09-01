@@ -52,7 +52,7 @@ fn write_doc(path: &Path, doc: &DocumentMut) -> Result<(), String> {
 /// Hands them back for `rehome_comments` instead.
 /// ponytail: the whole block moves, so a comment about a deleted jack ends up above
 /// the next one. A stale comment is visible and fixable; a deleted one isn't.
-fn orphan_comments(parent: &mut Table, key: &str) -> Option<(String, usize)> {
+pub fn orphan_comments(parent: &mut Table, key: &str) -> Option<(String, usize)> {
     let removed = parent.remove(key)?;
     let t = removed.as_table()?;
     let prefix = t.decor().prefix()?.as_str()?;
@@ -82,7 +82,7 @@ fn prepend_prefix(item: &mut Item, at: usize, comments: &str) -> bool {
     t.iter_mut().any(|(_, v)| prepend_prefix(v, at, comments))
 }
 
-fn rehome_comments(doc: &mut DocumentMut, orphan: Option<(String, usize)>) {
+pub fn rehome_comments(doc: &mut DocumentMut, orphan: Option<(String, usize)>) {
     let Some((comments, was_at)) = orphan else { return };
     match first_position_after(doc.as_item(), was_at) {
         Some(at) => {
@@ -206,6 +206,17 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
         }
     }
 
+    write_doc(path, &doc)
+}
+
+/// Replace the whole config with a document from somewhere else — the team's copy.
+/// Parsed before it lands, so a server handing us something unparseable can't leave
+/// a broken file behind, and written the same temp-and-rename way as every other edit.
+/// No plain `replace()` twin: team.rs is the only caller and it already has the path.
+pub fn replace_at(path: &Path, src: &str) -> Result<(), String> {
+    let doc = src
+        .parse::<DocumentMut>()
+        .map_err(|e| format!("the team's config doesn't parse: {e}"))?;
     write_doc(path, &doc)
 }
 

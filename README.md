@@ -121,6 +121,28 @@ folders = ["acme/prod"]
 A `custom` VPN runs whatever `up`/`down`/`check` you give it, so treat a config
 someone sends you the way you'd treat their shell script.
 
+## Teams
+
+One shared list, on a server you run — `npm run server`, or the `patchbay-server`
+binary anywhere that has a disk. Settings → Team → **Create a team** hands you a code;
+anyone who types that code into their own window has the same list.
+
+The shared thing is the config file itself, so there is nothing new to learn: devices,
+folders, VPNs and colours are the team's, while the preferences above them stay on your
+machine. The window syncs when it gets focus and after every edit; `bay` reads whatever
+that left on disk, so the CLI never waits on a server.
+
+There is no merge and no account. The code *is* the credential — anyone who has it has
+the list — and if your list and the team's have both moved since they last agreed, the
+window says so and asks which one wins. Whichever loses is kept as `patchbay.toml.bak`.
+
+Three seats are free; past that everyone can still read the list, and writing asks you
+to pay. Nothing is stored anywhere unless you point patchbay at a server yourself.
+
+Worth knowing before you join one: a `[vpn]` block runs the commands written in it, and
+joining a team means those arrive from your colleagues rather than from you. Join teams
+you'd trust with a shell script, which is the same rule as any config someone sends you.
+
 ## What it deliberately isn't
 
 Real credentials live in your ssh agent and your existing keys — patchbay stores

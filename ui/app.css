@@ -248,6 +248,7 @@ button.ghost { flex: none; }
 
 /* ── sidebar footer ────────────────────────────────────────── */
 .side-foot { display: flex; gap: 4px; padding: 6px 10px 10px; flex: none; }
+.side-foot .flat.warn { color: var(--down); }
 #settings { margin-left: auto; }   /* bottom-right of the sidebar */
 button.flat {
   flex: none; padding: 5px; border-radius: 6px;
