@@ -7,9 +7,10 @@ Two front ends over one config format:
 
 - `src/patchbay.ts` — config load, `[defaults]` inheritance, jump-chain walk, name resolve. All the logic worth testing lives here.
 - `src/cli.ts` — arg dispatch and process spawning. Keep it dumb.
-- `src/import.ts` — `bay import`: an ssh config in, TOML on stdout. It never writes; there is no Rust twin because the app has no importer, so it sits outside the `patchbay.ts`/`patchbay.rs` mirror.
+- `src/import.ts` — `bay import`: an ssh config in, TOML on stdout, never a write. **Ported to `src-tauri/src/import.rs`**, which the window uses to show the same list and save what you tick. A second mirrored pair; change one, change both.
 - `test/patchbay.test.ts`, `test/import.test.ts` — `node:test` + `assert`.
 - `src-tauri/src/patchbay.rs` — **a port of `src/patchbay.ts`**, because the app can't import TypeScript. Same behaviour, same errors, same argv; its tests mirror the TS ones. Change one, change both.
+- `src-tauri/src/import.rs` — the port of `src/import.ts`. Parses only; the window writes what was ticked through `save_jack` like any other edit.
 - `src-tauri/src/config.rs` — the only code that *writes* the config. Everything else reads. Also owns `[settings]` and `[colors]`.
 - `src-tauri/src/vpn.rs` — per-folder VPN toggles: provider presets, and running the up/down/check commands.
 - `server/src/main.rs` — the team server. One shared config document per team, no accounts, seat limit enforced here. Never parses the TOML.

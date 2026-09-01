@@ -72,6 +72,7 @@ document.addEventListener("contextmenu", (e) => {
     { icon: "plus", label: "New device…", run: () => openJack(null, group) },
     { icon: "folder-plus", label: "New folder…", run: () => newGroup(null) },
     "-",
+    { icon: "download", label: "Import from ssh config…", run: () => openImport() },
     { icon: "file-pen-line", label: "Open config file", run: () => invoke("open_config") },
   ]);
 });
@@ -245,6 +246,87 @@ function alertish(e) {
   const box = detailEl.querySelector(".mono");
   if (box) { box.textContent = String(e); box.classList.add("err"); }
 }
+
+// ── import sheet ───────────────────────────────────────────────────────────
+// The CLI prints TOML and you paste it; the window has somewhere to show the list,
+// so it ticks and writes instead — through save_jack, like every other edit.
+let impFound = [];
+
+async function openImport() {
+  impFound = [];
+  impErr.hidden = true;
+  impList.innerHTML = "";
+  impNote.textContent = "Reading your ssh config…";
+  impOk.disabled = true;
+  impWrap.hidden = false;
+
+  let r;
+  try {
+    r = await invoke("ssh_hosts");
+  } catch (err) {
+    impNote.textContent = "";
+    return showErr(impErr, String(err));
+  }
+
+  // A host already in the config is shown but not ticked, so running this twice is
+  // safe and you can see what it would have added.
+  impFound = r.hosts.map((h) => ({ ...h, here: all.some((j) => j.name === h.name) }));
+  const fresh = impFound.filter((h) => !h.here).length;
+  impNote.innerHTML =
+    `<b>${impFound.length}</b> host${impFound.length === 1 ? "" : "s"} in ${esc(r.path)}` +
+    `${fresh < impFound.length ? ` · ${impFound.length - fresh} already here` : ""}` +
+    r.warnings.map((w) => `<span class="warn">${esc(w)}</span>`).join("");
+
+  impList.innerHTML = impFound.map((h, i) => `
+    <label class="imp-row">
+      <input type="checkbox" data-i="${i}"${h.here ? " disabled" : " checked"}>
+      <span class="imp-name">${esc(h.name)}</span>
+      <span class="imp-host">${esc(h.user ? `${h.user}@${h.host}` : h.host)}${h.port ? `:${h.port}` : ""}</span>
+      ${h.here ? `<span class="imp-tag">already here</span>` : ""}
+    </label>`).join("");
+  impOk.disabled = !fresh;
+}
+
+const closeImport = () => { impWrap.hidden = true; };
+$("imp-cancel").addEventListener("click", closeImport);
+impWrap.addEventListener("mousedown", (e) => { if (e.target === impWrap) closeImport(); });
+$("imp-all").addEventListener("click", () => {
+  const boxes = [...impList.querySelectorAll("input:not(:disabled)")];
+  const to = !boxes.every((b) => b.checked);
+  for (const b of boxes) b.checked = to;
+});
+
+impForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const picked = [...impList.querySelectorAll("input:checked")].map((b) => impFound[+b.dataset.i]);
+  if (!picked.length) return showErr(impErr, "nothing ticked to import");
+
+  impOk.disabled = true;
+  impOk.textContent = "Importing…";
+  // ponytail: one write per host, because save_jack is the only writer and a failure
+  // then names the host it was on. A bulk writer when someone imports enough for the
+  // rewrites to show.
+  const failed = [];
+  for (const h of picked) {
+    try {
+      await invoke("save_jack", {
+        original: null,
+        jack: {
+          name: h.name, host: h.host,
+          user: h.user ?? null, port: h.port ?? null,
+          key: h.key ?? null, jump: h.jump ?? null,
+          folders: [], forward: [],
+        },
+      });
+    } catch { failed.push(h.name); }
+  }
+  impOk.textContent = "Import";
+  await load();
+
+  if (!failed.length) return closeImport();
+  impOk.disabled = false;
+  showErr(impErr, `${picked.length - failed.length} imported, ${failed.length} refused: ${failed.join(", ")}`);
+});
 
 // ── vpn sheet ──────────────────────────────────────────────────────────────
 let vpnEditing = null;

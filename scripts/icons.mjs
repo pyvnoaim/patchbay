@@ -19,6 +19,7 @@ const USED = [
   "copy",
   "check",
   "file-pen-line",  // edit config
+  "download",       // import from an ssh config
   "plus",
   "pencil",
   "trash-2",

@@ -28,7 +28,7 @@ Match host *.internal
 `;
 
 test("hosts become jacks, patterns and Match blocks do not", () => {
-  const j = fromSshConfig(CONFIG);
+  const { hosts: j } = fromSshConfig(CONFIG);
   assert.deepEqual(j.map((x) => x.name), ["bastion-example", "web", "prod-web", "db", "bare"]);
 
   assert.deepEqual(j[0], {
@@ -52,36 +52,34 @@ test("hosts become jacks, patterns and Match blocks do not", () => {
 });
 
 test("a jump pointing at another Host follows it to the renamed jack", () => {
-  const j = fromSshConfig(CONFIG);
+  const { hosts: j } = fromSshConfig(CONFIG);
   assert.equal(j[1].jump, "bastion-example", "the dot is gone from the name it points at");
 });
 
 test("a multi-hop ProxyJump keeps the hop nearest the target and says so", () => {
-  const warnings: string[] = [];
-  const j = fromSshConfig(CONFIG, (m) => warnings.push(m));
+  const { hosts: j, warnings } = fromSshConfig(CONFIG);
   assert.equal(j[3].jump, "10.0.0.4", "the last -J entry is the one before the target");
   assert.ok(warnings.some((w) => w.includes("dropped the rest")), warnings.join("\n"));
 });
 
 test("colliding names get a suffix rather than overwriting each other", () => {
-  const j = fromSshConfig("Host a.b\nHost a-b\n");
+  const { hosts: j } = fromSshConfig("Host a.b\nHost a-b\n");
   assert.deepEqual(j.map((x) => x.name), ["a-b", "a-b-2"]);
 });
 
 test("an unfollowed Include is reported, not silently skipped", () => {
-  const warnings: string[] = [];
-  fromSshConfig("Include ~/.ssh/work/*\nHost x\n", (m) => warnings.push(m));
+  const { warnings } = fromSshConfig("Include ~/.ssh/work/*\nHost x\n");
   assert.ok(warnings.some((w) => w.includes("Include")), warnings.join("\n"));
 });
 
 test("keywords are case-insensitive and = separates as well as a space", () => {
-  const [j] = fromSshConfig("HOST one\n  hostname=10.0.0.7\n  USER  bob\n");
+  const [j] = fromSshConfig("HOST one\n  hostname=10.0.0.7\n  USER  bob\n").hosts;
   assert.equal(j.host, "10.0.0.7");
   assert.equal(j.user, "bob");
 });
 
 test("the toml round-trips and leaves out what wasn't set", () => {
-  const out = toToml(fromSshConfig("Host one\n  HostName 10.0.0.7\n"));
+  const out = toToml(fromSshConfig("Host one\n  HostName 10.0.0.7\n").hosts);
   assert.match(out, /\[jack\.one\]/);
   assert.match(out, /host = "10\.0\.0\.7"/);
   assert.doesNotMatch(out, /user/, "an unset key must not appear at all");

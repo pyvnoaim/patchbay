@@ -22,8 +22,11 @@ const unquote = (v: string) =>
 /** A pattern, not a host: ssh matches these, patchbay can't list them. */
 const isPattern = (h: string) => h.startsWith("!") || h.includes("*") || h.includes("?");
 
-export function fromSshConfig(src: string, warn: (m: string) => void = () => {}): Imported[] {
+/** Warnings come back rather than going to a callback: the CLI prints them, the app
+ *  shows them, and `import.rs` can mirror the signature exactly. */
+export function fromSshConfig(src: string): { hosts: Imported[]; warnings: string[] } {
   const out: Imported[] = [];
+  const warnings: string[] = [];
   const byAlias = new Map<string, string>();
   const taken = new Set<string>();
   let aliases: string[] = [];
@@ -37,7 +40,7 @@ export function fromSshConfig(src: string, warn: (m: string) => void = () => {})
       // at each other, which we can't synthesise from a list of raw specs.
       const hops = jump.split(",").map((h) => h.trim());
       jump = hops.at(-1);
-      warn(`${aliases.join(", ")}: ProxyJump has ${hops.length} hops — kept "${jump}", dropped the rest`);
+      warnings.push(`${aliases.join(", ")}: ProxyJump has ${hops.length} hops — kept "${jump}", dropped the rest`);
     }
     for (const alias of aliases) {
       // A dot is refused in a jack name, and two aliases can flatten onto one.
@@ -91,13 +94,13 @@ export function fromSshConfig(src: string, warn: (m: string) => void = () => {})
   }
   flush();
 
-  if (included) warn("Include lines were not followed — run the importer on those files too");
+  if (included) warnings.push("Include lines were not followed — run the importer on those files too");
 
   // A ProxyJump naming another Host has to point at that jack's sanitised name;
   // anything else is a raw spec, which patchbay passes through to ssh untouched.
   for (const j of out) if (j.jump && byAlias.has(j.jump)) j.jump = byAlias.get(j.jump);
 
-  return out;
+  return { hosts: out, warnings };
 }
 
 export function toToml(jacks: Imported[]): string {

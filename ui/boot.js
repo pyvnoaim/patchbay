@@ -30,6 +30,7 @@ treeEl.addEventListener("click", (e) => {
 listEl.addEventListener("click", (e) => {
   const act = e.target.closest("[data-first]")?.dataset.first;
   if (act === "new") return openJack(null, group);
+  if (act === "import") return openImport();
   if (act === "cfg") return invoke("open_config");
   const row = e.target.closest(".jack");
   if (!row) return;

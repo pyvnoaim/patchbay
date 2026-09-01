@@ -274,7 +274,7 @@ button.flat:hover { background: var(--row-hover); color: var(--fg); }
 /* ── sheets (add/edit) ─────────────────────────────────────── */
 /* Every overlay belongs here. One left out sits in normal flow at the end of
    <body>, escaping the window and stretching the layout behind it. */
-#sheetwrap, #askwrap, #vpnwrap {
+#sheetwrap, #askwrap, #vpnwrap, #importwrap {
   position: fixed; inset: 0; z-index: 20;
   background: rgba(0,0,0,.34);
   display: flex; justify-content: center; align-items: center;
@@ -297,6 +297,17 @@ button.flat:hover { background: var(--row-hover); color: var(--fg); }
   display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
 }
 .sheet.small .sheet-body { display: block; }
+.sheet.imp .sheet-body { display: block; }
+.imp-note { font-size: 12px; line-height: 1.5; color: var(--fg-dim); margin-bottom: 10px; }
+.imp-note b { color: var(--fg); font-weight: 550; }
+.imp-note .warn { display: block; margin-top: 6px; color: var(--down); }
+.imp-list { display: flex; flex-direction: column; gap: 1px; }
+.imp-row { display: flex; align-items: center; gap: 8px; padding: 5px 7px; border-radius: 6px; font-size: 12.5px; }
+.imp-row:hover { background: var(--row-hover); }
+.imp-row input { flex: none; accent-color: var(--accent); }
+.imp-name { font-weight: 550; }
+.imp-host { color: var(--fg-dim); font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+.imp-tag { margin-left: auto; flex: none; color: var(--fg-faint); font-size: 11px; }
 .sheet.small .f + .f { margin-top: 10px; }
 .f { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .f.wide { grid-column: 1 / -1; }

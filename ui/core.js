@@ -14,6 +14,8 @@ const askUserField = $("ask-user-field"), askUser = $("ask-user"), askLabel = $(
 const askBody = askForm.querySelector(".sheet-body");
 const vpnWrap = $("vpnwrap"), vpnForm = $("vpnform"), vpnErr = $("vpn-err"), vpnDelete = $("vpn-delete");
 const setWrap = $("setwrap"), setForm = $("setform"), setErr = $("set-err");
+const impWrap = $("importwrap"), impForm = $("importform"), impList = $("imp-list");
+const impNote = $("imp-note"), impErr = $("imp-err"), impOk = $("imp-ok");
 
 const isMac = navigator.userAgent.includes("Mac");
 if (isMac) document.body.dataset.os = "macos";

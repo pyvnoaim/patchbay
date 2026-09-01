@@ -86,9 +86,10 @@ if (cmd === "edit") edit();
 if (cmd === "import") {
   const file = rest[0] ?? join(homedir(), ".ssh", "config");
   if (!existsSync(file)) die(`no ssh config at ${file}`);
-  const found = fromSshConfig(readFileSync(file, "utf8"), (m) => console.error(c("yellow", m)));
-  if (!found.length) die(`no hosts in ${file}`);
-  process.stdout.write(toToml(found));
+  const { hosts, warnings } = fromSshConfig(readFileSync(file, "utf8"));
+  for (const w of warnings) console.error(c("yellow", w));
+  if (!hosts.length) die(`no hosts in ${file}`);
+  process.stdout.write(toToml(hosts));
   process.exit(0);
 }
 

@@ -122,6 +122,7 @@ function render() {
           <div class="mono">${esc(cfgPath)}</div>
           <div class="btns">
             <button class="primary" data-first="new">${icon("plus")}Add a device</button>
+            <button class="ghost" data-first="import">${icon("download")}Import from ssh config</button>
             <button class="ghost" data-first="cfg">${icon("file-pen-line")}Open config file</button>
           </div>
         </div>`;

@@ -181,6 +181,23 @@
     </form>
   </div>
 
+  <div id="importwrap" hidden>
+    <form class="sheet imp" id="importform" autocomplete="off">
+      <div class="sheet-head">Import from ssh config</div>
+      <div class="sheet-body">
+        <p class="imp-note" id="imp-note"></p>
+        <div class="imp-list" id="imp-list"></div>
+      </div>
+      <p class="sheet-err" id="imp-err" hidden></p>
+      <div class="sheet-foot">
+        <button type="button" class="flat" id="imp-all">Select all</button>
+        <span style="flex:1"></span>
+        <button type="button" id="imp-cancel">Cancel</button>
+        <button type="submit" class="primary" id="imp-ok">Import</button>
+      </div>
+    </form>
+  </div>
+
   <div id="palette" hidden>
     <div class="pal">
       <div class="search pal-search"><span id="pq-icon"></span><input id="pq" placeholder="Connect to…" spellcheck="false" autocomplete="off"></div>

@@ -2,6 +2,7 @@
 
 mod clipboard;
 mod config;
+mod import;
 mod patchbay;
 mod pty;
 mod rdp;
@@ -276,6 +277,33 @@ fn close_session(sessions: tauri::State<'_, pty::Shared>, id: u32) {
 #[tauri::command]
 fn save_jack(original: Option<String>, jack: config::JackInput) -> Result<(), String> {
     config::save_jack(original, jack)
+}
+
+#[derive(Serialize)]
+struct SshHosts {
+    path: String,
+    hosts: Vec<import::Imported>,
+    warnings: Vec<String>,
+}
+
+/// What an ssh config could become. Nothing is written here — the window shows the
+/// list and writes only what gets ticked, through `save_jack` like every other edit.
+/// ponytail: `~/.ssh/config` only. `bay import <file>` takes a path for the odd
+/// case, and a picker in the window would be a file dialog for a file that is always
+/// in the same place.
+#[tauri::command]
+fn ssh_hosts() -> Result<SshHosts, String> {
+    let path = dirs::home_dir()
+        .ok_or("no home directory to find an ssh config in")?
+        .join(".ssh")
+        .join("config");
+    let src = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let found = import::from_ssh_config(&src);
+    Ok(SshHosts {
+        path: path.display().to_string(),
+        hosts: found.hosts,
+        warnings: found.warnings,
+    })
 }
 
 #[tauri::command]
@@ -663,6 +691,7 @@ fn main() {
             save_jack, delete_jack, rename_group, delete_group, open_url,
             vpns, vpn_toggle, vpn_def, save_vpn, delete_vpn, vpn_providers,
             settings, save_settings, colors, save_color, defaults, save_defaults, ssh_keys,
+            ssh_hosts,
             open_rdp, open_rdp_session, close_rdp_session, rdp_input, tunnels, close_tunnel,
             open_session, open_task, write_session, resize_session, close_session
         ])

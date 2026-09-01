@@ -18,6 +18,10 @@ bay edit              open the config
 bay import [file]     print TOML for the hosts in your ssh config
 ```
 
+The CLI prints the TOML for you to check and paste. In the app it's the same list with
+tick boxes — right-click the device list, or the button on the empty state.
+
+
 ## Install
 
 Needs Node ≥ 22.6 (it runs the TypeScript directly — there is no build step) and an
