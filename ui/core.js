@@ -58,6 +58,14 @@ const TEAM_STUCK = {
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+// A sheet is modal to the keyboard; the palette is not, it does its own. Kept apart
+// because folding them together would let a ⌘K opened over a sheet change which one
+// Escape closes.
+const sheetOpen = () => [sheetWrap, askWrap, vpnWrap, setWrap, impWrap].some((el) => !el.hidden);
+// Anything painting over the window at all, palette included — a web tab is an OS
+// view stacked above the page and has to shrink away for every one of these.
+const modalOpen = () => sheetOpen() || !paletteEl.hidden;
+
 // Lucide, inlined at generate time by scripts/icons.mjs — see ui/icons.js.
 const icon = (name) =>
   `<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"

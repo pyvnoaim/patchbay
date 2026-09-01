@@ -40,7 +40,12 @@ document.addEventListener("contextmenu", (e) => {
     return showCtx(e.clientX, e.clientY, j.name, [
       { icon: "square-terminal", label: "Connect", run: () => connect(j.name) },
       { icon: "external-link", label: "Open in Terminal", run: () => connect(j.name, true) },
-      ...(j.url ? [{ icon: "globe", label: "Open web UI", run: () => openWeb(j.name) }] : []),
+      ...(j.url ? [
+        { icon: "globe", label: "Open web UI", run: () => openWeb(j.name) },
+        // The handoff stays, the way Terminal and the system RDP client do — and it's
+        // the only way to reach a page whose certificate needs clicking through.
+        { icon: "external-link", label: "Open web UI in browser", run: () => invoke("open_url", { name: j.name }).catch(alertish) },
+      ] : []),
       ...(j.rdp ? [
         { icon: "monitor", label: "Remote desktop", run: () => openRdp(j.name) },
         { icon: "external-link", label: "Remote desktop in system client", run: () => handOffRdp(j.name) },

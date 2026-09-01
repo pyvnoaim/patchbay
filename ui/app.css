@@ -395,6 +395,10 @@ button:disabled { opacity: .5; }
            display: flex; justify-content: center; align-items: center; padding: 5vh 16px; }
 /* The desktop keeps its aspect ratio and sits on black, the way every remote
    desktop client letterboxes a session that doesn't match the window. */
+/* Nothing is drawn in here — the child webview is an OS view sitting exactly over it,
+   and this div exists only to be measured. The padding the terminal wants would put
+   the page off-centre from its own tab, so it goes. */
+.webhost { padding: 0; background: var(--bg); }
 .rdphost { display: grid; place-items: center; background: #000; overflow: hidden; }
 .rdphost canvas { max-width: 100%; max-height: 100%; outline: none; }
 .tabkind { display: inline-flex; opacity: .55; }

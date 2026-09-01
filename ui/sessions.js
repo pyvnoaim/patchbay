@@ -102,7 +102,8 @@ function closeSession(id) {
   const s = sessions.get(id);
   if (!s) return;
   const vpath = prefs.vpn_auto_disconnect === true ? vpnFor(s.name) : null;
-  invoke(s.kind === "rdp" ? "close_rdp_session" : "close_session", { id }).catch(() => {});
+  const closer = { rdp: "close_rdp_session", web: "close_web_view" }[s.kind] ?? "close_session";
+  invoke(closer, { id }).catch(() => {});
   s.unlisten.forEach((f) => f());
   s.term?.dispose();
   s.host.remove();
@@ -127,9 +128,79 @@ function showTab() {
     const s = sessions.get(activeId);
     // The pane only has its real size once it's visible, so fit after the swap.
     // A canvas scales itself in CSS and just needs the keyboard.
-    requestAnimationFrame(() => { s.fit?.fit(); (s.term ?? s.canvas).focus(); });
+    requestAnimationFrame(() => { s.fit?.fit(); (s.term ?? s.canvas)?.focus(); });
   }
+  placeWebViews();
   renderDetail();
+}
+
+// A child webview is an OS view stacked above the page: `hidden` does nothing to it
+// and it covers every sheet. So each one is either exactly over its own host div or
+// sized to nothing, and anything that opens on top has to call this again.
+function placeWebViews() {
+  for (const s of sessions.values()) {
+    if (s.kind !== "web") continue;
+    const r = s.host.getBoundingClientRect();
+    const shown = s.id === activeId && !modalOpen() && r.width > 0;
+    invoke("place_web_view", {
+      id: s.id,
+      x: shown ? r.left : 0,
+      y: shown ? r.top : 0,
+      width: shown ? r.width : 0,
+      height: shown ? r.height : 0,
+    }).catch(() => {});
+  }
+}
+
+// One observer instead of a `placeWebViews()` at every sheet's open and close: a new
+// overlay that forgot the call would have a web tab painted straight over it, which is
+// exactly the quiet failure the overlay rules in CLAUDE.md already warn about.
+let overlayWatch = null;
+function watchOverlays() {
+  if (overlayWatch) return;
+  overlayWatch = new MutationObserver(placeWebViews);
+  for (const el of [sheetWrap, askWrap, vpnWrap, setWrap, impWrap, paletteEl]) {
+    overlayWatch.observe(el, { attributes: true, attributeFilter: ["hidden"] });
+  }
+}
+
+async function openWebSession(name) {
+  watchOverlays();
+  const id = nextId++;
+  const host = document.createElement("div");
+  host.className = "termhost webhost";
+  termsEl.append(host);
+
+  const s = { id, name, kind: "web", host, dead: false, unlisten: [] };
+  sessions.set(id, s);
+  activeId = id;
+  showTab();
+  renderTabs();
+  renderTree();
+
+  // The rect only exists once the host is laid out and visible.
+  await new Promise((r) => requestAnimationFrame(r));
+  const r = host.getBoundingClientRect();
+  try {
+    await invoke("open_web_view", {
+      id, name, x: r.left, y: r.top, width: r.width, height: r.height,
+    });
+  } catch (e) {
+    s.dead = true;
+    renderTabs();
+    return alertish(e);
+  }
+
+  // Alongside the view rather than in front of it. A page a webview won't load shows
+  // as blank with no reason of its own, so this is the only thing that can say why.
+  invoke("web_check", { name }).catch(async (e) => {
+    if (!sessions.has(id)) return;
+    s.dead = true;
+    renderTabs();
+    if (await ask(`${e}. Open it in your browser instead?`, null, "Open in browser")) {
+      invoke("open_url", { name }).catch(alertish);
+    }
+  });
 }
 
 function renderTabs() {
@@ -141,6 +212,7 @@ function renderTabs() {
       <div class="tab ${s.dead ? "dead" : ""}" data-id="${s.id}" aria-selected="${s.id === activeId}">
         <span class="dot ${s.dead ? "down" : "up"}"></span>
         ${s.kind === "rdp" ? `<span class="tabkind">${icon("monitor")}</span>` : ""}
+        ${s.kind === "web" ? `<span class="tabkind">${icon("globe")}</span>` : ""}
         ${s.task ? `<span class="tabkind">${icon(s.task === "trace" ? "waypoints" : "plug")}</span>` : ""}
         <span class="lbl">${esc(s.task ? `${s.task} ${s.name}` : s.name)}</span>
         <span class="x" data-close="${s.id}" data-tip="Close  ⌘W">${icon("x")}</span>
@@ -159,6 +231,7 @@ tabsEl.addEventListener("click", (e) => {
 
 addEventListener("resize", () => {
   if (activeId !== null) sessions.get(activeId)?.fit?.fit();
+  placeWebViews();
 });
 
 function cycleSession(d) {

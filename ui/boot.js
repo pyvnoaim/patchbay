@@ -86,7 +86,7 @@ document.addEventListener("keydown", (e) => {
   const mod = e.metaKey || e.ctrlKey;
 
   // A sheet is modal: let it have the keyboard, bar Escape.
-  if (!sheetWrap.hidden || !askWrap.hidden || !vpnWrap.hidden || !setWrap.hidden || !impWrap.hidden) {
+  if (sheetOpen()) {
     if (e.key === "Escape") {
       e.preventDefault();
       if (!askWrap.hidden) closeAsk(null);

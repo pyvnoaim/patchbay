@@ -10,7 +10,11 @@ description = "Every host, one jack away."
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
+# `unstable` is what `Window::add_child` needs, and a child webview is the only way to
+# put a device's web UI in a *tab* rather than a window of its own: an iframe is what
+# X-Frame-Options blocks, and DSM, OPNsense and Proxmox all send it. The cost is a
+# feature Tauri may change in a minor release — check the web tab after a bump.
+tauri = { version = "2", features = ["macos-private-api", "unstable"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # preserve_order keeps jacks in the order they appear in the file, like `bay ls` does.

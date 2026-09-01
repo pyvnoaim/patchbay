@@ -415,53 +415,87 @@ fn web_reachable(url: &str) -> Result<(), String> {
     })
 }
 
-/// The web UI in a window of its own. Not a tab with an iframe: DSM, OPNsense and
-/// Proxmox all send `X-Frame-Options`, so the one thing an iframe could show is the
-/// devices nobody points a `url` at.
+/// A device's web UI as a **tab**, the way pty.rs and rdp_session.rs are tabs — a
+/// child webview inside the main window, not an iframe and not a window of its own.
+/// An iframe is what `X-Frame-Options` blocks, and DSM, OPNsense and Proxmox all send
+/// it; a separate window isn't where the rest of the app's sessions live.
+///
+/// The webview is an OS-level view stacked *above* the page, so it obeys none of our
+/// CSS. The window tells us where to put it and shrinks it to nothing to get it out of
+/// the way — see `place_web_view`. Every overlay has to do that or it paints over them.
 ///
 /// It gets no capability, and must not: a remote origin matches no `ExecutionContext`
 /// in `capabilities/`, so the appliance's own page cannot reach a single one of our
 /// commands. Granting `remote` there would hand every device's web UI `delete_jack`.
 #[tauri::command]
-async fn open_web_window(app: tauri::AppHandle, name: String) -> Result<(), String> {
+async fn open_web_view(
+    app: tauri::AppHandle,
+    id: u32,
+    name: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<String, String> {
     let (resolved, url) = web_url_of(&name)?;
-    // The url is part of the label, not just the jack name. Keyed on the name alone,
-    // a window opened once was focused by every later click — skipping the preflight
-    // and still showing the page it first loaded, so editing a jack's url appeared to
-    // do nothing and a failed load stayed on screen for good.
-    // Not a hash for secrecy, just something to tell two urls apart in a label, so
-    // std's is the right one and it needs to be stable only for this process.
-    let tag = {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        url.hash(&mut h);
-        h.finish()
-    };
-    let label = format!(
-        "web-{}-{tag:x}",
-        resolved.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect::<String>(),
-    );
-    // The same jack at the same url is a focus, not a second window and a build error.
-    if let Some(w) = app.get_webview_window(&label) {
-        let _ = w.set_focus();
+    let parsed = url.parse().map_err(|e| format!("\"{url}\": {e}"))?;
+    let window = app.get_window("main").ok_or("the main window has gone")?;
+
+    // Deliberately no reachability check on this path. It cost a whole round trip
+    // before anything appeared, which is most of "the websites load a while" — the
+    // view goes up now and `web_check` reports a bad certificate alongside it.
+    window
+        .add_child(
+            tauri::webview::WebviewBuilder::new(web_label(id), tauri::WebviewUrl::External(parsed)),
+            tauri::LogicalPosition::new(x, y),
+            tauri::LogicalSize::new(width.max(1.0), height.max(1.0)),
+        )
+        .map_err(|e| format!("\"{resolved}\": {e}"))?;
+    Ok(url)
+}
+
+fn web_label(id: u32) -> String {
+    format!("webtab-{id}")
+}
+
+/// Move and size a web tab, in logical pixels relative to the window. A zero size is
+/// how it gets hidden: a child webview has no `hidden`, and it sits above every sheet
+/// and the palette, so anything that opens over it has to call this first.
+#[tauri::command]
+fn place_web_view(
+    app: tauri::AppHandle,
+    id: u32,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    let Some(w) = app.get_webview(&web_label(id)) else {
+        // A place for a tab that has already gone is the ordinary result of a race
+        // between closing one and a resize, not something to put in front of anyone.
         return Ok(());
+    };
+    w.set_position(tauri::LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
+    w.set_size(tauri::LogicalSize::new(width.max(0.0), height.max(0.0)))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn close_web_view(app: tauri::AppHandle, id: u32) {
+    if let Some(w) = app.get_webview(&web_label(id)) {
+        let _ = w.close();
     }
+}
 
-    let checked = url.clone();
-    tauri::async_runtime::spawn_blocking(move || web_reachable(&checked))
+/// The old preflight, off the critical path: the tab is already up, so this only has
+/// to say *why* a blank one is blank. A certificate a webview won't click through is
+/// still the case worth naming.
+#[tauri::command]
+async fn web_check(name: String) -> Result<(), String> {
+    let (_, url) = web_url_of(&name)?;
+    tauri::async_runtime::spawn_blocking(move || web_reachable(&url))
         .await
-        .map_err(|e| e.to_string())??;
-
-    tauri::WebviewWindowBuilder::new(
-        &app,
-        &label,
-        tauri::WebviewUrl::External(url.parse().map_err(|e| format!("\"{url}\": {e}"))?),
-    )
-    .title(format!("{resolved} — {url}"))
-    .inner_size(1200.0, 900.0)
-    .build()
-    .map_err(|e| format!("\"{resolved}\": {e}"))?;
-    Ok(())
+        .map_err(|e| e.to_string())?
 }
 
 /// Remembered state for VPNs with no `check` command — best effort, and the UI
@@ -835,7 +869,8 @@ fn main() {
             vpns, vpn_toggle, vpn_def, save_vpn, delete_vpn, vpn_providers,
             settings, save_settings, colors, save_color, defaults, save_defaults, ssh_keys,
             ssh_hosts,
-            team_sync, team_join, team_create, team_resolve, team_leave, open_web_window,
+            team_sync, team_join, team_create, team_resolve, team_leave,
+            open_web_view, place_web_view, close_web_view, web_check,
             open_rdp, open_rdp_session, close_rdp_session, rdp_input, tunnels, close_tunnel,
             open_session, open_task, write_session, resize_session, close_session
         ])
