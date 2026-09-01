@@ -378,8 +378,12 @@ fn open_url(name: String) -> Result<String, String> {
 /// at all and looks like a broken app. This is a deliberate click, not a background
 /// sweep of every host, which is the thing the no-favicons rule is actually about.
 fn web_reachable(url: &str) -> Result<(), String> {
+    // A NAS asleep on its own hibernation timer drops the first SYN and takes its
+    // time coming back — 8s wasn't enough for a DS920+ waking up. A device that is
+    // simply off costs the full wait, but "it's not answering" arriving late beats
+    // it arriving wrong about a device that was only asleep.
     let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| format!("no http client: {e}"))?;
     client.get(url).send().map(|_| ()).map_err(|e| {
