@@ -235,14 +235,18 @@ document.addEventListener("mouseover", (e) => {
     const t = el.getBoundingClientRect();
     const r = tipEl.getBoundingClientRect();
     const gap = 7;
-    // Above unless there is no room, and never past a window edge.
+    // Above unless there is no room, and never past a window edge. `tipAt` is only for
+    // the few that sit hard against an edge and would otherwise be clamped anyway —
+    // centred is the default, and a button with room to centre should use it.
     const below = t.top - r.height - gap < 4;
     const at = el.dataset.tipAt;
     let left = at === "left" ? t.left : at === "right" ? t.right - r.width : t.left + (t.width - r.width) / 2;
     left = Math.max(6, Math.min(left, innerWidth - r.width - 6));
     tipEl.style.left = `${Math.round(left)}px`;
     tipEl.style.top = `${Math.round(below ? t.bottom + gap : t.top - r.height - gap)}px`;
-  }, 350);
+    // Long enough not to flash at everything the pointer crosses on the way somewhere,
+    // short enough that stopping on a button feels answered rather than waited on.
+  }, 150);
 });
 document.addEventListener("mouseout", (e) => { if (e.target.closest("[data-tip]")) hideTip(); });
 document.addEventListener("mousedown", hideTip);

@@ -279,7 +279,7 @@ function renderJack(j, live) {
     ${j.ssh && j.primary !== "ssh" ? `<button class="ghost" data-act="connect" data-tip="Connect over ssh">${icon("square-terminal")}</button>` : ""}
     ${j.url && j.primary !== "web" ? `<button class="ghost" data-act="web" data-tip="Open web UI">${icon("globe")}</button>` : ""}
     ${j.rdp && j.primary !== "rdp" ? `<button class="ghost" data-act="rdp" data-tip="Remote desktop">${icon("monitor")}</button>` : ""}
-    <button class="ghost" data-act="edit" data-tip="Edit device" data-tip-at="right">${icon("pencil")}</button>`;
+    <button class="ghost" data-act="edit" data-tip="Edit device">${icon("pencil")}</button>`;
 }
 
 // Selection must not rebuild the list: replacing innerHTML destroys the row under
