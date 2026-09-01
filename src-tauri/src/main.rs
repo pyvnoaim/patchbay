@@ -421,11 +421,23 @@ fn web_reachable(url: &str) -> Result<(), String> {
 #[tauri::command]
 async fn open_web_window(app: tauri::AppHandle, name: String) -> Result<(), String> {
     let (resolved, url) = web_url_of(&name)?;
+    // The url is part of the label, not just the jack name. Keyed on the name alone,
+    // a window opened once was focused by every later click — skipping the preflight
+    // and still showing the page it first loaded, so editing a jack's url appeared to
+    // do nothing and a failed load stayed on screen for good.
+    // Not a hash for secrecy, just something to tell two urls apart in a label, so
+    // std's is the right one and it needs to be stable only for this process.
+    let tag = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        url.hash(&mut h);
+        h.finish()
+    };
     let label = format!(
-        "web-{}",
-        resolved.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect::<String>()
+        "web-{}-{tag:x}",
+        resolved.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect::<String>(),
     );
-    // Already open is a focus, not a second window and a build error.
+    // The same jack at the same url is a focus, not a second window and a build error.
     if let Some(w) = app.get_webview_window(&label) {
         let _ = w.set_focus();
         return Ok(());
