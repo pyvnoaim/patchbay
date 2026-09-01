@@ -16,7 +16,7 @@ use ironrdp::pdu::rdp::client_info::PerformanceFlags;
 use ironrdp::session::image::DecodedImage;
 use ironrdp::session::{ActiveStage, ActiveStageBuilder, ActiveStageOutput};
 use std::io::Write as _;
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
 use ironrdp_cliprdr::backend::ClipboardMessage;
 use ironrdp_cliprdr::CliprdrClient;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -364,7 +364,17 @@ fn connect(
     config: connector::Config,
     clipboard: crate::clipboard::Backend,
 ) -> Result<(ConnectionResult, ironrdp_blocking::Framed<Upgraded>), String> {
-    let stream = TcpStream::connect((host, port)).map_err(|e| format!("{host}:{port}: {e}"))?;
+    // A plain `connect` waits on the OS default — over a minute on a host that drops
+    // the SYN rather than refusing it, which is exactly what a firewalled RDP box
+    // does. The status probe and the tunnel wait already bound theirs; this was the
+    // one that didn't, and it's the one someone is sitting in front of.
+    let addr = format!("{host}:{port}")
+        .to_socket_addrs()
+        .ok()
+        .and_then(|mut a| a.next())
+        .ok_or_else(|| format!("{host}:{port}: no address for that host"))?;
+    let stream =
+        TcpStream::connect_timeout(&addr, HANDSHAKE).map_err(|e| format!("{host}:{port}: {e}"))?;
     stream.set_read_timeout(Some(HANDSHAKE)).map_err(|e| e.to_string())?;
     let client_addr = stream.local_addr().map_err(|e| e.to_string())?;
     // Shares the underlying socket, so this is how the timeout gets shortened once
