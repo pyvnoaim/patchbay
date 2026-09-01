@@ -53,7 +53,32 @@ fn store(cfg: &Path, t: &Team) -> Result<(), String> {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     let body = toml::to_string(t).map_err(|e| e.to_string())?;
-    std::fs::write(&path, body).map_err(|e| format!("{}: {e}", path.display()))
+    write_private(&path, &body).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// The code is the credential, so `team.toml` is the one file here nobody else on the
+/// machine gets to read — unlike the config beside it, which is the whole point.
+#[cfg(unix)]
+fn write_private(path: &Path, body: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    // `mode` only applies to a file being created, so it misses one already sitting
+    // there at the umask's 0644 — every install that joined a team before this line.
+    f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    f.write_all(body.as_bytes())
+}
+
+// ponytail: Windows inherits the profile directory's ACL, which is already owner-only.
+// A real DACL is a windows-acl dependency for a case %APPDATA% covers.
+#[cfg(not(unix))]
+fn write_private(path: &Path, body: &str) -> std::io::Result<()> {
+    std::fs::write(path, body)
 }
 
 /// Not a secret and not global — just something to tell two of your own machines
@@ -641,6 +666,32 @@ host = "10.0.0.4"
         leave_at(&cfg).unwrap();
         assert_eq!(sync_at(&cfg).state, "off");
         assert_eq!(read(&cfg), LOCAL, "leaving took the list with it");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_team_code_is_not_readable_by_anyone_else_on_the_machine() {
+        use std::os::unix::fs::PermissionsExt;
+        let cfg = scratch("perms", LOCAL);
+        let t = Team {
+            url: "http://127.0.0.1:1".into(),
+            code: "abcd-efgh".into(),
+            device: "d1".into(),
+            version: 1,
+            synced: String::new(),
+        };
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+
+        store(&cfg, &t).unwrap();
+        assert_eq!(mode(&team_path(&cfg)), 0o600, "the code was world-readable");
+
+        // A file from before this was tightened is fixed on the next write, not left.
+        std::fs::set_permissions(team_path(&cfg), std::fs::Permissions::from_mode(0o644)).unwrap();
+        store(&cfg, &t).unwrap();
+        assert_eq!(mode(&team_path(&cfg)), 0o600, "an existing file kept its old mode");
+
+        // The config itself is the shared document and deliberately stays as it was.
+        assert_eq!(read(&cfg), LOCAL);
     }
 
     #[test]
