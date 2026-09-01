@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- App Transport Security blocks cleartext http inside WKWebView, and it does it
+       silently: a device's http web UI paints an empty white window with no error and
+       nothing to click, which reads as a broken app. Every appliance on a LAN is
+       either http or a self-signed https, so without this the in-app web view is only
+       useful for the devices nobody points a `url` at.
+
+       Web content only. Deliberately *not* NSAllowsArbitraryLoads, which would drop
+       ATS for the whole process. Nothing else here is affected either way: our own
+       requests go through reqwest, which is pure Rust and never used NSURLSession. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoadsInWebContent</key>
+    <true/>
+  </dict>
+</dict>
+</plist>
