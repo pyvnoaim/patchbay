@@ -436,12 +436,31 @@ async function openSettings() {
   renderSwatches();
   teamErr.hidden = true;
   renderTeam();
+  // Land on the thing that needs answering. The sidebar button was already warning
+  // about it, so opening on VPN would make you hunt for what you clicked it for.
+  showPane(TEAM_STUCK[team.state] ? "team" : "vpn");
   syncTeam();   // seats and state, fresh, while the sheet is already up
   $("page-openconfig").innerHTML = `${icon("file-pen-line")}Open config file`;
   setWrap.hidden = false;
   try { $("cfgpath").textContent = await invoke("config_path"); } catch { /* shown blank */ }
 }
 const closeSettings = () => { setWrap.hidden = true; };
+
+// Six unrelated sections were one scroll. A hidden pane is still in the form, so
+// `setForm.elements` sees every field either way and Save stays one submit.
+function showPane(name) {
+  for (const b of setNav.querySelectorAll("button")) {
+    // The label is the button's own text; an <svg> holds none, so this stays put
+    // on the second call rather than nesting an icon inside an icon.
+    if (!b.firstElementChild) b.innerHTML = `${icon(b.dataset.icon)}${esc(b.textContent)}`;
+    b.classList.toggle("on", b.dataset.pane === name);
+  }
+  for (const p of setForm.querySelectorAll(".pane")) p.hidden = p.dataset.pane !== name;
+}
+setNav.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-pane]");
+  if (b) showPane(b.dataset.pane);
+});
 
 const DEFAULT_KEYS = ["user", "port", "key", "jump"];
 
@@ -476,6 +495,8 @@ setWrap.addEventListener("mousedown", (e) => { if (e.target === setWrap) closeSe
 // The config file is the shared document. Everything here is one call away from
 // team_sync, which is the only thing in the app that talks to the server.
 function renderTeam() {
+  // Same warning as the sidebar button, on the rail that now stands between them.
+  setNav.querySelector('[data-pane="team"]').classList.toggle("warn", !!TEAM_STUCK[team.state]);
   const joined = team.state !== "off";
   $("team-off").hidden = joined;
   $("team-on").hidden = !joined;

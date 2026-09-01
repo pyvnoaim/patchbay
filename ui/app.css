@@ -211,7 +211,10 @@ button { display: flex; align-items: center; justify-content: center; gap: 6px; 
 .d-cmd { position: relative; }
 .d-cmd .mono { padding-right: 32px; }
 .d-copy { position: absolute; top: 3px; right: 3px; color: var(--fg-faint); }
+/* Buttons stretch by default, which is right in a footer and wrong in a row of two
+   where only one is `.ghost` — the odd one out grows and reads as the accident it is. */
 .btns { display: flex; gap: 6px; margin-top: 10px; }
+.btns button { flex: none; padding: 7px 14px; }
 button {
   flex: 1; padding: 7px 10px; border: 0; border-radius: 7px;
   background: var(--row); color: var(--fg); font: inherit; font-weight: 550;
@@ -353,8 +356,11 @@ button.danger:hover { background: color-mix(in srgb, var(--down) 18%, transparen
 .i.brand { stroke: none; }
 
 /* A device with a web UI gets a globe beside its tags. */
-.jack .web { display: flex; flex: none; align-self: center; color: var(--fg-faint); margin-left: auto; }
-.jack .web + .tags { margin-left: 8px; }
+/* No `margin-left: auto` here: `.folders` already has one, and two auto margins split
+   the free space between them, so the globe floated to a different spot on every row
+   depending on how many folder tags it was sharing with. It belongs with the address
+   it describes, not adrift in the gap. */
+.jack .web { display: flex; flex: none; align-self: center; color: var(--fg-faint); margin-left: 6px; }
 .jack[aria-selected="true"] .web { color: rgba(255,255,255,.8); }
 .jack .web .i { width: 12px; height: 12px; }
 
@@ -394,7 +400,28 @@ button:disabled { opacity: .5; }
 .tabkind { display: inline-flex; opacity: .55; }
 .tabkind svg { width: 12px; height: 12px; }
 
-.sheet-body.one { display: block; }
+/* ── settings: a nav rail, not one long scroll ─────────────── */
+.sheet.set { width: min(720px, 92vw); }
+/* The scroll lives on the panes, so the rail stays put while a pane moves. */
+.sheet.set .sheet-body { display: flex; padding: 0; overflow: hidden; }
+.setnav {
+  width: 164px; flex: none; display: flex; flex-direction: column; gap: 2px;
+  padding: 12px 10px; border-right: 1px solid var(--line);
+}
+.setnav button {
+  flex: none; justify-content: flex-start; gap: 8px; padding: 7px 9px;
+  background: transparent; color: var(--fg-dim); font-weight: 500;
+}
+.setnav button:hover { background: var(--row); color: var(--fg); }
+.setnav button.on { background: var(--row); color: var(--fg); font-weight: 600; }
+.setnav .i { width: 14px; height: 14px; flex: none; }
+/* The pane it lands on is the one that needs answering, so say which. */
+.setnav button.warn { color: var(--down); }
+/* A floor, so the sheet doesn't jump size as you move between a short pane and a
+   tall one — the rail would move under the cursor that just clicked it. */
+.setpanes { flex: 1; min-width: 0; min-height: 300px; padding: 14px 16px; overflow-y: auto; scrollbar-width: thin; }
+/* The pane's own heading is its title — nothing above it to be spaced away from. */
+.pane > .d-sec:first-child { margin-top: 0; }
 /* The settings sheet is a single column, so a row of fields needs its own grid. */
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
 .opt { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; }
@@ -408,7 +435,8 @@ button:disabled { opacity: .5; }
 .f select:focus { border-color: var(--accent); }
 
 /* Which VPN presets this machine can drive. */
-.provider-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px 26px; }
+/* Under its own heading now, not indented beneath a checkbox it was never about. */
+.provider-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0; }
 .prov {
   display: flex; align-items: center; gap: 5px;
   padding: 2px 8px; border-radius: 20px;
@@ -461,7 +489,6 @@ button:disabled { opacity: .5; }
 .firstrun p { margin: 0 0 14px; font-size: 12.5px; line-height: 1.55; }
 .firstrun .mono { text-align: left; margin-bottom: 14px; }
 .firstrun .btns { justify-content: center; }
-.firstrun .btns button { flex: none; padding: 7px 14px; }
 
 /* "How do you reach it?" — the form only shows the fields that answer follows. */
 .how {

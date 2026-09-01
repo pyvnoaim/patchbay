@@ -110,13 +110,9 @@ function render() {
   $("settings").innerHTML = icon("settings");
   $("settings").dataset.tip = `Settings  ${chord(",")}`;
   $("settings").dataset.tipAt = "right";
-  // Two team states mean your edits are not reaching anyone, and both need an answer
-  // from you — so they show on the button that leads to it, not only inside the sheet.
-  const stuck = {
-    conflict: "Your list and the team's have both changed",
-    blocked: "The team is out of seats, so your edits stay here",
-    error: "The team sync is stuck on this config",
-  }[team.state];
+  // A stuck sync means your edits are not reaching anyone and it needs an answer from
+  // you — so it shows on the button that leads there, not only inside the sheet.
+  const stuck = TEAM_STUCK[team.state];
   $("settings").classList.toggle("warn", !!stuck);
   if (stuck) $("settings").dataset.tip = stuck;
 

@@ -16,7 +16,7 @@ const vpnWrap = $("vpnwrap"), vpnForm = $("vpnform"), vpnErr = $("vpn-err"), vpn
 const setWrap = $("setwrap"), setForm = $("setform"), setErr = $("set-err");
 const impWrap = $("importwrap"), impForm = $("importform"), impList = $("imp-list");
 const impNote = $("imp-note"), impErr = $("imp-err"), impOk = $("imp-ok");
-const teamErr = $("team-err");
+const teamErr = $("team-err"), setNav = $("setnav");
 
 const isMac = navigator.userAgent.includes("Mac");
 if (isMac) document.body.dataset.os = "macos";
@@ -46,6 +46,15 @@ let cfgPath = "";             // where the config lives, shown on first run
 let sshKeys = [];             // private keys found in ~/.ssh, to suggest in the key field
 let tunnels = [];             // live ssh -L forwards holding RDP open
 let team = { state: "off" };  // last answer from team_sync
+
+// The team states that need an answer from you rather than just time, and what to say
+// about each. One map, because three places ask "is the sync stuck" and a second copy
+// is how they end up disagreeing about `error`.
+const TEAM_STUCK = {
+  conflict: "Your list and the team's have both changed",
+  blocked: "The team is out of seats, so your edits stay here",
+  error: "The team sync is stuck on this config",
+};
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 

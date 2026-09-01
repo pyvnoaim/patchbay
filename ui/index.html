@@ -88,75 +88,98 @@
   </div>
 
   <div id="setwrap" hidden>
-    <form class="sheet" id="setform" autocomplete="off">
+    <form class="sheet set" id="setform" autocomplete="off">
       <div class="sheet-head">Settings</div>
-      <div class="sheet-body one">
-        <div class="d-sec">VPN</div>
-        <label class="opt"><input type="checkbox" name="vpn_auto_connect">
-          <span><b>Connect a folder's VPN automatically</b>
-          Opening a session brings its VPN up first, so connecting is one action rather than two.</span></label>
-        <label class="opt"><input type="checkbox" name="vpn_auto_disconnect">
-          <span><b>Disconnect when a folder's last session closes</b>
-          Tidy, but it will cut a tunnel you were still using elsewhere — a browser tab, a mounted share.</span></label>
-        <div class="provider-list" id="provider-list"></div>
+      <div class="sheet-body">
+        <nav class="setnav" id="setnav">
+          <button type="button" data-pane="vpn" data-icon="router">VPN</button>
+          <button type="button" data-pane="devices" data-icon="server">Devices</button>
+          <button type="button" data-pane="defaults" data-icon="layers">Defaults</button>
+          <button type="button" data-pane="appearance" data-icon="monitor">Appearance</button>
+          <button type="button" data-pane="team" data-icon="network">Team</button>
+          <button type="button" data-pane="config" data-icon="file-pen-line">Config file</button>
+        </nav>
+        <div class="setpanes">
+        <section class="pane" data-pane="vpn">
+          <div class="d-sec">VPN</div>
+          <label class="opt"><input type="checkbox" name="vpn_auto_connect">
+            <span><b>Connect a folder's VPN automatically</b>
+            Opening a session brings its VPN up first, so connecting is one action rather than two.</span></label>
+          <label class="opt"><input type="checkbox" name="vpn_auto_disconnect">
+            <span><b>Disconnect when a folder's last session closes</b>
+            Tidy, but it will cut a tunnel you were still using elsewhere — a browser tab, a mounted share.</span></label>
+          <div class="d-sec">Providers on this machine</div>
+          <div class="provider-list" id="provider-list"></div>
+        </section>
 
-        <div class="d-sec">Devices</div>
-        <label class="opt"><input type="checkbox" name="probe">
-          <span><b>Check reachability</b>
-          Opens a TCP connection to each device's first hop every 30 seconds to drive the status dots.
-          Nothing is sent; the socket is opened and dropped.</span></label>
-        <label class="opt"><input type="checkbox" name="connect_in_terminal">
-          <span><b>Connect in the system terminal</b>
-          Hands the ssh command to Terminal / Windows Terminal instead of opening a tab here.</span></label>
+        <section class="pane" data-pane="devices" hidden>
+          <div class="d-sec">Devices</div>
+          <label class="opt"><input type="checkbox" name="probe">
+            <span><b>Check reachability</b>
+            Opens a TCP connection to each device's first hop every 30 seconds to drive the status dots.
+            Nothing is sent; the socket is opened and dropped.</span></label>
+          <label class="opt"><input type="checkbox" name="connect_in_terminal">
+            <span><b>Connect in the system terminal</b>
+            Hands the ssh command to Terminal / Windows Terminal instead of opening a tab here.</span></label>
+        </section>
 
-        <div class="d-sec">Inherited by every device</div>
-        <p class="page-note">Left empty, nothing is inherited and each device stands on its own.
-        Anything set here applies to every device that doesn't override it — and your
-        <code>~/.ssh/config</code> still applies underneath either way.</p>
-        <div class="grid2">
-          <label class="f"><span>User</span><input name="def_user" spellcheck="false" placeholder="none"></label>
-          <label class="f"><span>SSH port</span><input name="def_port" inputmode="numeric" placeholder="22"></label>
-          <label class="f wide"><span>Private key file</span><input name="def_key" spellcheck="false" list="sshkeys" placeholder="none"></label>
-          <label class="f wide"><span>Jump host</span><input name="def_jump" spellcheck="false" list="jacknames" placeholder="none"></label>
-        </div>
-
-        <div class="d-sec">Appearance</div>
-        <label class="opt"><input type="checkbox" name="os_colors">
-          <span><b>Colour device icons by OS</b>
-          Uses each brand's own colour, adjusted so it stays readable on this theme.
-          Override any of them below — every device with that OS follows.</span></label>
-        <div class="swatches" id="swatches"></div>
-
-        <div class="d-sec">Team</div>
-        <p class="page-note">One shared list on a server you run. Devices, folders, VPNs and colours
-        are the team's; the preferences above stay on this machine. The code is the only credential —
-        anyone who has it has the list.</p>
-        <div id="team-off">
+        <section class="pane" data-pane="defaults" hidden>
+          <div class="d-sec">Inherited by every device</div>
+          <p class="page-note">Left empty, nothing is inherited and each device stands on its own.
+          Anything set here applies to every device that doesn't override it — and your
+          <code>~/.ssh/config</code> still applies underneath either way.</p>
           <div class="grid2">
-            <label class="f wide"><span>Team server</span><input id="team-url" spellcheck="false" placeholder="https://patchbay.example"></label>
-            <label class="f wide"><span>Team code</span><input id="team-code" spellcheck="false" placeholder="from whoever made the team"></label>
+            <label class="f"><span>User</span><input name="def_user" spellcheck="false" placeholder="none"></label>
+            <label class="f"><span>SSH port</span><input name="def_port" inputmode="numeric" placeholder="22"></label>
+            <label class="f"><span>Private key file</span><input name="def_key" spellcheck="false" list="sshkeys" placeholder="none"></label>
+            <label class="f"><span>Jump host</span><input name="def_jump" spellcheck="false" list="jacknames" placeholder="none"></label>
           </div>
-          <div class="btns">
-            <button type="button" class="primary" id="team-join">Join</button>
-            <button type="button" class="ghost" id="team-create">Create a team</button>
-          </div>
-        </div>
-        <div id="team-on" hidden>
-          <div class="mono" id="team-where"></div>
-          <p class="page-note" id="team-state"></p>
-          <div class="btns" id="team-fix" hidden>
-            <button type="button" class="ghost" id="team-theirs">Take the team's list</button>
-            <button type="button" class="ghost" id="team-mine">Push mine instead</button>
-          </div>
-          <div class="btns"><button type="button" class="ghost" id="team-leave"></button></div>
-        </div>
-        <p class="sheet-err" id="team-err" hidden></p>
+        </section>
 
-        <div class="d-sec">Config file</div>
-        <p class="page-note">Everything here is stored in this file. It's plain TOML — edit it by hand
-        whenever you prefer; patchbay keeps your comments and formatting.</p>
-        <div class="mono" id="cfgpath"></div>
-        <div class="btns"><button type="button" class="ghost" id="page-openconfig"></button></div>
+        <section class="pane" data-pane="appearance" hidden>
+          <div class="d-sec">Appearance</div>
+          <label class="opt"><input type="checkbox" name="os_colors">
+            <span><b>Colour device icons by OS</b>
+            Uses each brand's own colour, adjusted so it stays readable on this theme.
+            Override any of them below — every device with that OS follows.</span></label>
+          <div class="swatches" id="swatches"></div>
+        </section>
+
+        <section class="pane" data-pane="team" hidden>
+          <div class="d-sec">Team</div>
+          <p class="page-note">One shared list on a server you run. Devices, folders, VPNs and colours
+          are the team's; the preferences in the other sections stay on this machine. The code is the
+          only credential — anyone who has it has the list.</p>
+          <div id="team-off">
+            <div class="grid2">
+              <label class="f wide"><span>Team server</span><input id="team-url" spellcheck="false" placeholder="https://patchbay.example"></label>
+              <label class="f wide"><span>Team code</span><input id="team-code" spellcheck="false" placeholder="from whoever made the team"></label>
+            </div>
+            <div class="btns">
+              <button type="button" class="primary" id="team-join">Join</button>
+              <button type="button" class="ghost" id="team-create">Create a team</button>
+            </div>
+          </div>
+          <div id="team-on" hidden>
+            <div class="mono" id="team-where"></div>
+            <p class="page-note" id="team-state"></p>
+            <div class="btns" id="team-fix" hidden>
+              <button type="button" class="ghost" id="team-theirs">Take the team's list</button>
+              <button type="button" class="ghost" id="team-mine">Push mine instead</button>
+            </div>
+            <div class="btns"><button type="button" class="ghost" id="team-leave"></button></div>
+          </div>
+          <p class="sheet-err" id="team-err" hidden></p>
+        </section>
+
+        <section class="pane" data-pane="config" hidden>
+          <div class="d-sec">Config file</div>
+          <p class="page-note">Everything here is stored in this file. It's plain TOML — edit it by hand
+          whenever you prefer; patchbay keeps your comments and formatting.</p>
+          <div class="mono" id="cfgpath"></div>
+          <div class="btns"><button type="button" class="ghost" id="page-openconfig"></button></div>
+        </section>
+        </div>
       </div>
       <p class="sheet-err" id="set-err" hidden></p>
       <div class="sheet-foot">
