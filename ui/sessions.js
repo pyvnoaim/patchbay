@@ -57,7 +57,7 @@ async function openSession(name, task = null) {
     s.unlisten.push(await listen(`pty:${id}`, (e) => term.write(e.payload)));
     s.unlisten.push(await listen(`pty-exit:${id}`, (e) => {
       s.dead = true;
-      term.write(`\r\n\x1b[2m── ${task ?? "ssh"} exited (${e.payload}) · ⌘W to close ──\x1b[0m\r\n`);
+      term.write(`\r\n\x1b[2m── ${task ?? "ssh"} exited (${e.payload}) · ${chord("w")} to close ──\x1b[0m\r\n`);
       renderTabs();
       renderTree();
     }));
@@ -218,8 +218,11 @@ function renderTabs() {
         ${s.kind === "web" ? `<span class="tabkind">${icon("globe")}</span>` : ""}
         ${s.task ? `<span class="tabkind">${icon(s.task === "trace" ? "waypoints" : "plug")}</span>` : ""}
         <span class="lbl">${esc(s.task ? `${s.task} ${s.name}` : s.name)}</span>
-        <span class="x" data-close="${s.id}" data-tip="Close  ⌘W">${icon("x")}</span>
+        <span class="x" data-close="${s.id}" data-tip="Close  ${chord('w')}">${icon("x")}</span>
       </div>`).join("");
+  // Enough tabs and the strip scrolls even with every label squeezed, so the one you
+  // just switched to has to be brought back into view.
+  tabsEl.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
 tabsEl.addEventListener("click", (e) => {

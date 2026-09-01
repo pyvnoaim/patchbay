@@ -56,12 +56,19 @@ body[data-os="macos"] { background: transparent; }
 body:not([data-os="macos"]) .tabs { height: 40px; }
 .pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .pane[hidden] { display: none !important; }
+/* Tabs give up label before the strip gives up tab. `flex: none` here meant a narrow
+   window scrolled the strip instead of shrinking anything, and the last tab went off
+   the edge taking its close button with it — the active tab, unclosable by mouse. */
 .tab {
-  display: flex; align-items: center; gap: 6px; flex: none;
+  display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;
   height: 27px; padding: 0 10px; border-radius: 7px;
   font-size: 12.5px; color: var(--fg-dim); max-width: 200px;
   -webkit-app-region: no-drag;
 }
+/* Only the label may shrink; an icon or the close button that shrank would just be
+   a smudge, and the close button is the one thing that has to stay hittable. */
+.tab > :not(.lbl) { flex: none; }
+.tab .lbl { min-width: 0; }
 .tab .x { margin-right: -3px; }
 .tab:hover { background: var(--row-hover); }
 .tab[aria-selected="true"] { background: var(--row); color: var(--fg); font-weight: 550; }
