@@ -1,8 +1,10 @@
 #!/usr/bin/env -S node --experimental-strip-types --disable-warning=ExperimentalWarning
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { styleText } from "node:util";
+import { fromSshConfig, toToml } from "./import.ts";
 import { configPath, load, matches, resolve, sshArgs, type Jacks } from "./patchbay.ts";
 
 const TEMPLATE = `# patchbay — every host, one jack away
@@ -73,10 +75,22 @@ bay <name>       connect — substring is enough
 bay <name> -n    print the ssh command instead of running it
 bay <name> -- <cmd>   run a command instead of a shell
 bay ls [filter]  list jacks, filtered by name or folder
-bay edit         open ${configPath()}`);
+bay edit         open ${configPath()}
+bay import [file]  print TOML for the hosts in your ssh config`);
   process.exit(0);
 }
 if (cmd === "edit") edit();
+
+// Stdout, not the config file: config.rs is the only thing that edits a patchbay.toml,
+// and printing means you read it before you keep it.
+if (cmd === "import") {
+  const file = rest[0] ?? join(homedir(), ".ssh", "config");
+  if (!existsSync(file)) die(`no ssh config at ${file}`);
+  const found = fromSshConfig(readFileSync(file, "utf8"), (m) => console.error(c("yellow", m)));
+  if (!found.length) die(`no hosts in ${file}`);
+  process.stdout.write(toToml(found));
+  process.exit(0);
+}
 
 const path = configPath();
 if (!existsSync(path)) die(`no config at ${path} — run \`bay edit\` to start one`);

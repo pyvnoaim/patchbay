@@ -7,7 +7,8 @@ Two front ends over one config format:
 
 - `src/patchbay.ts` — config load, `[defaults]` inheritance, jump-chain walk, name resolve. All the logic worth testing lives here.
 - `src/cli.ts` — arg dispatch and process spawning. Keep it dumb.
-- `test/patchbay.test.ts` — `node:test` + `assert`.
+- `src/import.ts` — `bay import`: an ssh config in, TOML on stdout. It never writes; there is no Rust twin because the app has no importer, so it sits outside the `patchbay.ts`/`patchbay.rs` mirror.
+- `test/patchbay.test.ts`, `test/import.test.ts` — `node:test` + `assert`.
 - `src-tauri/src/patchbay.rs` — **a port of `src/patchbay.ts`**, because the app can't import TypeScript. Same behaviour, same errors, same argv; its tests mirror the TS ones. Change one, change both.
 - `src-tauri/src/config.rs` — the only code that *writes* the config. Everything else reads. Also owns `[settings]` and `[colors]`.
 - `src-tauri/src/vpn.rs` — per-folder VPN toggles: provider presets, and running the up/down/check commands.

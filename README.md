@@ -15,6 +15,7 @@ bay prod-web -n       print the ssh command instead of running it
 bay prod-web -- uptime  run one command instead of a shell
 bay ls [filter]       list jacks, filtered by name or folder
 bay edit              open the config
+bay import [file]     print TOML for the hosts in your ssh config
 ```
 
 ## Install
