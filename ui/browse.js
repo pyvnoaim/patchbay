@@ -270,7 +270,9 @@ function renderJack(j, live) {
 
   dActions.innerHTML = `
     ${live
-      ? `<button class="primary" data-act="disconnect">${icon("x")}${live.dead ? "Close" : "Disconnect"}</button>`
+      /* A web tab has nothing to disconnect from — it's a page, and you close it. */
+      ? `<button class="primary" data-act="disconnect">${icon("x")}${
+          live.dead || live.kind === "web" ? "Close" : "Disconnect"}</button>`
       : j.primary === "rdp" ? `<button class="primary" data-act="rdp">${icon("monitor")}Connect</button>`
       : j.primary === "web" ? `<button class="primary" data-act="web">${icon("globe")}Open</button>`
       : `<button class="primary" data-act="connect">${icon("square-terminal")}Connect</button>`}
