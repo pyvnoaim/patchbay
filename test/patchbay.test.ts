@@ -19,7 +19,7 @@ test("plain jack is just user@host", () => {
 });
 
 test("jump chains dial the outermost bastion first, as ssh -J expects", () => {
-  // db is reached via web, web via bastion — so from here the order is bastion, then web.
+  // db is reached via web, web via bastion - so from here the order is bastion, then web.
   assert.deepEqual(sshArgs("db", jacks), [
     "-J",
     "jump@bastion.example:2222,deploy@10.0.0.4",
@@ -100,7 +100,7 @@ test("`tags` still reads as `folders`, and `folders` wins when both are there", 
 test("a jack's own `tags` beats `folders` inherited from [defaults]", () => {
   const path = join(tmpdir(), `patchbay-inherit-${process.pid}.toml`);
   writeFileSync(path, `[defaults]\nfolders = ["inherited"]\n\n[jack.a]\nhost = "h1"\ntags = ["mine"]\n`);
-  // Mirrors the Rust test of the same name — the two disagreed here once.
+  // Mirrors the Rust test of the same name - the two disagreed here once.
   assert.deepEqual(load(path).a!.folders, ["mine"]);
 });
 

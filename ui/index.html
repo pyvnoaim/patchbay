@@ -63,7 +63,7 @@
         <label class="f" data-need="ssh sftp"><span>SSH port</span><input name="port" inputmode="numeric" placeholder="22"></label>
         <label class="f wide" data-need="ssh sftp"><span>Private key file</span><input name="key" spellcheck="false" list="sshkeys" placeholder="only if it isn't your default"></label>
         <label class="f wide" data-need="ssh sftp"><span>Jump host</span><input name="jump" spellcheck="false" list="jacknames" placeholder="another device, or user@host"></label>
-        <label class="f wide" data-need="ssh"><span>Port forwards</span><input name="forward" spellcheck="false" placeholder="8080:localhost:80 — reach a remote port locally"></label>
+        <label class="f wide" data-need="ssh"><span>Port forwards</span><input name="forward" spellcheck="false" placeholder="8080:localhost:80 - reach a remote port locally"></label>
         <label class="f req" data-need="rdp"><span>RDP port</span><input name="rdp" inputmode="numeric" placeholder="3389"></label>
         <label class="f req" data-need="vnc"><span>VNC port</span><input name="vnc" inputmode="numeric" placeholder="5900"></label>
         <label class="f wide" data-need="web"><span>URL</span>
@@ -119,7 +119,7 @@
         <section class="pane" data-pane="defaults" hidden>
           <div class="d-sec">Inherited by every device</div>
           <p class="page-note">Left empty, nothing is inherited and each device stands on its own.
-          Anything set here applies to every device that doesn't override it — and your
+          Anything set here applies to every device that doesn't override it - and your
           <code>~/.ssh/config</code> still applies underneath either way.</p>
           <div class="grid2">
             <label class="f"><span>User</span><input name="def_user" spellcheck="false" placeholder="none"></label>
@@ -134,14 +134,14 @@
           <label class="opt"><input type="checkbox" name="os_colors">
             <span><b>Colour device icons by OS</b>
             Uses each brand's own colour, adjusted so it stays readable on this theme.
-            Override any of them below — every device with that OS follows.</span></label>
+            Override any of them below - every device with that OS follows.</span></label>
           <div class="swatches" id="swatches"></div>
         </section>
 
         <section class="pane" data-pane="team" hidden>
           <div class="d-sec">Spaces</div>
           <p class="page-note">A space is a config file of its own. Your own list never leaves this
-          machine. A team space is the same kind of file, mirrored through a server you run — the
+          machine. A team space is the same kind of file, mirrored through a server you run - the
           code is the only credential, so anyone who has it has that list.</p>
           <div id="spaces-list"></div>
 
@@ -152,7 +152,7 @@
             <label class="f wide"><span>Call the space</span><input id="team-name" spellcheck="false" placeholder="acme"></label>
           </div>
           <p class="page-note">No code? Point the address straight at a TOML file someone
-          publishes — a raw git URL will do — and you get a read-only copy of it.</p>
+          publishes - a raw git URL will do - and you get a read-only copy of it.</p>
           <div class="btns">
             <button type="button" class="primary" id="team-join">Join</button>
           </div>
@@ -161,7 +161,7 @@
 
         <section class="pane" data-pane="config" hidden>
           <div class="d-sec">Config file</div>
-          <p class="page-note">Everything here is stored in this file. It's plain TOML — edit it by hand
+          <p class="page-note">Everything here is stored in this file. It's plain TOML - edit it by hand
           whenever you prefer; patchbay keeps your comments and formatting.</p>
           <div class="mono" id="cfgpath"></div>
           <div class="btns"><button type="button" class="ghost" id="page-openconfig"></button></div>

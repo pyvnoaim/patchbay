@@ -1,5 +1,5 @@
 //! Writing the config back out. The file is something people hand-edit, so every
-//! change goes through toml_edit — comments, spacing and key order survive — and
+//! change goes through toml_edit - comments, spacing and key order survive - and
 //! lands via a temp file + rename so a crash mid-write can't truncate it.
 
 use crate::patchbay;
@@ -42,14 +42,14 @@ fn write_doc(path: &Path, doc: &DocumentMut) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    // Same directory, so the rename is atomic — the config is never half-written.
+    // Same directory, so the rename is atomic - the config is never half-written.
     let tmp = path.with_extension("toml.tmp");
     std::fs::write(&tmp, doc.to_string()).map_err(|e| format!("{}: {e}", tmp.display()))?;
     std::fs::rename(&tmp, &path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// toml_edit hangs the lines above a table on that table, so removing one deletes
-/// the comments sitting over it — including a file header that was never about it.
+/// the comments sitting over it - including a file header that was never about it.
 /// Hands them back for `rehome_comments` instead.
 /// ponytail: the whole block moves, so a comment about a deleted jack ends up above
 /// the next one. A stale comment is visible and fixable; a deleted one isn't.
@@ -64,7 +64,7 @@ pub fn orphan_comments(parent: &mut Table, key: &str) -> Option<(String, usize)>
 }
 
 /// Tables render in `position()` order, so the one that takes the removed table's
-/// place is the next position along — wherever in the tree it happens to live.
+/// place is the next position along - wherever in the tree it happens to live.
 fn first_position_after(item: &Item, after: usize) -> Option<usize> {
     let t = item.as_table()?;
     t.iter()
@@ -97,7 +97,7 @@ pub fn rehome_comments(doc: &mut DocumentMut, orphan: Option<(String, usize)>) {
     }
 }
 
-/// `[jack]` is implicit — we only ever write the `[jack.name]` children.
+/// `[jack]` is implicit - we only ever write the `[jack.name]` children.
 fn jack_table(doc: &mut DocumentMut) -> Result<&mut Table, String> {
     let item = doc.entry("jack").or_insert_with(|| {
         let mut t = Table::new();
@@ -133,7 +133,7 @@ fn set_arr(t: &mut Table, k: &str, items: &[String]) {
     t[k] = value(a);
 }
 
-/// `original` is None when adding, Some(old_name) when editing — passing a different
+/// `original` is None when adding, Some(old_name) when editing - passing a different
 /// name than the original renames the jack.
 pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Result<(), String> {
     let name = j.name.trim().to_string();
@@ -160,7 +160,7 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
         return Err(format!("there's already a jack named \"{name}\""));
     }
     // Carried over, not dropped and rebuilt: a rename keeps the jack's comments,
-    // its place in the file, and any key the sheet can't edit — same as an edit does.
+    // its place in the file, and any key the sheet can't edit - same as an edit does.
     let previous = renaming
         .then(|| jacks.remove(original.as_deref().unwrap_or_default()))
         .flatten();
@@ -212,7 +212,7 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     write_doc(path, &doc)
 }
 
-/// Replace the whole config with a document from somewhere else — the team's copy.
+/// Replace the whole config with a document from somewhere else - the team's copy.
 /// Parsed before it lands, so a server handing us something unparseable can't leave
 /// a broken file behind, and written the same temp-and-rename way as every other edit.
 /// No plain `replace()` twin: team.rs is the only caller and it already has the path.
@@ -286,7 +286,7 @@ pub fn create_space_at(cfg: &Path, name: &str) -> Result<String, String> {
     Ok(slug)
 }
 
-/// Kept as a `.bak`, never unlinked — the file is somebody's device list, and it is
+/// Kept as a `.bak`, never unlinked - the file is somebody's device list, and it is
 /// the same reasoning the team code's `backup` runs on.
 pub fn delete_space_at(cfg: &Path, name: &str) -> Result<(), String> {
     let slug = space_slug(name)?;
@@ -336,7 +336,7 @@ impl Default for Settings {
 }
 
 /// `[defaults]` merges into every jack, so it accepts any jack key. The sheet only
-/// offers the four worth inheriting — anything else someone wrote there by hand is
+/// offers the four worth inheriting - anything else someone wrote there by hand is
 /// left exactly where it is.
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Defaults {
@@ -389,7 +389,7 @@ pub fn save_defaults_at(file: &Path, d: &Defaults) -> Result<(), String> {
         }
         t.is_empty()
     };
-    // Nothing inherited means no section — an empty `[defaults]` left behind is
+    // Nothing inherited means no section - an empty `[defaults]` left behind is
     // noise in a file people read. A hand-written key keeps the table alive.
     if empty {
         let orphan = orphan_comments(doc.as_table_mut(), "defaults");
@@ -543,7 +543,7 @@ pub fn delete_group_at(file: &Path, path: &str) -> Result<usize, String> {
 mod tests {
     use super::*;
 
-    const SAMPLE: &str = r#"# my hosts — keep this comment
+    const SAMPLE: &str = r#"# my hosts - keep this comment
 [defaults]
 user = "root"          # trailing comment
 
@@ -647,7 +647,7 @@ folders = ["prod/eu/web"]
         let p = scratch("add");
         save_jack_at(&p, None, input("new-box", "10.0.0.9")).unwrap();
         let out = read(&p);
-        assert!(out.contains("# my hosts — keep this comment"));
+        assert!(out.contains("# my hosts - keep this comment"));
         assert!(out.contains("# trailing comment"));
         assert!(out.contains("# the way in"));
         assert!(out.contains(r#"port = 2222"#));

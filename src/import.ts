@@ -12,7 +12,7 @@ export type Imported = {
   jump?: string;
 };
 
-/** Everything else ssh already applies for us — we exec it, so importing its
+/** Everything else ssh already applies for us - we exec it, so importing its
  *  defaults would only duplicate them into a second file that can go stale. */
 const WANTED = new Set(["hostname", "user", "port", "identityfile", "proxyjump"]);
 
@@ -40,7 +40,7 @@ export function fromSshConfig(src: string): { hosts: Imported[]; warnings: strin
       // at each other, which we can't synthesise from a list of raw specs.
       const hops = jump.split(",").map((h) => h.trim());
       jump = hops.at(-1);
-      warnings.push(`${aliases.join(", ")}: ProxyJump has ${hops.length} hops — kept "${jump}", dropped the rest`);
+      warnings.push(`${aliases.join(", ")}: ProxyJump has ${hops.length} hops - kept "${jump}", dropped the rest`);
     }
     for (const alias of aliases) {
       // A dot is refused in a jack name, and two aliases can flatten onto one.
@@ -69,7 +69,7 @@ export function fromSshConfig(src: string): { hosts: Imported[]; warnings: strin
 
   for (const raw of src.split(/\r?\n/)) {
     const line = raw.trim();
-    // ssh only treats `#` as a comment at the start of a line — a trailing one is
+    // ssh only treats `#` as a comment at the start of a line - a trailing one is
     // part of the value, so stripping it would corrupt a password-shaped path.
     if (!line || line.startsWith("#")) continue;
 
@@ -97,7 +97,7 @@ export function fromSshConfig(src: string): { hosts: Imported[]; warnings: strin
   }
   flush();
 
-  if (included) warnings.push("Include lines were not followed — run the importer on those files too");
+  if (included) warnings.push("Include lines were not followed - run the importer on those files too");
 
   // A ProxyJump naming another Host has to point at that jack's sanitised name;
   // anything else is a raw spec, which patchbay passes through to ssh untouched.

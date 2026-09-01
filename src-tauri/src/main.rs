@@ -34,7 +34,7 @@ struct JackView {
     forward: Vec<String>,
     /// Which space's file this came from; absent is the main config.
     space: Option<String>,
-    /// Ordered hops, first one nearest us — what the detail pane draws as the route.
+    /// Ordered hops, first one nearest us - what the detail pane draws as the route.
     hops: Vec<String>,
     command: String,
 }
@@ -47,13 +47,13 @@ struct Probe {
     ms: Option<u64>,
 }
 
-/// The file a space's edits go to. `None` is the main config — your own list.
+/// The file a space's edits go to. `None` is the main config - your own list.
 fn space_file(space: Option<&str>) -> std::path::PathBuf {
     patchbay::space_path(&patchbay::config_path(), space)
 }
 
 /// Every space, not just the main config. No config at all is not an error in the
-/// window — it's a first run, and the UI has somewhere to put that; `space_paths`
+/// window - it's a first run, and the UI has somewhere to put that; `space_paths`
 /// skips what isn't there. A config that exists but won't parse still is one.
 fn read() -> Result<patchbay::Jacks, String> {
     patchbay::load_all(&patchbay::config_path())
@@ -109,7 +109,7 @@ fn jacks() -> Result<Vec<JackView>, String> {
 }
 
 /// TCP-connect every jack's entry point in parallel. Nothing is sent; the socket is
-/// opened and dropped. ponytail: one thread per jack, fine to a few hundred — swap for
+/// opened and dropped. ponytail: one thread per jack, fine to a few hundred - swap for
 /// a bounded pool if someone shows up with a thousand.
 #[tauri::command]
 async fn probe() -> Result<Vec<Probe>, String> {
@@ -178,7 +178,7 @@ fn local_task(task: &str, host: &str) -> (String, Vec<String>) {
 }
 
 /// The far-side form hands the host to the hop's shell, so a space or a semicolon in
-/// it would run there as a command — the same hole as a newline in a `.rdp`, closed
+/// it would run there as a command - the same hole as a newline in a `.rdp`, closed
 /// the same way: reject rather than quote. A leading `-` would be an option, locally
 /// too.
 fn plain_host(host: &str) -> Result<&str, String> {
@@ -205,8 +205,8 @@ fn without_forwards(args: Vec<String>) -> Vec<String> {
 }
 
 /// Where a reachability check has to run to mean anything. A device behind a jump is
-/// not reachable from here at all — pinging a name only its bastion can resolve
-/// proves nothing — so the check runs *on the hop*, which is also the only machine
+/// not reachable from here at all - pinging a name only its bastion can resolve
+/// proves nothing - so the check runs *on the hop*, which is also the only machine
 /// the status dot can probe toward.
 fn task_argv(
     task: &str,
@@ -224,7 +224,7 @@ fn task_argv(
     let Some(hop) = &j.jump else {
         return Ok(local_task(task, host));
     };
-    // ponytail: the far side is assumed POSIX — it answers ssh, so it isn't cmd.exe.
+    // ponytail: the far side is assumed POSIX - it answers ssh, so it isn't cmd.exe.
     // A Windows bastion would need the local spelling pushed through instead.
     let mut args = match jacks.contains_key(hop) {
         true => without_forwards(patchbay::ssh_args(hop, jacks)?),
@@ -255,7 +255,7 @@ fn open_task(
 }
 
 /// Opens a session in the window. `connect` is still there for "open in my real
-/// terminal" — this is the in-app one.
+/// terminal" - this is the in-app one.
 #[tauri::command]
 fn open_session(
     app: tauri::AppHandle,
@@ -270,7 +270,7 @@ fn open_session(
     let args = patchbay::ssh_args(&resolved, &jacks)?;
     // The shell is also the connection the file browser rides: `sftp -b` cannot ask
     // for a password, so a session here is what authenticates it. Not shown in the
-    // command line below — that is the command, not our plumbing.
+    // command line below - that is the command, not our plumbing.
     let mux = sftp::mux(&sftp::control_path(&resolved));
     let spawned: Vec<String> = mux.into_iter().chain(args.iter().cloned()).collect();
     sessions.open(&app, id, "ssh", &spawned, cols.max(2), rows.max(2))?;
@@ -304,7 +304,7 @@ struct SshHosts {
     warnings: Vec<String>,
 }
 
-/// What an ssh config could become. Nothing is written here — the window shows the
+/// What an ssh config could become. Nothing is written here - the window shows the
 /// list and writes only what gets ticked, through `save_jack` like every other edit.
 /// ponytail: `~/.ssh/config` only. `bay import <file>` takes a path for the odd
 /// case, and a picker in the window would be a file dialog for a file that is always
@@ -349,7 +349,7 @@ fn delete_space(name: String) -> Result<(), String> {
     config::delete_space_at(&patchbay::config_path(), &name)
 }
 
-/// Which file a device lives in is the one thing the jack sheet can't just write —
+/// Which file a device lives in is the one thing the jack sheet can't just write -
 /// it has to come out of one document and into another.
 #[tauri::command]
 fn move_jack(from: Option<String>, to: Option<String>, name: String) -> Result<(), String> {
@@ -418,12 +418,12 @@ fn open_url(name: String) -> Result<String, String> {
 }
 
 /// One request of our own before the url reaches a webview, because a webview has no
-/// "proceed anyway" for a certificate this machine doesn't trust — it paints nothing
+/// "proceed anyway" for a certificate this machine doesn't trust - it paints nothing
 /// at all and looks like a broken app. This is a deliberate click, not a background
 /// sweep of every host, which is the thing the no-favicons rule is actually about.
 fn web_reachable(url: &str) -> Result<(), String> {
     // A NAS asleep on its own hibernation timer drops the first SYN and takes its
-    // time coming back — 8s wasn't enough for a DS920+ waking up. A device that is
+    // time coming back - 8s wasn't enough for a DS920+ waking up. A device that is
     // simply off costs the full wait, but "it's not answering" arriving late beats
     // it arriving wrong about a device that was only asleep.
     let client = reqwest::blocking::Client::builder()
@@ -432,7 +432,7 @@ fn web_reachable(url: &str) -> Result<(), String> {
         .map_err(|e| format!("no http client: {e}"))?;
     client.get(url).send().map(|_| ()).map_err(|e| {
         // reqwest's own Display is "error sending request for url (…)" and stops
-        // there — the reason is only ever in the source chain, so walk it. Without
+        // there - the reason is only ever in the source chain, so walk it. Without
         // this the dialog repeats the url back at you and says nothing.
         let mut why = e.to_string();
         let mut cause: Option<&(dyn std::error::Error + 'static)> = std::error::Error::source(&e);
@@ -451,7 +451,7 @@ fn web_reachable(url: &str) -> Result<(), String> {
             // platform-neutral: the store is Keychain here and something else there.
             format!(
                 "\"{url}\" uses a certificate this machine doesn't trust, so a window \
-                 here would show nothing — trust it on this machine and it opens in the app"
+                 here would show nothing - trust it on this machine and it opens in the app"
             )
         } else {
             format!("\"{url}\": {why}")
@@ -459,14 +459,14 @@ fn web_reachable(url: &str) -> Result<(), String> {
     })
 }
 
-/// A device's web UI as a **tab**, the way pty.rs and rdp_session.rs are tabs — a
+/// A device's web UI as a **tab**, the way pty.rs and rdp_session.rs are tabs - a
 /// child webview inside the main window, not an iframe and not a window of its own.
 /// An iframe is what `X-Frame-Options` blocks, and DSM, OPNsense and Proxmox all send
 /// it; a separate window isn't where the rest of the app's sessions live.
 ///
 /// The webview is an OS-level view stacked *above* the page, so it obeys none of our
 /// CSS. The window tells us where to put it and shrinks it to nothing to get it out of
-/// the way — see `place_web_view`. Every overlay has to do that or it paints over them.
+/// the way - see `place_web_view`. Every overlay has to do that or it paints over them.
 ///
 /// It gets no capability, and must not: a remote origin matches no `ExecutionContext`
 /// in `capabilities/`, so the appliance's own page cannot reach a single one of our
@@ -488,18 +488,18 @@ async fn open_web_view(
         // internet goes, and it has its own opinions to show about that.
         os_open(url.as_ref())?;
         return Err(format!(
-            "\"{url}\" is plain http to a public address — patchbay opens cleartext \
+            "\"{url}\" is plain http to a public address - patchbay opens cleartext \
              only on your own network, so it opened in your browser instead"
         ));
     }
     let window = app.get_window("main").ok_or("the main window has gone")?;
 
     // Deliberately no reachability check on this path. It cost a whole round trip
-    // before anything appeared, which is most of "the websites load a while" — the
+    // before anything appeared, which is most of "the websites load a while" - the
     // view goes up now and `web_check` reports a bad certificate alongside it.
     // Where it ends up is not where it was sent. A Synology's http port is a three-line
     // script that redirects to its https one, so the certificate that silently blanks
-    // the page belongs to a url we were never given — and a JS redirect is invisible to
+    // the page belongs to a url we were never given - and a JS redirect is invisible to
     // an http client. This is the only way to learn the real destination.
     let reporter = app.clone();
     window
@@ -583,7 +583,7 @@ fn web_trusted_at(store: &Path, url: &str) -> bool {
 }
 
 /// "Show it anyway", remembered. A NAS is reached by its IP, so its certificate names
-/// something else and never will match — telling someone to re-address every device is
+/// something else and never will match - telling someone to re-address every device is
 /// not a fix. We still can't make the webview accept it, because that challenge belongs
 /// to wry; what this buys is that once the certificate *is* trusted on this machine,
 /// our own stricter check stops hiding a page the webview will now render perfectly.
@@ -600,7 +600,7 @@ fn web_trust(url: String) -> Result<(), String> {
 
 /// Cleartext is for the LAN and nowhere else. The `Info.plist` exemption that lets a
 /// webview load http at all is `NSAllowsArbitraryLoadsInWebContent`, which is broader
-/// than we need — Apple offers nothing narrower that covers a bare `192.168.x.x`. So
+/// than we need - Apple offers nothing narrower that covers a bare `192.168.x.x`. So
 /// the narrowing happens here instead: patchbay itself will only open cleartext to an
 /// address that cannot be on the public internet, and a public http url goes to the
 /// browser, which has its own opinions about that.
@@ -627,7 +627,7 @@ fn is_private_host(host: &str) -> bool {
     }
 }
 
-/// A device's leaf certificate, fetched without judging it — macOS does the judging,
+/// A device's leaf certificate, fetched without judging it - macOS does the judging,
 /// and it can't judge what it hasn't been shown. Same accept-anything verifier the RDP
 /// side needs, for the same reason: we are looking at the certificate, not trusting it.
 fn peer_cert(url: &str) -> Result<(String, Vec<u8>), String> {
@@ -671,7 +671,7 @@ fn peer_cert(url: &str) -> Result<(String, Vec<u8>), String> {
 }
 
 /// What the user is agreeing to trust, in the words the OS dialog would use. Nobody
-/// should be asked to trust a certificate they have not been shown — Safari puts the
+/// should be asked to trust a certificate they have not been shown - Safari puts the
 /// subject, issuer and expiry in front of you, and until this we asked for the same
 /// decision with only an error message on screen.
 #[derive(Serialize)]
@@ -702,7 +702,7 @@ fn cert_facts(der: &[u8]) -> Result<CertFacts, String> {
 }
 
 /// Fetch and describe, without trusting anything. Split from `web_trust_cert` so the
-/// window can show the certificate and *then* ask — one round trip each, rather than
+/// window can show the certificate and *then* ask - one round trip each, rather than
 /// one call that both reveals and commits.
 #[tauri::command]
 async fn web_cert(url: String) -> Result<serde_json::Value, String> {
@@ -719,7 +719,7 @@ async fn web_cert(url: String) -> Result<serde_json::Value, String> {
 
 /// Hand the certificate to macOS the way the browser's "Always trust" does. `security`
 /// is the system's own tool and it raises the system's own authorisation prompt, so
-/// nothing is trusted without the user's password — we never write trust settings
+/// nothing is trusted without the user's password - we never write trust settings
 /// ourselves, we ask macOS to.
 ///
 /// `-e hostnameMismatch` is the part that matters for an appliance: reached by its IP,
@@ -735,7 +735,7 @@ fn trust_cert(host: &str, der: &[u8]) -> Result<(), String> {
 
     // `-s <host>` is load-bearing: it scopes the trust to connections to *this* device,
     // which is what Apple's own checkbox says and what we told the user. Without it,
-    // `trustAsRoot -p ssl` makes the certificate a trusted SSL root outright — harmless
+    // `trustAsRoot -p ssl` makes the certificate a trusted SSL root outright - harmless
     // for a leaf that can only vouch for itself, and a very bad day if an appliance
     // hands us a CA certificate instead.
     let out = std::process::Command::new("/usr/bin/security")
@@ -770,8 +770,8 @@ async fn web_trust_cert(url: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (host, der) = peer_cert(&url)?;
         trust_cert(&host, &der)?;
-        // Our own check still refuses the name — rustls judges that itself and no trust
-        // setting changes it — so record the override too, or the panel comes straight
+        // Our own check still refuses the name - rustls judges that itself and no trust
+        // setting changes it - so record the override too, or the panel comes straight
         // back for a page that now loads.
         web_trust_at(&web_trust_store(), &url)
     })
@@ -808,11 +808,11 @@ fn trust_cert(_host: &str, der: &[u8]) -> Result<(), String> {
     })
 }
 
-/// Linux has no one store — the webview reads the system bundle, and writing to it is
+/// Linux has no one store - the webview reads the system bundle, and writing to it is
 /// the distribution's business, not an app's.
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn trust_cert(_host: &str, _der: &[u8]) -> Result<(), String> {
-    Err("trusting a certificate from here isn't supported on this system — accept it in your browser instead".into())
+    Err("trusting a certificate from here isn't supported on this system - accept it in your browser instead".into())
 }
 
 fn web_trust_at(store: &Path, url: &str) -> Result<(), String> {
@@ -837,7 +837,7 @@ struct TunnelView {
 }
 
 /// Opens a device's remote desktop. If it sits behind a jump chain, forward a
-/// local port over that chain first — RDP has no ProxyJump of its own.
+/// local port over that chain first - RDP has no ProxyJump of its own.
 #[tauri::command]
 async fn open_rdp(
     tunnels: tauri::State<'_, rdp::SharedTunnels>,
@@ -870,7 +870,7 @@ fn rdp_address(
 }
 
 /// A local address for a port ssh won't carry for us, forwarding over the jump chain
-/// when the device sits behind one. RDP and VNC both need exactly this — it is what
+/// when the device sits behind one. RDP and VNC both need exactly this - it is what
 /// Royal TS sells separately as Royal Server.
 fn dial_address(
     shared: &rdp::SharedTunnels,
@@ -905,7 +905,7 @@ fn dial_address(
 }
 
 /// Screen sharing the way remote desktop is handed off: we never speak VNC, the OS
-/// opens `vnc://` with whatever viewer is registered — Screen Sharing on macOS, and
+/// opens `vnc://` with whatever viewer is registered - Screen Sharing on macOS, and
 /// on Windows or Linux whichever client claimed the scheme when it was installed.
 #[tauri::command]
 async fn open_vnc(
@@ -928,7 +928,7 @@ async fn open_vnc(
 
 /// This goes to the desktop opener, so it is checked on the way out as well as in: an
 /// `@` or a `/` in the username would move the host the viewer dials. A name that
-/// can't be carried safely is left out rather than mangled — the viewer asks for it.
+/// can't be carried safely is left out rather than mangled - the viewer asks for it.
 fn vnc_url(addr: &str, user: Option<&str>) -> Result<String, String> {
     if !rdp::is_safe(addr) || addr.contains(['/', '@', '?', '#', ' ']) {
         return Err(format!("\"{addr}\" isn't a usable address"));
@@ -974,7 +974,7 @@ async fn open_rdp_session(
             .rsplit_once(':')
             .ok_or_else(|| format!("\"{addr}\" isn\'t a host and port"))?;
         let port: u16 = port.parse().map_err(|_| format!("\"{addr}\" has no usable port"))?;
-        // The window asks for a sign-in, so a jack with no `user` still connects —
+        // The window asks for a sign-in, so a jack with no `user` still connects -
         // the config's user is only what the field is prefilled with.
         let user = Some(user)
             .filter(|u| !u.is_empty())
@@ -1088,7 +1088,7 @@ fn save_settings(next: config::Settings) -> Result<(), String> {
     config::save_settings(&next)
 }
 
-/// One call for the whole loop — every team space fetched, then pushed or adopted,
+/// One call for the whole loop - every team space fetched, then pushed or adopted,
 /// whichever applies. The window runs it on focus and after every edit; with no team
 /// spaces it returns an empty list and touches nothing.
 #[tauri::command]
@@ -1125,7 +1125,7 @@ fn team_leave(space: String) -> Result<(), String> {
 }
 
 /// Files over the existing connection. Each call is its own `sftp` run, sharing one
-/// ssh session through multiplexing — see `sftp.rs`.
+/// ssh session through multiplexing - see `sftp.rs`.
 #[tauri::command]
 async fn sftp_ls(name: String, path: String) -> Result<sftp::Listing, String> {
     tauri::async_runtime::spawn_blocking(move || sftp::ls(&name, &path))
@@ -1147,7 +1147,7 @@ async fn sftp_get(name: String, remote: String, recurse: bool) -> Result<String,
 /// The connection a files tab rides when nothing else has authenticated one yet:
 /// `ssh -N` on a real pty, so a password, a host-key question or a key passphrase can
 /// be answered in the tab itself rather than in a shell opened somewhere else. It runs
-/// no command — its whole job is to be the master the `sftp` calls share, which is why
+/// no command - its whole job is to be the master the `sftp` calls share, which is why
 /// there is nothing to offer on Windows, where ssh has no multiplexing.
 #[tauri::command]
 fn open_master(
@@ -1190,7 +1190,7 @@ fn open_full_disk_access() -> Result<(), String> {
 }
 
 /// Polled by a files tab waiting on a shell to authenticate. A `stat`, not a
-/// connection — asking by trying would be a failed login attempt every second.
+/// connection - asking by trying would be a failed login attempt every second.
 #[tauri::command]
 fn sftp_ready(name: String) -> Result<bool, String> {
     sftp::ready(&name)
@@ -1232,7 +1232,7 @@ fn main() {
                 let _ = apply_vibrancy(&w, NSVisualEffectMaterial::Sidebar, None, Some(12.0));
             }
             // The default menu bar, minus Close Window. ⌘W belongs to the tab strip,
-            // and a menu accelerator is a native key equivalent — macOS closed the
+            // and a menu accelerator is a native key equivalent - macOS closed the
             // window before the page was ever asked, so the handler in boot.js never
             // ran and the whole app went with the tab. Spelled out rather than filtered
             // out of `Menu::default`, because a predefined item's id is a counter and
@@ -1332,7 +1332,7 @@ host = "x; id"
         assert_eq!(p, "ping");
         assert!(a.contains(&"10.0.0.4".to_string()), "got {a:?}");
 
-        // Behind a bastion, so it runs there — and the hop's own tunnel is left out,
+        // Behind a bastion, so it runs there - and the hop's own tunnel is left out,
         // or it fights the live session for the port.
         let (p, a) = task_argv("ping", "db", &j).unwrap();
         assert_eq!(p, "ssh");

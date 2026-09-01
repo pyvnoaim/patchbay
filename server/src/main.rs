@@ -6,12 +6,12 @@
 //! `/team` is plain HTTP on purpose: `GET` hands back the document with an `ETag`,
 //! `PUT` takes `If-Match` and refuses a stale one with 412. That is the same
 //! optimistic concurrency it always had, spelled the way every other HTTP file store
-//! spells it — so a space can point at a bucket or a static file instead of here, and
+//! spells it - so a space can point at a bucket or a static file instead of here, and
 //! the client keeps one code path. Seats and the paid flag ride along as advisory
 //! `x-` headers, which anywhere else simply won't send.
 //!
 //! There are no accounts. The team code *is* the credential, which matches the trust
-//! model — everyone on a team sees everything — and removes the entire login layer.
+//! model - everyone on a team sees everything - and removes the entire login layer.
 //! Being the credential is also why it travels in `x-team` and never in the path: a
 //! URL ends up in access logs, proxy logs and shell history, and a logged path is a
 //! leaked password.
@@ -20,7 +20,7 @@
 //! unauthenticated, so an open instance can be filled with empty teams. And a seat is
 //! whatever a client calls itself: the count is honest only while clients are, and a
 //! patched one that reuses a single device id never reaches the limit. Neither is
-//! fixable here — both need an account or a signed build to mean anything.
+//! fixable here - both need an account or a signed build to mean anything.
 
 use axum::{
     extract::State,
@@ -42,7 +42,7 @@ const FREE_SEATS: i64 = 3;
 const SEAT_TTL: i64 = 30 * 24 * 3600;
 
 /// ponytail: one connection behind a mutex. This is a document fetch per window
-/// focus, not a workload — a pool when a team's traffic can be measured.
+/// focus, not a workload - a pool when a team's traffic can be measured.
 type Db = Arc<Mutex<Connection>>;
 
 fn now() -> i64 {
@@ -223,14 +223,14 @@ async fn put_doc(
     if sent != version {
         return Err(Fail(
             StatusCode::PRECONDITION_FAILED,
-            "the config changed underneath you — fetch it again".into(),
+            "the config changed underneath you - fetch it again".into(),
         ));
     }
     let count = seats(&db, &code)?;
     if !paid && count > FREE_SEATS {
         return Err(Fail(
             StatusCode::PAYMENT_REQUIRED,
-            format!("{count} people on a team of {FREE_SEATS} — everyone can still read it"),
+            format!("{count} people on a team of {FREE_SEATS} - everyone can still read it"),
         ));
     }
 
@@ -274,7 +274,7 @@ mod tests {
     }
 
     /// What a caller actually gets back: the status, the body as text, and the
-    /// `ETag` — which is the document's version and the whole concurrency story.
+    /// `ETag` - which is the document's version and the whole concurrency story.
     struct Res {
         status: StatusCode,
         body: String,
@@ -300,7 +300,7 @@ mod tests {
         Res { status, body: String::from_utf8_lossy(&bytes).into_owned(), etag, headers }
     }
 
-    /// An empty `team` sends no `x-team` header — creating a team is the one call
+    /// An empty `team` sends no `x-team` header - creating a team is the one call
     /// that has no code yet. `etag` becomes `If-Match`, which every put needs.
     fn req(
         method: &str,
@@ -358,7 +358,7 @@ mod tests {
         assert_eq!(r.etag.as_deref(), Some("\"2\""));
 
         // The teammate who still thinks it's version 1 gets refused, not silently
-        // overwritten — and the document on the server is untouched.
+        // overwritten - and the document on the server is untouched.
         let r = call(&db, req("PUT", "/team", "d2", &code, Some("\"1\""), Some(doc))).await;
         assert_eq!(r.status, StatusCode::PRECONDITION_FAILED);
 

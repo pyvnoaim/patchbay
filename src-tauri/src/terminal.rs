@@ -9,7 +9,7 @@ fn is_bare(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || "@%_+=:,./-".contains(c))
 }
 
-/// Quote for a POSIX shell — the command goes through `do script` / `-e "…"`.
+/// Quote for a POSIX shell - the command goes through `do script` / `-e "…"`.
 #[cfg(not(windows))]
 fn quote(s: &str) -> String {
     if is_bare(s) {
@@ -27,7 +27,7 @@ fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace('"', "\\\""))
 }
 
-/// The command as a user would type it — shown in the UI and used by the
+/// The command as a user would type it - shown in the UI and used by the
 /// AppleScript/`sh -c` handoff, so it follows the host platform's quoting.
 pub fn command_line(args: &[String]) -> String {
     command_line_of("ssh", args)
@@ -115,7 +115,7 @@ pub fn open(args: &[String]) -> Result<(), String> {
             return Ok(());
         }
     }
-    Err("no terminal emulator found — tried gnome-terminal, konsole, alacritty, kitty, foot, xterm".into())
+    Err("no terminal emulator found - tried gnome-terminal, konsole, alacritty, kitty, foot, xterm".into())
 }
 
 #[cfg(test)]

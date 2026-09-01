@@ -1,4 +1,4 @@
-// Classic script, no bundler — see the load order in ui/index.html.
+// Classic script, no bundler - see the load order in ui/index.html.
 // Loaded last: wires the keyboard and starts everything, so every function
 // the handlers reach is already defined.
 
@@ -105,7 +105,7 @@ document.addEventListener("keydown", (e) => {
   if (mod && e.key === "[") { e.preventDefault(); return cycleSession(-1); }
   if (mod && e.key === "]") { e.preventDefault(); return cycleSession(1); }
 
-  // A live session owns the keyboard — every keystroke belongs to ssh, not to us.
+  // A live session owns the keyboard - every keystroke belongs to ssh, not to us.
   // Only the window-level shortcuts above and these get intercepted.
   if (activeId !== null) {
     if (mod && e.key === "w") { e.preventDefault(); closeSession(activeId); }
@@ -128,7 +128,7 @@ document.addEventListener("keydown", (e) => {
   else if (shown[sel] && (e.key === "Backspace" || e.key === "Delete")) { e.preventDefault(); removeJack(shown[sel].name, shown[sel].space ?? null); }
   else if (mod && e.key === "e") { e.preventDefault(); invoke("open_config"); }
   else if (mod && e.key === "r") { e.preventDefault(); load(); }
-  // Just start typing, like fzf — the palette opens carrying the keystroke.
+  // Just start typing, like fzf - the palette opens carrying the keystroke.
   else if (!mod && !e.altKey && e.key.length === 1) { e.preventDefault(); openPalette(e.key); }
 });
 
@@ -143,7 +143,7 @@ async function load() {
     spaces = await invoke("spaces").catch(() => []);
     tunnels = await invoke("tunnels").catch(() => []);
     all = await invoke("jacks");
-    // Open the first level once, on the first load only — doing it every time
+    // Open the first level once, on the first load only - doing it every time
     // would re-open folders the moment the window regains focus.
     if (!seeded) {
       for (const j of all) {
@@ -193,7 +193,7 @@ setInterval(refreshProbes, PROBE_EVERY);
 window.addEventListener("focus", load);
 
 // ── tooltips ───────────────────────────────────────────────────────────────
-// One element at body level so it escapes every overflow:hidden ancestor —
+// One element at body level so it escapes every overflow:hidden ancestor -
 // a sheet clips a ::after tooltip, which is how this started.
 const tipEl = $("tip");
 let tipTimer = null;
@@ -222,7 +222,7 @@ document.addEventListener("mouseover", (e) => {
     const r = tipEl.getBoundingClientRect();
     const gap = 7;
     // Above unless there is no room, and never past a window edge. `tipAt` is only for
-    // the few that sit hard against an edge and would otherwise be clamped anyway —
+    // the few that sit hard against an edge and would otherwise be clamped anyway -
     // centred is the default, and a button with room to centre should use it.
     const below = t.top - r.height - gap < 4;
     const at = el.dataset.tipAt;
@@ -231,7 +231,7 @@ document.addEventListener("mouseover", (e) => {
     const top = below ? t.bottom + gap : t.top - r.height - gap;
 
     // A web tab is an OS-level view above the page, so a tooltip landing on it is
-    // simply not drawn — an invisible element that still thinks it's showing. Flip to
+    // simply not drawn - an invisible element that still thinks it's showing. Flip to
     // the other side if that side is clear, and otherwise don't pretend: every tooltip
     // that can land there labels a control you can already see.
     const web = webViewRect();
@@ -252,7 +252,7 @@ document.addEventListener("mouseover", (e) => {
     // short enough that stopping on a button feels answered rather than waited on.
   }, wait);
 });
-// Only when the pointer actually leaves the control — `mouseout` also fires on the way
+// Only when the pointer actually leaves the control - `mouseout` also fires on the way
 // from a button's icon to its padding, and hiding there is the flicker.
 document.addEventListener("mouseout", (e) => {
   const el = e.target.closest("[data-tip]");

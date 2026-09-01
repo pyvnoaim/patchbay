@@ -46,7 +46,7 @@ test("hosts become jacks, patterns and Match blocks do not", () => {
   assert.equal(j[2].host, "10.0.0.4");
   assert.equal(j[4].host, "bare");
 
-  // `Match` settings hang off a condition, not a host — nothing there is a jack, and
+  // `Match` settings hang off a condition, not a host - nothing there is a jack, and
   // it must not leak into the block before it.
   assert.equal(j[4].user, undefined);
 });

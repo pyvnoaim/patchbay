@@ -58,7 +58,7 @@ body:not([data-os="macos"]) .tabs { height: 40px; }
 .pane[hidden] { display: none !important; }
 /* Tabs give up label before the strip gives up tab. `flex: none` here meant a narrow
    window scrolled the strip instead of shrinking anything, and the last tab went off
-   the edge taking its close button with it — the active tab, unclosable by mouse. */
+   the edge taking its close button with it - the active tab, unclosable by mouse. */
 .tab {
   display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;
   height: 27px; padding: 0 10px; border-radius: 7px;
@@ -105,7 +105,7 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
 .group:hover { background: var(--row-hover); }
 .group[aria-current="true"] { background: var(--row); color: var(--fg); font-weight: 550; }
 .group .label { overflow: hidden; text-overflow: ellipsis; }
-/* Always laid out, painted only when a session is open under this node — that
+/* Always laid out, painted only when a session is open under this node - that
    way it carries the auto margin and the count never shifts. */
 .group .live { margin-left: auto; width: 6px; height: 6px; border-radius: 50%; flex: none; background: transparent; }
 .group .live.on { background: var(--accent); }
@@ -134,15 +134,15 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
 #mid, #detail { background: var(--panel); }
 #mid {
   /* A grid item's floor is its content, so without min-height the column grows
-     past the window and #list never gets a scrollbar — same as #side. */
+     past the window and #list never gets a scrollbar - same as #side. */
   display: flex; flex-direction: column; min-width: 0; min-height: 0;
   border-left: 1px solid var(--line); border-right: 1px solid var(--line);
 }
-/* The only place ⌘K is advertised — without it the palette is invisible. */
+/* The only place ⌘K is advertised - without it the palette is invisible. */
 .chip {
   display: flex; align-items: center; gap: 6px; flex: none;
   height: 27px; padding: 0 10px; border-radius: 7px;
-  /* Outlined, because a filled pill is what the open tab wears — three filled
+  /* Outlined, because a filled pill is what the open tab wears - three filled
      pills in one strip and the actions read as two more tabs. Inset shadow
      rather than a border so it can't change the height. */
   background: transparent; box-shadow: inset 0 0 0 1px var(--line);
@@ -219,7 +219,7 @@ button { display: flex; align-items: center; justify-content: center; gap: 6px; 
 .d-cmd .mono { padding-right: 32px; }
 .d-copy { position: absolute; top: 3px; right: 3px; color: var(--fg-faint); }
 /* Buttons stretch by default, which is right in a footer and wrong in a row of two
-   where only one is `.ghost` — the odd one out grows and reads as the accident it is. */
+   where only one is `.ghost` - the odd one out grows and reads as the accident it is. */
 .btns { display: flex; gap: 6px; margin-top: 10px; }
 .btns button { flex: none; padding: 7px 14px; }
 button {
@@ -232,7 +232,7 @@ button.primary:hover { filter: brightness(1.1); }
 button.ghost { flex: none; }
 
 /* ── palette ───────────────────────────────────────────────── */
-/* Every overlay dims *and* blurs what's behind it — dimming alone leaves the device
+/* Every overlay dims *and* blurs what's behind it - dimming alone leaves the device
    list legible through the sheet, which reads as two things competing for attention
    rather than one on top of the other. Listed together so a new overlay inherits it. */
 #palette, #sheetwrap, #askwrap, #importwrap, #setwrap {
@@ -400,11 +400,11 @@ button:disabled { opacity: .5; }
            display: flex; justify-content: center; align-items: center; padding: 5vh 16px; }
 /* The desktop keeps its aspect ratio and sits on black, the way every remote
    desktop client letterboxes a session that doesn't match the window. */
-/* Nothing is drawn in here — the child webview is an OS view sitting exactly over it,
+/* Nothing is drawn in here - the child webview is an OS view sitting exactly over it,
    and this div exists only to be measured. The padding the terminal wants would put
    the page off-centre from its own tab, so it goes. */
 .webhost { padding: 0; background: var(--bg); }
-/* Shown in place of a tab that can't show what it was opened for — a blank pane
+/* Shown in place of a tab that can't show what it was opened for - a blank pane
    explains nothing, and this is the only chance to say what went wrong. */
 .panefail {
   max-width: 460px; margin: 0 auto; padding: 18vh 20px 0;
@@ -468,9 +468,9 @@ button:disabled { opacity: .5; }
 /* The pane it lands on is the one that needs answering, so say which. */
 .setnav button.warn { color: var(--down); }
 /* A floor, so the sheet doesn't jump size as you move between a short pane and a
-   tall one — the rail would move under the cursor that just clicked it. */
+   tall one - the rail would move under the cursor that just clicked it. */
 .setpanes { flex: 1; min-width: 0; min-height: 420px; padding: 16px 20px; overflow-y: auto; scrollbar-width: thin; }
-/* The pane's own heading is its title — nothing above it to be spaced away from. */
+/* The pane's own heading is its title - nothing above it to be spaced away from. */
 .pane > .d-sec:first-child { margin-top: 0; }
 /* The settings sheet is a single column, so a row of fields needs its own grid. */
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
@@ -502,7 +502,7 @@ button:disabled { opacity: .5; }
 .space-row .btns { margin-top: 8px; }
 
 /* Tooltips. Native `title` is unreliable in a webview, and a ::after tooltip
-   cannot escape an overflow:hidden ancestor — inside a sheet it gets clipped.
+   cannot escape an overflow:hidden ancestor - inside a sheet it gets clipped.
    So there is one element at body level, positioned in JS. */
 #tip {
   position: fixed; z-index: 60; top: 0; left: 0;
@@ -544,7 +544,7 @@ button:disabled { opacity: .5; }
 .firstrun .mono { text-align: left; margin-bottom: 14px; }
 .firstrun .btns { justify-content: center; }
 
-/* "How do you reach it?" — the form only shows the fields that answer follows. */
+/* "How do you reach it?" - the form only shows the fields that answer follows. */
 /* The question on its own line and the options as one wrapping row beneath. Inline,
    the label ate the width of one option and pushed the last one onto a second line by
    itself, which read as a separate question. */

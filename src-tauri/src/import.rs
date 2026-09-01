@@ -1,4 +1,4 @@
-//! **A port of `src/import.ts`** — same rules, same names, same output. The CLI prints
+//! **A port of `src/import.ts`** - same rules, same names, same output. The CLI prints
 //! its result and you paste it; the window shows the same list and writes what you
 //! tick. Change one, change both.
 
@@ -21,7 +21,7 @@ pub struct Found {
     pub warnings: Vec<String>,
 }
 
-/// Everything else ssh already applies for us — we exec it, so importing its defaults
+/// Everything else ssh already applies for us - we exec it, so importing its defaults
 /// would only duplicate them into a second file that can go stale.
 const WANTED: [&str; 5] = ["hostname", "user", "port", "identityfile", "proxyjump"];
 
@@ -60,7 +60,7 @@ impl Walk {
             let hops: Vec<&str> = j.split(',').map(str::trim).collect();
             let last = hops.last().unwrap().to_string();
             self.warnings.push(format!(
-                "{}: ProxyJump has {} hops — kept \"{last}\", dropped the rest",
+                "{}: ProxyJump has {} hops - kept \"{last}\", dropped the rest",
                 self.aliases.join(", "),
                 hops.len()
             ));
@@ -101,7 +101,7 @@ pub fn from_ssh_config(src: &str) -> Found {
 
     for raw in src.lines() {
         let line = raw.trim();
-        // ssh only treats `#` as a comment at the start of a line — a trailing one is
+        // ssh only treats `#` as a comment at the start of a line - a trailing one is
         // part of the value, so stripping it would corrupt a path with a hash in it.
         if line.is_empty() || line.starts_with('#') {
             continue;
@@ -148,7 +148,7 @@ pub fn from_ssh_config(src: &str) -> Found {
     } = w;
 
     if included {
-        warnings.push("Include lines were not followed — run the importer on those files too".into());
+        warnings.push("Include lines were not followed - run the importer on those files too".into());
     }
 
     // A ProxyJump naming another Host has to point at that jack's sanitised name;
@@ -215,7 +215,7 @@ Match host *.internal
         assert_eq!(f.hosts[2].host, "10.0.0.4");
         assert_eq!(f.hosts[4].host, "bare");
 
-        // `Match` settings hang off a condition, not a host — nothing there is a jack,
+        // `Match` settings hang off a condition, not a host - nothing there is a jack,
         // and it must not leak into the block before it.
         assert_eq!(f.hosts[4].user, None);
     }

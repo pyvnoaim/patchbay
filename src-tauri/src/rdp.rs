@@ -1,4 +1,4 @@
-//! Remote desktop, by handoff. We never speak RDP — we write a `.rdp` file and let
+//! Remote desktop, by handoff. We never speak RDP - we write a `.rdp` file and let
 //! the OS open it: mstsc on Windows, Windows App / Microsoft Remote Desktop on
 //! macOS, xfreerdp on Linux. One format, three clients, no embedded FreeRDP.
 //!
@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// `.rdp` is line-based, so a newline in a host or username would inject further
-/// directives — `alternate shell:s:` runs a program on connect. Nothing but plain
+/// directives - `alternate shell:s:` runs a program on connect. Nothing but plain
 /// printable text gets written into that file.
 pub fn is_safe(s: &str) -> bool {
     !s.is_empty() && !s.chars().any(|c| c.is_control())
@@ -93,7 +93,7 @@ impl Tunnels {
             let _ = t.child.kill();
             let _ = t.child.wait();
             return Err(format!(
-                "the tunnel to {jack} never came up — check you can reach {via}"
+                "the tunnel to {jack} never came up - check you can reach {via}"
             ));
         }
         self.0.lock().unwrap().insert(id, t);
@@ -126,7 +126,7 @@ impl Tunnels {
 }
 
 /// Writes the file somewhere the client can read it. Contains a hostname and
-/// maybe a username — never a secret.
+/// maybe a username - never a secret.
 pub fn write_file(name: &str, body: &str) -> Result<std::path::PathBuf, String> {
     let dir = std::env::temp_dir().join("patchbay");
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;

@@ -7,7 +7,7 @@ import { styleText } from "node:util";
 import { fromSshConfig, toToml } from "./import.ts";
 import { configPath, loadAll, matches, resolve, spacePath, sshArgs, type Jacks } from "./patchbay.ts";
 
-const TEMPLATE = `# patchbay — every host, one jack away
+const TEMPLATE = `# patchbay - every host, one jack away
 # Anything here is inherited by every jack below.
 [defaults]
 user = "root"
@@ -71,7 +71,7 @@ const [cmd, ...rest] = process.argv.slice(2);
 
 if (cmd === "-h" || cmd === "--help") {
   console.log(`bay              pick a jack (fzf) or list them
-bay <name>       connect — substring is enough
+bay <name>       connect - substring is enough
 bay <name> -n    print the ssh command instead of running it
 bay <name> -- <cmd>   run a command instead of a shell
 bay ls [filter]  list jacks, filtered by name or folder
@@ -94,7 +94,7 @@ if (cmd === "import") {
 }
 
 const path = configPath();
-if (!existsSync(path)) die(`no config at ${path} — run \`bay edit\` to start one`);
+if (!existsSync(path)) die(`no config at ${path} - run \`bay edit\` to start one`);
 
 let jacks: Jacks;
 try {
@@ -127,7 +127,7 @@ try {
 
   const r = spawnSync("ssh", args, { stdio: "inherit" });
   if ((r.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT")
-    die(win ? "no ssh on PATH — enable the OpenSSH Client feature in Windows Settings" : "no ssh on PATH");
+    die(win ? "no ssh on PATH - enable the OpenSSH Client feature in Windows Settings" : "no ssh on PATH");
   process.exit(r.status ?? 1);
 } catch (e) {
   die((e as Error).message);

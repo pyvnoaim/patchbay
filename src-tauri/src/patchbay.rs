@@ -1,5 +1,5 @@
 //! Port of `src/patchbay.ts`. Same behaviour, same errors, same argv.
-//! The tests at the bottom mirror `test/patchbay.test.ts` one for one — if you
+//! The tests at the bottom mirror `test/patchbay.test.ts` one for one - if you
 //! change the TypeScript, change this, and both suites should still agree.
 
 use indexmap::IndexMap;
@@ -20,13 +20,13 @@ pub struct Jack {
     pub key: Option<String>,
     pub jump: Option<String>,
     pub os: Option<String>,
-    /// Optional web UI — a NAS or router is one device with two ways in.
+    /// Optional web UI - a NAS or router is one device with two ways in.
     pub url: Option<String>,
     /// Port for remote desktop. Absent means this device has none.
     pub rdp: Option<u16>,
     /// Port for screen sharing. Handed to the system's VNC viewer, never spoken here.
     pub vnc: Option<u16>,
-    /// Absent means yes — most devices are reached over ssh.
+    /// Absent means yes - most devices are reached over ssh.
     pub ssh: Option<bool>,
     /// What Enter and a double-click do: "ssh" | "rdp" | "vnc" | "web". Absent picks the
     /// first one the device actually has.
@@ -37,7 +37,7 @@ pub struct Jack {
     pub tags: Option<Vec<String>>,
     pub desc: Option<String>,
     pub forward: Option<Vec<String>>,
-    /// Which space this came from — the file it was in, not a field anyone writes.
+    /// Which space this came from - the file it was in, not a field anyone writes.
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub space: Option<String>,
 }
@@ -50,7 +50,7 @@ struct Raw {
     jack: IndexMap<String, Jack>,
 }
 
-/// `%APPDATA%` on Windows, `$XDG_CONFIG_HOME` or `~/.config` elsewhere — matches configPath() in the CLI.
+/// `%APPDATA%` on Windows, `$XDG_CONFIG_HOME` or `~/.config` elsewhere - matches configPath() in the CLI.
 pub fn config_path() -> PathBuf {
     if let Ok(p) = std::env::var("PATCHBAY_CONFIG") {
         return PathBuf::from(p);
@@ -74,7 +74,7 @@ fn expand(p: &str) -> String {
     }
 }
 
-/// `[defaults]` merges into every jack — that's the whole credential-inheritance feature.
+/// `[defaults]` merges into every jack - that's the whole credential-inheritance feature.
 pub fn parse(src: &str) -> Result<Jacks, String> {
     let raw: Raw = toml::from_str(src).map_err(|e| e.message().to_string())?;
     let d = &raw.defaults;
@@ -118,7 +118,7 @@ pub fn spaces_dir(cfg: &Path) -> PathBuf {
     cfg.with_file_name("spaces")
 }
 
-/// Where a named space lives. `None` is the main config — that one is your own list.
+/// Where a named space lives. `None` is the main config - that one is your own list.
 pub fn space_path(cfg: &Path, space: Option<&str>) -> PathBuf {
     match space {
         Some(s) => spaces_dir(cfg).join(format!("{s}.toml")),
@@ -127,7 +127,7 @@ pub fn space_path(cfg: &Path, space: Option<&str>) -> PathBuf {
 }
 
 /// Every space that exists: the main config first, then `spaces/*.toml` sorted.
-/// The `.toml` test is load-bearing — a space's `.toml.base` and `.toml.bak` sit in
+/// The `.toml` test is load-bearing - a space's `.toml.base` and `.toml.bak` sit in
 /// the same directory and are not spaces.
 pub fn space_paths(cfg: &Path) -> Vec<(Option<String>, PathBuf)> {
     let mut out = Vec::new();
@@ -153,7 +153,7 @@ pub fn space_paths(cfg: &Path) -> Vec<(Option<String>, PathBuf)> {
 /// Every space's jacks in one map. Each file resolves on its own, so `[defaults]` in
 /// a space applies to that space's jacks and nobody else's.
 ///
-/// ponytail: a name in two spaces resolves to the first one — the main config, then
+/// ponytail: a name in two spaces resolves to the first one - the main config, then
 /// spaces alphabetically. Qualify as "acme:web" if two spaces ever collide in practice.
 pub fn load_all(cfg: &Path) -> Result<Jacks, String> {
     let mut out = Jacks::new();
@@ -176,7 +176,7 @@ fn spec(j: &Jack) -> String {
 }
 
 /// The jump chain, ordered the way `ssh -J` wants it: leftmost is the first hop
-/// from here. Walking `jump` goes outward from the target, so the walk is reversed —
+/// from here. Walking `jump` goes outward from the target, so the walk is reversed -
 /// `db → web → bastion` has to dial bastion first, not web.
 pub fn hops(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
     let j = jacks
@@ -209,7 +209,7 @@ pub fn hops(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-/// The machine we open the first TCP connection to — the outermost bastion if
+/// The machine we open the first TCP connection to - the outermost bastion if
 /// there's a chain, otherwise the jack itself. This is the only thing worth probing;
 /// anything past it is reachable only through ssh.
 pub fn entry(name: &str, jacks: &Jacks) -> Result<(String, u16), String> {
@@ -352,7 +352,7 @@ mod tests {
 
     #[test]
     fn jump_chains_dial_the_outermost_bastion_first() {
-        // db is reached via web, web via bastion — so from here the order is bastion, then web.
+        // db is reached via web, web via bastion - so from here the order is bastion, then web.
         assert_eq!(
             ssh_args("db", &fixture()).unwrap(),
             ["-J", "jump@bastion.example:2222,deploy@10.0.0.4", "-L", "5432:localhost:5432", "10.0.0.5"]
@@ -483,7 +483,7 @@ mod tests {
             "#,
         )
         .unwrap();
-        // Mirrors the TypeScript test of the same name — the two disagreed here once.
+        // Mirrors the TypeScript test of the same name - the two disagreed here once.
         assert_eq!(j["a"].folders.as_deref(), Some(&["mine".to_string()][..]));
     }
 

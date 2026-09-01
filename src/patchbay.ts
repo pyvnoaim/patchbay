@@ -21,7 +21,7 @@ export type Jack = {
   tags?: string[];
   desc?: string;
   forward?: string[];
-  /** Which space this came from — the file it was in, not a field anyone writes. */
+  /** Which space this came from - the file it was in, not a field anyone writes. */
   space?: string;
 };
 
@@ -40,13 +40,13 @@ export const configPath = (): string =>
 /** Beside the config: one file per extra space. A space *is* a config, whole. */
 export const spacesDir = (cfg = configPath()): string => join(dirname(cfg), "spaces");
 
-/** Where a named space lives. No name is the main config — that one is your own list. */
+/** Where a named space lives. No name is the main config - that one is your own list. */
 export const spacePath = (space?: string, cfg = configPath()): string =>
   space ? join(spacesDir(cfg), `${space}.toml`) : cfg;
 
 /**
  * Every space that exists: the main config first, then `spaces/*.toml` sorted.
- * The `.toml` test is load-bearing — a space's `.toml.base` and `.toml.bak` sit in
+ * The `.toml` test is load-bearing - a space's `.toml.base` and `.toml.bak` sit in
  * the same directory and are not spaces.
  */
 export function spacePaths(cfg = configPath()): [string | undefined, string][] {
@@ -65,7 +65,7 @@ export function spacePaths(cfg = configPath()): [string | undefined, string][] {
 
 const expand = (p: string) => (p.startsWith("~") ? homedir() + p.slice(1) : p);
 
-/** [defaults] merges into every jack — that's the whole credential-inheritance feature. */
+/** [defaults] merges into every jack - that's the whole credential-inheritance feature. */
 export function load(path = configPath()): Jacks {
   const raw = parse(readFileSync(path, "utf8")) as {
     defaults?: Partial<Jack>;
@@ -89,7 +89,7 @@ export function load(path = configPath()): Jacks {
  * Every space's jacks in one map. Each file resolves on its own, so `[defaults]` in
  * a space applies to that space's jacks and nobody else's.
  *
- * ponytail: a name in two spaces resolves to the first one — the main config, then
+ * ponytail: a name in two spaces resolves to the first one - the main config, then
  * spaces alphabetically. Qualify as "acme:web" if two spaces ever collide in practice.
  */
 export function loadAll(cfg = configPath()): Jacks {
@@ -106,7 +106,7 @@ const spec = (j: Jack) => `${j.user ? j.user + "@" : ""}${j.host}`;
 
 /**
  * The jump chain, ordered the way `ssh -J` wants it: leftmost is the first hop
- * from here. Walking `jump` goes outward from the target, so the walk is reversed —
+ * from here. Walking `jump` goes outward from the target, so the walk is reversed -
  * `db → web → bastion` has to dial bastion first, not web.
  */
 export function hops(name: string, jacks: Jacks): string[] {

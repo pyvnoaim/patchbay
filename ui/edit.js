@@ -1,4 +1,4 @@
-// Classic script, no bundler — see the load order in ui/index.html.
+// Classic script, no bundler - see the load order in ui/index.html.
 // Everything that changes the config: right-click menu, prompts, the
 // add/edit sheet, and the calls into config.rs.
 
@@ -28,7 +28,7 @@ ctxEl.addEventListener("click", (e) => {
   actions.get(a)?.();
 });
 
-// The webview's own menu is Reload / Inspect Element — never useful here.
+// The webview's own menu is Reload / Inspect Element - never useful here.
 document.addEventListener("contextmenu", (e) => {
   e.preventDefault();
   const jackRow = e.target.closest("#list .jack");
@@ -44,7 +44,7 @@ document.addEventListener("contextmenu", (e) => {
       ] : []),
       ...(j.url ? [
         { icon: "globe", label: "Open web UI", run: () => openWeb(j.name) },
-        // The handoff stays, the way Terminal and the system RDP client do — and it's
+        // The handoff stays, the way Terminal and the system RDP client do - and it's
         // the only way to reach a page whose certificate needs clicking through.
         { icon: "external-link", label: "Open web UI in browser", run: () => invoke("open_url", { name: j.name }).catch(alertish) },
       ] : []),
@@ -129,7 +129,7 @@ window.addEventListener("resize", hideCtx);
 let askResolve = null;
 // A prompt when there is something to type, a plain confirmation when `value` is
 // null. Pre-filling a box with the answer and then checking you typed it back is
-// ceremony, not a safeguard — the button label already says what will happen.
+// ceremony, not a safeguard - the button label already says what will happen.
 /// A `user` of null is the plain one-input prompt; a string (empty included) adds
 /// the username field above and resolves to `{ user, password }` instead.
 function ask(title, value = "", okLabel = "OK", type = "text", user = null) {
@@ -157,7 +157,7 @@ askForm.addEventListener("submit", (e) => {
   if (askUserField.hidden) return closeAsk(askInput.value.trim() || null);
   const user = askUser.value.trim();
   if (!user) return showErr(askErr, "a username, or the desktop won't let you in");
-  // The password is the one field that isn't trimmed — a space in one is a character.
+  // The password is the one field that isn't trimmed - a space in one is a character.
   closeAsk(askInput.value ? { user, password: askInput.value } : null);
 });
 $("ask-cancel").addEventListener("click", () => closeAsk(null));
@@ -185,7 +185,7 @@ function openJack(j, prefillGroup) {
   f.key.value = j?.key ?? "";
   f.jump.value = j?.jump ?? "";
   f.os.value = j?.os ?? "";
-  // The scheme is a control, not something to type — and not something to typo.
+  // The scheme is a control, not something to type - and not something to typo.
   const m = /^(https?:\/\/)(.*)$/i.exec(j?.url ?? "");
   setScheme(m ? m[1].toLowerCase() : "https://");
   f.url.value = m ? m[2] : "";
@@ -212,7 +212,7 @@ jackForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = jackForm.elements;
   const reach = reachOf(f);
-  // Files ride the ssh connection, so they keep every ssh field — the choice only
+  // Files ride the ssh connection, so they keep every ssh field - the choice only
   // changes what a double-click does, which is the one thing `primary` records.
   const overSsh = reach === "ssh" || reach === "sftp";
   const port = f.port.value.trim();
@@ -236,7 +236,7 @@ jackForm.addEventListener("submit", async (e) => {
         name: f.name.value.trim(),
         host: f.host.value.trim(),
         user: f.user.value.trim() || null,
-        // One way in, so the other two are cleared rather than left lying about — a
+        // One way in, so the other two are cleared rather than left lying about - a
         // device edited here keeps only what it was set to, including one saved back
         // when this row allowed several.
         port: overSsh && port ? +port : null,
@@ -278,7 +278,7 @@ async function removeJack(name, space) {
 }
 
 async function newSpace() {
-  const name = await ask("A space is a config file of its own — its devices, folders and "
+  const name = await ask("A space is a config file of its own - its devices, folders and "
     + "defaults are separate from your list.\n\nName it", "", "Create");
   if (!name) return;
   try {
@@ -345,7 +345,7 @@ function alertish(e) {
 
 // ── import sheet ───────────────────────────────────────────────────────────
 // The CLI prints TOML and you paste it; the window has somewhere to show the list,
-// so it ticks and writes instead — through save_jack, like every other edit.
+// so it ticks and writes instead - through save_jack, like every other edit.
 let impFound = [];
 
 async function openImport() {
@@ -515,15 +515,15 @@ function renderTeam() {
     }
     const seats = `${t.seats} seat${t.seats === 1 ? "" : "s"}${t.paid ? "" : ", free up to three"}`;
     const say = {
-      conflict: "This space and the team's have both changed since they last agreed. Pick one — " +
+      conflict: "This space and the team's have both changed since they last agreed. Pick one - " +
         `whichever you drop is kept beside it as ${sp}.toml.bak.`,
       blocked: `${t.error ?? ""} Your edits stay on this machine until the team has room for them.`,
-      offline: `Not reaching the server: ${t.error ?? ""} — the list still works, and changes go up when it answers.`,
+      offline: `Not reaching the server: ${t.error ?? ""} - the list still works, and changes go up when it answers.`,
       // Nothing is wrong with it: it is a subscription, and only an edit makes it awkward.
-      readonly: `${t.error ?? "read-only"} — undo them, or copy the devices you want into a space of your own.`,
+      readonly: `${t.error ?? "read-only"} - undo them, or copy the devices you want into a space of your own.`,
       // Nothing to do with the server, so don't blame it: this machine's own copy is
       // in the way, and nothing syncs either direction until it's readable again.
-      error: `${t.error ?? "the sync stopped here"} — nothing is going up or coming down until that's sorted.`,
+      error: `${t.error ?? "the sync stopped here"} - nothing is going up or coming down until that's sorted.`,
     };
     return `<div class="space-row">
       <div class="space-name">${icon("network")}${esc(sp)}</div>
@@ -561,7 +561,7 @@ $("spaces-list").addEventListener("click", async (e) => {
   const t = teams.find((x) => x.space === space);
   if (b.dataset.sact === "copy") return navigator.clipboard.writeText(t?.code ?? "").catch(() => {});
   if (b.dataset.sact === "share") {
-    const url = await ask(`Hand "${space}" to a new team — every device in it becomes the `
+    const url = await ask(`Hand "${space}" to a new team - every device in it becomes the `
       + "team's list.\n\nThe address of your team server", "https://", "Share");
     if (!url) return;
     return teamCall(() => invoke("team_create", { space, url: url.trim() }));

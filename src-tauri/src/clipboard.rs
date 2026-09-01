@@ -1,7 +1,7 @@
 //! The clipboard shared with a remote desktop, over RDP's CLIPRDR channel.
 //!
 //! Text only, deliberately. Files mean `CF_HDROP`, a temp directory and chunked
-//! file-stream transfers — a much larger feature, and copying an error message out
+//! file-stream transfers - a much larger feature, and copying an error message out
 //! of a Windows box is what people actually open a session for.
 //!
 //! Both directions are lazy, which is how CLIPRDR works: whoever copies only
@@ -42,12 +42,12 @@ fn set_local_text(text: &str) {
     }
 }
 
-/// Our half of CLIPRDR. It never talks to the network — it turns callbacks into
+/// Our half of CLIPRDR. It never talks to the network - it turns callbacks into
 /// [`ClipboardMessage`]s on a channel, and the session's pump loop turns those into
 /// PDUs. That keeps every socket write on the one thread that owns the connection.
 /// What the local clipboard last held, as far as the session is concerned. Shared
 /// with the poll loop so text that arrived *from* the remote isn't immediately
-/// advertised back to it — that round trip is wasted, and it takes clipboard
+/// advertised back to it - that round trip is wasted, and it takes clipboard
 /// ownership away from the machine that actually has the data.
 pub type LastSeen = std::sync::Arc<std::sync::Mutex<Option<String>>>;
 
@@ -129,7 +129,7 @@ impl CliprdrBackend for Backend {
         self.send(ClipboardMessage::SendFormatData(response.into_owned()));
     }
 
-    /// Their text has arrived — put it on this machine's clipboard.
+    /// Their text has arrived - put it on this machine's clipboard.
     fn on_format_data_response(&mut self, response: FormatDataResponse<'_>) {
         if response.is_error() {
             return;

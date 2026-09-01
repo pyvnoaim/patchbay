@@ -22,7 +22,7 @@ if (isMac) document.body.dataset.os = "macos";
 // Shortcut labels: ⌘K on macOS, Ctrl+K everywhere else. The handler already accepts both.
 const chord = (k) => (isMac ? `⌘${k.toUpperCase()}` : `Ctrl+${k.toUpperCase()}`);
 
-// Anything keyed by a folder needs the space too — two spaces can both have a "prod".
+// Anything keyed by a folder needs the space too - two spaces can both have a "prod".
 // Sets and Maps only; the space and path travel to Rust separately, never as this.
 const gkey = (g) => (g ? `${g.space ?? ""}\u0000${g.path ?? ""}` : "");
 const sameGroup = (a, b) => gkey(a) === gkey(b);
@@ -68,14 +68,14 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 // because folding them together would let a ⌘K opened over a sheet change which one
 // Escape closes.
 const sheetOpen = () => [sheetWrap, askWrap, setWrap, impWrap].some((el) => !el.hidden);
-// Anything painting over the window at all — palette and context menu included. A web
+// Anything painting over the window at all - palette and context menu included. A web
 // tab is an OS view stacked above the page, so it has to shrink away for every one of
 // these. The sidebar stays live while a session tab is open, so a right-click menu
 // lands over the webview and is otherwise half-covered by it.
 const OVERLAYS = () => [sheetWrap, askWrap, setWrap, impWrap, paletteEl, ctxEl];
 const modalOpen = () => OVERLAYS().some((el) => !el.hidden);
 
-// Lucide, inlined at generate time by scripts/icons.mjs — see ui/icons.js.
+// Lucide, inlined at generate time by scripts/icons.mjs - see ui/icons.js.
 const icon = (name) =>
   `<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] ?? ""}</svg>`;

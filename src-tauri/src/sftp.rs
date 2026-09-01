@@ -5,7 +5,7 @@
 //! keep doing the work, and a jump chain is the one `patchbay.rs` already worked out.
 //!
 //! Every operation is its own `sftp -b -` run, which would be a fresh handshake each
-//! time — so they share one through ssh's own multiplexing. That is why this is a set
+//! time - so they share one through ssh's own multiplexing. That is why this is a set
 //! of stateless commands rather than a long-lived process with a prompt to parse.
 
 use crate::patchbay;
@@ -16,7 +16,7 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 /// Long enough for a big directory over a slow link, short enough that a host which
-/// stopped answering doesn't hold a tab open forever. A *listing* only — a transfer
+/// stopped answering doesn't hold a tab open forever. A *listing* only - a transfer
 /// takes as long as the file is big, and a clock is the wrong way to notice a dead
 /// host mid-copy. `mux` sets ssh's own keepalive for that.
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -26,7 +26,7 @@ pub struct Entry {
     pub name: String,
     pub dir: bool,
     pub size: u64,
-    /// As the server printed it — the format is the server's business, and reformatting
+    /// As the server printed it - the format is the server's business, and reformatting
     /// someone else's locale into ours is how you get a date that's wrong by a year.
     pub modified: String,
 }
@@ -43,7 +43,7 @@ pub fn control_path(name: &str) -> PathBuf {
 }
 
 /// `sftp` takes the same options as `ssh` bar two: the port is `-P`, not `-p`, and it
-/// is getopt-strict — every option has to come *before* the destination, which is what
+/// is getopt-strict - every option has to come *before* the destination, which is what
 /// `ssh_args` puts last. So `-b -` goes in here rather than being appended by the
 /// caller; appended, sftp answers a directory listing with its usage message.
 /// Forwards are dropped: a file copy has no use for the hop's tunnels, and re-binding
@@ -71,7 +71,7 @@ fn sftp_args(ssh: Vec<String>, socket: &Path) -> Vec<String> {
 }
 
 /// Share one ssh connection. `pty.rs` puts the same options on a terminal session, so
-/// opening a shell and then browsing files is one authentication and one connection —
+/// opening a shell and then browsing files is one authentication and one connection -
 /// which is what "files over the same connection" has to mean when `-b` rules out
 /// asking for a password.
 ///
@@ -105,7 +105,7 @@ pub fn mux(socket: &Path) -> Vec<String> {
 }
 
 /// A local path, as sftp's batch language will read it. Windows spells its paths with
-/// `\`, which is the escape character inside a quoted argument — `C:\Users` would
+/// `\`, which is the escape character inside a quoted argument - `C:\Users` would
 /// arrive as `C:Users`. Windows takes `/` in a path perfectly well, so that is what
 /// goes in the line.
 fn local_arg(p: &Path) -> Result<String, String> {
@@ -164,7 +164,7 @@ fn batch(name: &str, script: &str, deadline: Option<Duration>) -> Result<String,
         return Err(format!("sftp failed ({})", out.status));
     }
     // A batch has no terminal to type a password into, so a host that wants one can
-    // only be reached through a connection something else already authenticated —
+    // only be reached through a connection something else already authenticated -
     // which is exactly what a terminal session to the same device leaves behind. On
     // Windows there is no such sharing, so saying so would be advice that can't work.
     if !err.contains("Permission denied") {
@@ -173,15 +173,15 @@ fn batch(name: &str, script: &str, deadline: Option<Duration>) -> Result<String,
     #[cfg(not(windows))]
     let hint = format!("connect a terminal to {name} first, and the file browser will use that session");
     #[cfg(windows)]
-    let hint = format!("{name} wants a password, and sftp has no terminal to ask in — this one needs a key or your agent");
-    Err(format!("{err}\n\nno key would do — {hint}"))
+    let hint = format!("{name} wants a password, and sftp has no terminal to ask in - this one needs a key or your agent");
+    Err(format!("{err}\n\nno key would do - {hint}"))
 }
 
 /// One `ls -l` line into an entry. The format is the server's `ls`, so this is
 /// deliberately forgiving: anything it can't read is skipped rather than guessed at.
 pub fn parse_line(line: &str) -> Option<Entry> {
     let f: Vec<&str> = line.split_whitespace().collect();
-    // mode links owner group size month day time name — nine at the very least.
+    // mode links owner group size month day time name - nine at the very least.
     if f.len() < 9 || f[0].len() < 10 {
         return None;
     }
@@ -200,7 +200,7 @@ pub fn parse_line(line: &str) -> Option<Entry> {
     .to_string();
     // A name is a name, never a path: the far end wrote this, and every caller
     // appends it to the directory it came from. One with a slash in it would walk
-    // out of that directory — and out of ~/Downloads on the way back down.
+    // out of that directory - and out of ~/Downloads on the way back down.
     if name.is_empty() || name == "." || name == ".." || name.contains('/') {
         return None;
     }
@@ -212,9 +212,9 @@ pub fn parse_line(line: &str) -> Option<Entry> {
     })
 }
 
-/// A path we are willing to put in a batch script — either side of the line. sftp's
+/// A path we are willing to put in a batch script - either side of the line. sftp's
 /// batch language is line-based and quotes with `"`, so a newline or a quote in a path
-/// would end the command and start another — the same hole as a newline in a `.rdp`,
+/// would end the command and start another - the same hole as a newline in a `.rdp`,
 /// closed the same way: refuse rather than escape. Local names get the same check as
 /// remote ones: a file dragged in is named by whoever made it, and macOS and Linux both
 /// allow a quote in a filename.
@@ -249,7 +249,7 @@ fn parse_listing(out: &str, asked_for: &str) -> Listing {
     Listing { path, entries: out.lines().filter_map(parse_line).collect() }
 }
 
-/// Whether a connection to this jack is already open — the control socket exists only
+/// Whether a connection to this jack is already open - the control socket exists only
 /// once ssh has authenticated, so this is "would a listing work now" without opening
 /// anything or asking the far end.
 pub fn ready(name: &str) -> Result<bool, String> {
@@ -268,8 +268,8 @@ pub fn downloads() -> PathBuf {
 pub fn get(name: &str, remote: &str, into: &Path, recurse: bool) -> Result<PathBuf, String> {
     let from = safe_path(remote)?;
     let leaf = from.rsplit('/').next().filter(|s| !s.is_empty()).ok_or("no file name in that path")?;
-    // Belt to `parse_line`'s braces: this decides what gets created — and, if the
-    // transfer fails, removed — inside the download folder. `..` would be its parent.
+    // Belt to `parse_line`'s braces: this decides what gets created - and, if the
+    // transfer fails, removed - inside the download folder. `..` would be its parent.
     if leaf == "." || leaf == ".." {
         return Err(format!("\"{remote}\" doesn't name a file"));
     }
@@ -341,7 +341,7 @@ mod tests {
     }
 
     /// The far end writes these names, and every caller appends one to the directory
-    /// it came from. A name with a slash in it walks out of that directory — and a
+    /// it came from. A name with a slash in it walks out of that directory - and a
     /// failed download then removes what it thinks it created, which for `..` is the
     /// folder above `~/Downloads`.
     #[test]
@@ -389,7 +389,7 @@ mod tests {
     }
 
     /// sftp's batch language is line-based, so a newline in a path would end the
-    /// command and start one of the caller's choosing — and the local half of a
+    /// command and start one of the caller's choosing - and the local half of a
     /// `get`/`put` line is a filename someone else chose just as much as the remote one.
     #[test]
     fn a_path_that_could_smuggle_a_command_is_refused() {
@@ -400,7 +400,7 @@ mod tests {
         assert!(safe_path("/home/me/two words.txt").is_ok());
 
         // A Windows path is spelled with the character sftp escapes with, so it is
-        // rewritten rather than refused — `C:\Users` would otherwise arrive `C:Users`.
+        // rewritten rather than refused - `C:\Users` would otherwise arrive `C:Users`.
         assert_eq!(local_arg(Path::new(r"C:\Users\me\notes.txt")).unwrap(), "C:/Users/me/notes.txt");
 
         // The local side of the line gets the same treatment.

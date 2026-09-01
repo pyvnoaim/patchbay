@@ -1,6 +1,6 @@
 //! ssh running in a real pseudo-terminal, streamed to xterm.js in the window.
 //!
-//! We still don't reimplement ssh — this spawns the same `/usr/bin/ssh` with the
+//! We still don't reimplement ssh - this spawns the same `/usr/bin/ssh` with the
 //! same argv the CLI would, just with a pty on the near end instead of the user's
 //! terminal. Agent, ~/.ssh/config and known_hosts keep working, and because it's a
 //! real tty, password and host-key prompts do too.

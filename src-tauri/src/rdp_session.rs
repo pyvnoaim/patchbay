@@ -2,7 +2,7 @@
 //!
 //! This is the one place patchbay speaks a protocol itself rather than handing off:
 //! IronRDP is a pure-Rust RDP stack, so there is still no FreeRDP, no C dependency
-//! and no embedded graphics toolkit — we decode to a framebuffer and let the webview
+//! and no embedded graphics toolkit - we decode to a framebuffer and let the webview
 //! paint it on a `<canvas>`. `rdp.rs` keeps the handoff to the system client, which
 //! is still what "Open in Windows App" does.
 //!
@@ -34,7 +34,7 @@ pub struct Tile {
     pub rgba: Vec<u8>,
 }
 
-/// What the window can send into a running session. Closing isn't one of them —
+/// What the window can send into a running session. Closing isn't one of them -
 /// dropping the sender does that, so there is no way to leave a socket open by
 /// forgetting to send something.
 pub enum Input {
@@ -42,7 +42,7 @@ pub enum Input {
     Button { button: u8, down: bool },
     Wheel { delta: i16 },
     /// A PC/AT scancode, already translated from the browser's `KeyboardEvent.code`
-    /// on the JS side — that mapping is a table, and a table belongs where the
+    /// on the JS side - that mapping is a table, and a table belongs where the
     /// event names are.
     Key { scancode: u16, down: bool },
 }
@@ -72,8 +72,8 @@ impl Input {
 /// immediate, long enough that an idle session isn't a spin loop.
 const POLL: Duration = Duration::from_millis(50);
 
-/// The handshake is several round trips — TLS, then CredSSP, then capability
-/// exchange — and `POLL` applied to any of them aborts the connection mid-negotiation.
+/// The handshake is several round trips - TLS, then CredSSP, then capability
+/// exchange - and `POLL` applied to any of them aborts the connection mid-negotiation.
 /// It only becomes the poll interval once there is a session to poll.
 const HANDSHAKE: Duration = Duration::from_secs(15);
 
@@ -139,7 +139,7 @@ fn config(username: String, password: String, domain: Option<String>, width: u16
 type Upgraded = rustls::StreamOwned<rustls::ClientConnection, TcpStream>;
 
 /// Dials the host and negotiates a session. Blocking, and quick enough to do inside
-/// a command — the window wants "wrong password" as a returned error, not an event.
+/// a command - the window wants "wrong password" as a returned error, not an event.
 #[allow(clippy::too_many_arguments)]
 pub fn open(
     host: &str,
@@ -191,7 +191,7 @@ pub fn open(
 }
 
 /// Pumps decoded rectangles to `on_tile` until the server hangs up or
-/// [`Input::Close`] arrives. Blocking on purpose — it owns a thread, like `pty.rs`.
+/// [`Input::Close`] arrives. Blocking on purpose - it owns a thread, like `pty.rs`.
 /// Free of Tauri so it can be driven from a test.
 pub fn pump(session: Session, input: Receiver<Input>, on_tile: impl Fn(Tile)) -> Result<(), String> {
     let Session { mut framed, mut stage, mut image, host, clipboard, last_seen, .. } = session;
@@ -245,8 +245,8 @@ pub fn pump(session: Session, input: Receiver<Input>, on_tile: impl Fn(Tile)) ->
 /// How often the local clipboard is compared against what we last advertised.
 const CLIPBOARD_POLL: Duration = Duration::from_millis(500);
 
-/// Turns anything the clipboard backend wants to say — plus a local copy the user
-/// just made — into frames for the session to write. Kept here rather than in
+/// Turns anything the clipboard backend wants to say - plus a local copy the user
+/// just made - into frames for the session to write. Kept here rather than in
 /// `clipboard.rs` so every socket write stays on the thread that owns the socket.
 fn clipboard_frames(
     stage: &mut ActiveStage,
@@ -299,7 +299,7 @@ fn clipboard_frames(
 }
 
 /// Copies one dirty rectangle out of the framebuffer. Only the changed region
-/// crosses into the webview — a full 1280x1024 frame is 5 MB of RGBA, and a blinking
+/// crosses into the webview - a full 1280x1024 frame is 5 MB of RGBA, and a blinking
 /// cursor would otherwise send all of it.
 ///
 /// The rectangle comes off the wire, so it is clamped to the framebuffer rather than
@@ -331,7 +331,7 @@ fn crop(image: &DecodedImage, region: ironrdp::pdu::geometry::InclusiveRectangle
     Some(Tile { x: left, y: top, width: w as u16, height: h as u16, rgba })
 }
 
-/// Everything the active stage can hand back, in one place — input and PDU
+/// Everything the active stage can hand back, in one place - input and PDU
 /// processing both produce the same outputs, and handling them in only one of the
 /// two is how a repaint or a disconnect goes missing. `Ok(true)` means terminate.
 fn drain(
@@ -364,7 +364,7 @@ fn connect(
     config: connector::Config,
     clipboard: crate::clipboard::Backend,
 ) -> Result<(ConnectionResult, ironrdp_blocking::Framed<Upgraded>), String> {
-    // A plain `connect` waits on the OS default — over a minute on a host that drops
+    // A plain `connect` waits on the OS default - over a minute on a host that drops
     // the SYN rather than refusing it, which is exactly what a firewalled RDP box
     // does. The status probe and the tunnel wait already bound theirs; this was the
     // one that didn't, and it's the one someone is sitting in front of.
@@ -425,7 +425,7 @@ fn tls(stream: TcpStream, host: &str) -> Result<(Upgraded, Vec<u8>), String> {
         .peer_certificates()
         .and_then(|c| c.first())
         .ok_or_else(|| format!("{host} sent no certificate"))?;
-    // Before `connect_finalize`, which is where the password goes over the wire —
+    // Before `connect_finalize`, which is where the password goes over the wire -
     // a host whose key changed must not be handed credentials.
     trust::check(host, cert)?;
     let key = public_key(cert)?;
@@ -433,8 +433,8 @@ fn tls(stream: TcpStream, host: &str) -> Result<(Upgraded, Vec<u8>), String> {
 }
 
 /// Trust on first use, the way ssh does it. Verifying RDP certificates against a
-/// trust store is not an option — essentially every RDP host is self-signed, and
-/// mstsc just prompts — but silently accepting *any* certificate forever means a
+/// trust store is not an option - essentially every RDP host is self-signed, and
+/// mstsc just prompts - but silently accepting *any* certificate forever means a
 /// swapped one goes unnoticed. So: remember the first, refuse a change.
 mod trust {
     use std::path::PathBuf;
@@ -460,7 +460,7 @@ mod trust {
             Some((_, known)) if known == now => Ok(()),
             Some((_, known)) => Err(format!(
                 "{host} presented a different certificate than last time \
-                 ({} instead of {}) — if the host was rebuilt, remove its line from {}",
+                 ({} instead of {}) - if the host was rebuilt, remove its line from {}",
                 &now[..16.min(now.len())],
                 &known[..16.min(known.len())],
                 path.display()
@@ -561,7 +561,7 @@ pub(crate) mod verifier {
 pub struct Sessions(std::sync::Mutex<std::collections::HashMap<u32, std::sync::mpsc::Sender<Input>>>);
 
 impl Sessions {
-    /// Connects synchronously — a bad password comes back as a returned error — then
+    /// Connects synchronously - a bad password comes back as a returned error - then
     /// leaves a thread pumping tiles into `on_tile` until it's closed. When that
     /// thread ends, `rdp-exit:<id>` carries why, so a server that hangs up leaves a
     /// dead tab rather than a frozen picture that still looks connected.
@@ -605,7 +605,7 @@ impl Sessions {
         Ok(screen)
     }
 
-    /// Silently drops input for a session that has already ended — the window can
+    /// Silently drops input for a session that has already ended - the window can
     /// still be dispatching a mousemove when the server hangs up.
     pub fn send(&self, id: u32, input: Input) {
         if let Some(tx) = self.0.lock().unwrap().get(&id) {
@@ -623,7 +623,7 @@ impl Sessions {
 pub type Shared = std::sync::Arc<Sessions>;
 
 /// The desktop size the server actually gave us, which is not always what we asked
-/// for — a Windows host can refuse an odd resolution and pick its own.
+/// for - a Windows host can refuse an odd resolution and pick its own.
 #[derive(serde::Serialize)]
 pub struct Screen {
     pub width: u16,
@@ -690,7 +690,7 @@ mod tests {
 
         let lit = buf.chunks_exact(4).filter(|p| p[0] | p[1] | p[2] != 0).count();
         println!("{} tiles, {lit} non-black pixels -> rdp-frame.ppm", tiles.load(std::sync::atomic::Ordering::SeqCst));
-        assert!(lit > buf.len() / 40, "framebuffer came out essentially black — crop is wrong");
+        assert!(lit > buf.len() / 40, "framebuffer came out essentially black - crop is wrong");
     }
 
     #[test]

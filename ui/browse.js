@@ -1,4 +1,4 @@
-// Classic script, no bundler — see the load order in ui/index.html.
+// Classic script, no bundler - see the load order in ui/index.html.
 // The device browser: folder tree, list, detail pane, command palette.
 
 // ── sidebar tree ───────────────────────────────────────────────────────────
@@ -23,7 +23,7 @@ function buildTree(jacks, space) {
   return root;
 }
 
-// Your own list always exists, even empty — it's the config file. The rest come
+// Your own list always exists, even empty - it's the config file. The rest come
 // from the files beside it rather than from the devices, so a space you just made
 // and haven't filled yet is still there.
 function spacesOf() {
@@ -37,7 +37,7 @@ function spacesOf() {
 
 // Nested folders sort ahead of flat ones so a hierarchy doesn't get buried among
 // alphabetically-interleaved single names. They are the same kind of thing either
-// way — a folder is just a string a device carries.
+// way - a folder is just a string a device carries.
 function renderTree() {
   const live = new Set([...sessions.values()].filter((s) => !s.dead).map((s) => s.name));
   const names = (js) => new Set(js.map((j) => j.name));
@@ -119,14 +119,14 @@ function render() {
   $("newgroup").innerHTML = icon("folder-plus");
   $("newgroup").dataset.tip = "New folder";
   $("newspace").innerHTML = icon("box");
-  $("newspace").dataset.tip = "New space — a config file of its own";
+  $("newspace").dataset.tip = "New space - a config file of its own";
   $("editcfg").innerHTML = icon("file-pen-line");
   $("editcfg").dataset.tip = `Open the config file  ${chord("e")}`;
   $("settings").innerHTML = icon("settings");
   $("settings").dataset.tip = `Settings  ${chord(",")}`;
   $("settings").dataset.tipAt = "right";
   // A stuck sync means your edits are not reaching anyone and it needs an answer from
-  // you — so it shows on the button that leads there, not only inside the sheet.
+  // you - so it shows on the button that leads there, not only inside the sheet.
   const stuck = teams.map((t) => TEAM_STUCK[t.state]).find(Boolean);
   $("settings").classList.toggle("warn", !!stuck);
   if (stuck) $("settings").dataset.tip = stuck;
@@ -137,7 +137,7 @@ function render() {
       : `<div class="firstrun">
           <span class="fr-mark">${icon("server")}</span>
           <h3>No devices yet</h3>
-          <p>Add one here, or write the file by hand — patchbay creates it either way,
+          <p>Add one here, or write the file by hand - patchbay creates it either way,
              and keeps your comments and formatting if you edit it later.</p>
           <div class="mono">${esc(cfgPath)}</div>
           <div class="btns">
@@ -154,7 +154,7 @@ function render() {
     const p = probes.get(j.name);
     const state = !p ? "unknown" : p.ms == null ? "down" : "up";
     // `readable()` nudges a brand hex against the *panel*, but the selected row is a
-    // solid block of accent — Synology's navy clears 3:1 there and vanishes here. So
+    // solid block of accent - Synology's navy clears 3:1 there and vanishes here. So
     // the row's own white wins on that one row, the way .host and .folder already do.
     const tint = i === sel ? null : osColor(j.os);
     return `<div class="jack" data-i="${i}" aria-selected="${i === sel}">
@@ -278,7 +278,7 @@ function renderJack(j, live) {
 
   dActions.innerHTML = `
     ${live
-      /* A web tab has nothing to disconnect from — it's a page, and you close it. */
+      /* A web tab has nothing to disconnect from - it's a page, and you close it. */
       ? `<button class="primary" data-act="disconnect">${icon("x")}${
           live.dead || live.kind === "web" ? "Close" : "Disconnect"}</button>`
       : j.primary === "rdp" ? `<button class="primary" data-act="rdp">${icon("monitor")}Connect</button>`
@@ -308,7 +308,7 @@ function select(i) {
 const move = (d) => select(sel + d);
 
 /// In a tab, like a terminal and like RDP. "Open in browser" is still on the context
-/// menu, and `web_check` offers it when the page is one a webview can't show — an
+/// menu, and `web_check` offers it when the page is one a webview can't show - an
 /// appliance's self-signed certificate has no click-through here, only in a browser.
 async function openWeb(name) {
   await openWebSession(name);
@@ -362,7 +362,7 @@ async function connect(name, inTerminal = prefs.connect_in_terminal === true) {
 
 // ── command palette ────────────────────────────────────────────────────────
 const palOpen = () => !paletteEl.hidden;
-// `seed` is set when you just start typing in the list — the keystroke isn't lost.
+// `seed` is set when you just start typing in the list - the keystroke isn't lost.
 function openPalette(seed = "") {
   paletteEl.hidden = false;
   pq.value = seed; palSel = 0;

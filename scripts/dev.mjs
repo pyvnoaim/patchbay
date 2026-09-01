@@ -19,7 +19,7 @@ const [mode = "dev", ...rest] = process.argv.slice(2);
 // `tauri dev` runs the binary with src-tauri/ as its cwd, so this has to be absolute.
 const DEV_CONFIG = resolve("dev/patchbay.toml");
 
-// The dev config isn't tracked — it fills up with your own machines, and a NAS address
+// The dev config isn't tracked - it fills up with your own machines, and a NAS address
 // belongs in a public repo about as much as a password does. Seed it from the example
 // so a fresh clone still has something to open.
 if (!existsSync(DEV_CONFIG)) copyFileSync(resolve("dev/patchbay.example.toml"), DEV_CONFIG);

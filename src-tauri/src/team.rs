@@ -1,19 +1,19 @@
-//! Team sync: one *space* — one config file in `spaces/` — mirrored through the team
+//! Team sync: one *space* - one config file in `spaces/` - mirrored through the team
 //! server. Your own list is the main config and never goes anywhere.
 //!
 //! The space's whole document is the shared thing. The server stores a string and
-//! never parses it, so there is no schema on that side and nothing to merge here —
+//! never parses it, so there is no schema on that side and nothing to merge here -
 //! the two ends only ever agree or disagree.
 //!
 //! The transport is plain HTTP: `GET` hands back the document with an `ETag`, `PUT`
 //! sends it with `If-Match`. That is how every HTTP file store spells optimistic
-//! concurrency, so a space can point at one instead of at `server/` — and a space
+//! concurrency, so a space can point at one instead of at `server/` - and a space
 //! with no code is a read-only subscription to whatever is at that URL.
 //!
 //! Our half lives in `team.toml` *beside* the config, never in a space, because a
 //! space file is what gets uploaded: a team code in there would be a credential in a
 //! file the whole team reads, and the device id would stop counting seats the moment
-//! it was shared. Nothing is stripped on the way out any more — a team space holds
+//! it was shared. Nothing is stripped on the way out any more - a team space holds
 //! the team's devices and nothing else, which is what makes joining one safe.
 
 use crate::{config, patchbay};
@@ -28,7 +28,7 @@ use toml_edit::DocumentMut;
 /// hold the window's focus handler.
 const TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Two syncs overlapping — the window regaining focus while an edit finishes — would
+/// Two syncs overlapping - the window regaining focus while an edit finishes - would
 /// race their own puts, and the loser's 409 reads as a conflict the user never had.
 /// They are cheap and idempotent, so the second one just waits and then sees the
 /// first one's answer.
@@ -50,7 +50,7 @@ pub struct Team {
     pub etag: String,
     #[serde(default)]
     pub synced: String,
-    /// Which space this is, filled in on load. Never written — the table name is it.
+    /// Which space this is, filled in on load. Never written - the table name is it.
     #[serde(skip)]
     pub space: String,
 }
@@ -103,7 +103,7 @@ fn space_file(cfg: &Path, space: &str) -> PathBuf {
 }
 
 /// Beside the space: the document both sides last agreed on. Kept because a merge
-/// needs a base, and the server holds one revision with no history — once we edit
+/// needs a base, and the server holds one revision with no history - once we edit
 /// locally, the last agreed version exists nowhere else in the world.
 fn base_path(cfg: &Path, space: &str) -> PathBuf {
     space_file(cfg, space).with_extension("toml.base")
@@ -137,7 +137,7 @@ fn write_teams(cfg: &Path, all: &Teams) -> Result<(), String> {
 }
 
 /// The code is the credential, so `team.toml` is the one file here nobody else on the
-/// machine gets to read — unlike the config beside it, which is the whole point.
+/// machine gets to read - unlike the config beside it, which is the whole point.
 #[cfg(unix)]
 fn write_private(path: &Path, body: &str) -> std::io::Result<()> {
     use std::io::Write;
@@ -149,7 +149,7 @@ fn write_private(path: &Path, body: &str) -> std::io::Result<()> {
         .mode(0o600)
         .open(path)?;
     // `mode` only applies to a file being created, so it misses one already sitting
-    // there at the umask's 0644 — every install that joined a team before this line.
+    // there at the umask's 0644 - every install that joined a team before this line.
     f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     f.write_all(body.as_bytes())
 }
@@ -161,7 +161,7 @@ fn write_private(path: &Path, body: &str) -> std::io::Result<()> {
     std::fs::write(path, body)
 }
 
-/// Not a secret and not global — just something to tell two of your own machines
+/// Not a secret and not global - just something to tell two of your own machines
 /// apart, so the seat count means what it says.
 fn new_device() -> String {
     let seed = format!(
@@ -177,7 +177,7 @@ fn new_device() -> String {
 
 /// A config we can't read is not an empty list. Handing back `""` here would look
 /// exactly like the user deleting every jack, and the push branch would upload that
-/// over the team's — one unreadable file on one machine wiping everyone's list.
+/// over the team's - one unreadable file on one machine wiping everyone's list.
 fn read_local(cfg: &Path, space: &str) -> Result<String, String> {
     let path = space_file(cfg, space);
     match std::fs::read_to_string(&path) {
@@ -190,7 +190,7 @@ fn read_local(cfg: &Path, space: &str) -> Result<String, String> {
 
 /// What we are willing to put. `replace_at` refuses a document that doesn't parse on
 /// the way in, so pushing one leaves every teammate stuck on *our* syntax error until
-/// we fix it — a broken file is this machine's problem and stays here.
+/// we fix it - a broken file is this machine's problem and stays here.
 fn to_push(local: &str) -> Result<String, String> {
     local
         .parse::<DocumentMut>()
@@ -290,7 +290,7 @@ fn refused(status: reqwest::StatusCode, body: &str) -> Fail {
     }
 }
 
-/// Only `POST /teams` still speaks JSON — it is the one call no file store has, and
+/// Only `POST /teams` still speaks JSON - it is the one call no file store has, and
 /// the only thing it returns is a new code.
 fn call<T: serde::de::DeserializeOwned>(req: reqwest::blocking::RequestBuilder) -> Result<T, Fail> {
     let res = req.send().map_err(|e| Fail {
@@ -324,7 +324,7 @@ fn doc_url(url: &str) -> String {
     }
 }
 
-/// The code travels in a header, never the path — a logged URL is a leaked password.
+/// The code travels in a header, never the path - a logged URL is a leaked password.
 /// With no code this is a plain `GET` of whatever the URL points at.
 fn signed(cfg: &Path, t: &Team, req: reqwest::blocking::RequestBuilder) -> reqwest::blocking::RequestBuilder {
     match &t.code {
@@ -355,7 +355,7 @@ pub struct Status {
     /// Which space this is the state of.
     pub space: String,
     /// synced · conflict · blocked · offline · error, where `offline` is the server's
-    /// fault and `error` is this machine's — a file that won't read or parse. Telling
+    /// fault and `error` is this machine's - a file that won't read or parse. Telling
     /// them apart matters: one clears itself, the other needs you.
     pub state: &'static str,
     pub url: String,
@@ -406,8 +406,8 @@ pub fn sync_at(cfg: &Path) -> Vec<Status> {
         .collect()
 }
 
-/// Fetch, then whichever of push or adopt applies. Idempotent, so every caller — the
-/// window regaining focus, the end of an edit, the settings sheet — is this one call.
+/// Fetch, then whichever of push or adopt applies. Idempotent, so every caller - the
+/// window regaining focus, the end of an edit, the settings sheet - is this one call.
 fn sync_space(cfg: &Path, space: &str) -> Status {
     // Held before the load, so a second sync reads the state the first one stored
     // rather than the state it started from.
@@ -474,7 +474,7 @@ fn sync_space(cfg: &Path, space: &str) -> Status {
                         Err(e) => stuck(&t, "error", e),
                     }
                 }
-                // Someone wrote between our fetch and our put — the next sync sees it
+                // Someone wrote between our fetch and our put - the next sync sees it
                 // as the conflict it is, but say so now rather than reporting success.
                 Err(f) if f.conflict => stuck(&t, "conflict", f.msg),
                 Err(f) if f.blocked => stuck(&t, "blocked", f.msg),
@@ -491,7 +491,7 @@ fn sync_space(cfg: &Path, space: &str) -> Status {
 
 /// Every leaf that differs, walking as deep as both sides stay tables. Depth is the
 /// whole point: `[jack.web]` and `[jack.db]` are both edits to `jack`, and stopping at
-/// the top would call two people adding two devices the same change — stopping one
+/// the top would call two people adding two devices the same change - stopping one
 /// level down would say the same about two people editing two fields of one device.
 /// Compared by value, not by text: a reformat is not an edit.
 type Paths = std::collections::BTreeSet<Vec<String>>;
@@ -514,7 +514,7 @@ fn walk(a: &toml::Table, b: &toml::Table, at: &mut Vec<String>, out: &mut Paths)
             }
             (None, None) => {}
             // A leaf, or a key that is a table on one side and something else on the
-            // other — which is a disagreement about the shape, not a mergeable edit.
+            // other - which is a disagreement about the shape, not a mergeable edit.
             _ => {
                 at.push(k.clone());
                 out.insert(at.clone());
@@ -570,7 +570,7 @@ fn apply(doc: &mut DocumentMut, from: &DocumentMut, path: &[String]) {
 /// file, not a disagreement. The same entry on both sides is a real conflict and still
 /// goes to the user.
 ///
-/// What is left as a conflict is the same *leaf* on both sides — two people setting
+/// What is left as a conflict is the same *leaf* on both sides - two people setting
 /// `jack.web.host` to two different addresses, which is the one case where a machine
 /// picking for you would be picking wrong half the time.
 fn merge(base: &str, ours: &str, theirs: &str) -> Option<String> {
@@ -592,7 +592,7 @@ fn merge(base: &str, ours: &str, theirs: &str) -> Option<String> {
 /// Take the team's document as this space's.
 fn adopt(cfg: &Path, t: &mut Team, remote: &Doc, local: &str) -> Result<(), String> {
     // Even an ordinary pull is worth a copy: the document it replaces exists nowhere
-    // else — the server keeps one revision and no history, and every other device is
+    // else - the server keeps one revision and no history, and every other device is
     // adopting this same replacement. One teammate truncating their space would
     // otherwise take the list off every machine with nothing left to put back.
     // An empty space is the join case, and has nothing to lose.
@@ -613,7 +613,7 @@ pub fn join(name: &str, url: &str, code: &str) -> Result<Status, String> {
 }
 
 /// Joining makes a *new* space and puts the team's list in it. Nothing you already
-/// have is read, replaced or uploaded — that is the whole reason a team is a space
+/// have is read, replaced or uploaded - that is the whole reason a team is a space
 /// of its own rather than your config file.
 pub fn join_at(cfg: &Path, name: &str, url: &str, code: &str) -> Result<Status, String> {
     if !crate::is_web_url(url) {
@@ -668,7 +668,7 @@ pub fn create_at(cfg: &Path, space: &str, url: &str) -> Result<Status, String> {
         space: space.to_string(),
     };
     // A new team is empty but its ETag is not nothing, and only the server knows
-    // what it starts at — so ask rather than assume, once, on the one call where an
+    // what it starts at - so ask rather than assume, once, on the one call where an
     // extra round trip costs nothing.
     let empty = fetch(cfg, &t).map_err(|f| f.msg)?;
     let d = put(cfg, &t, &doc, &empty.etag).map_err(|f| f.msg)?;
@@ -681,7 +681,7 @@ pub fn resolve(space: &str, keep: &str) -> Result<Status, String> {
     resolve_at(&patchbay::config_path(), space, keep)
 }
 
-/// `mine` overwrites the team's copy, `theirs` overwrites ours — the two ways out of
+/// `mine` overwrites the team's copy, `theirs` overwrites ours - the two ways out of
 /// a conflict, both of them somebody's deliberate choice, and both keeping a `.bak`.
 pub fn resolve_at(cfg: &Path, space: &str, keep: &str) -> Result<Status, String> {
     let mut t = load(cfg, space).ok_or_else(|| format!("\"{space}\" isn't a team"))?;
@@ -705,7 +705,7 @@ pub fn leave(space: &str) -> Result<(), String> {
     leave_at(&patchbay::config_path(), space)
 }
 
-/// Leaving keeps the space — it is a config file on this disk, and it stops being
+/// Leaving keeps the space - it is a config file on this disk, and it stops being
 /// anyone else's business the moment nothing is syncing it.
 pub fn leave_at(cfg: &Path, space: &str) -> Result<(), String> {
     let mut all = load_teams(cfg);
@@ -727,7 +727,7 @@ mod tests {
 
     /// Stands in for `server/`: one document, one version, and a write that only
     /// lands if the version still matches. Close enough to pin our half of the
-    /// contract — the headers, the conflict, and who overwrites whom — without a
+    /// contract - the headers, the conflict, and who overwrites whom - without a
     /// second process or a second crate.
     fn stub(doc: &str) -> (String, Arc<Mutex<(String, i64)>>) {
         let state = Arc::new(Mutex::new((doc.to_string(), 1)));
@@ -763,7 +763,7 @@ mod tests {
                     .and_then(|v| v.parse::<i64>().ok());
 
                 let (code, payload) = if head.starts_with("POST") {
-                    // Making a team is the one call with no code yet — it hands one back.
+                    // Making a team is the one call with no code yet - it hands one back.
                     (200, "{\"code\":\"abcd-efgh\"}".to_string())
                 } else if !lower.contains("x-team:") || !lower.contains("x-device:") {
                     (400, "{\"error\":\"missing header\"}".to_string())
@@ -905,7 +905,7 @@ mod tests {
     }
 
     /// Two people adding two different devices is not a disagreement, and making
-    /// someone pick a side — throwing the loser's work to a .bak — is the thing that
+    /// someone pick a side - throwing the loser's work to a .bak - is the thing that
     /// makes a shared list not worth sharing.
     #[test]
     fn edits_to_different_devices_merge_instead_of_colliding() {
@@ -952,7 +952,7 @@ mod tests {
         assert!(merge(base, ours, clash).is_none(), "a real collision was merged away");
     }
 
-    /// A device deleted here and untouched there stays deleted — a merge that quietly
+    /// A device deleted here and untouched there stays deleted - a merge that quietly
     /// resurrected what someone removed would be worse than refusing to merge at all.
     /// resurrected what someone removed would be worse than refusing to merge at all.
     #[test]
@@ -997,7 +997,7 @@ mod tests {
             st.0 = "[jack.web]\nhost = \"10.9.9.9\"\n[jack.theirs]\nhost = \"10.0.0.2\"\n".into();
             st.1 += 1;
         }
-        // Both moved `jack.web` — ours by rewriting its host, theirs by rewriting it
+        // Both moved `jack.web` - ours by rewriting its host, theirs by rewriting it
         // differently, while we also added a device. Overlapping, so nobody can merge.
         fill(&cfg, &format!("{}\n[jack.mine]\nhost = \"10.0.0.1\"\n", TEAM.replace("10.0.0.4", "10.0.0.44")));
         let s = one(&cfg);
@@ -1101,7 +1101,7 @@ mod tests {
         join_at(&cfg, "acme", &url, "abcd-efgh").unwrap();
 
         // A teammate whose list lost everything but one host. We haven't touched
-        // ours, so this is the quiet path — and the one with the most to lose.
+        // ours, so this is the quiet path - and the one with the most to lose.
         {
             let mut st = server.lock().unwrap();
             st.0 = "[jack.only]\nhost = \"10.0.0.9\"\n".into();
@@ -1188,7 +1188,7 @@ mod tests {
         assert!(read(&sp(&cfg)).contains("[jack.shared]"), "{}", read(&sp(&cfg)));
         assert!(s.code.is_empty(), "a read-only space has no code to show");
 
-        // Nothing changed either side, and nothing was written — the stub 405s a put.
+        // Nothing changed either side, and nothing was written - the stub 405s a put.
         assert_eq!(one(&cfg).state, "synced");
 
         // Editing it locally is the one thing that needs saying out loud, rather than

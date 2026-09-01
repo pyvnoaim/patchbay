@@ -1,4 +1,4 @@
-# Sample config for `npm run dev` — never touches your real one.
+# Sample config for `npm run dev` - never touches your real one.
 # `local` actually connects if you have an sshd running (macOS: Settings →
 # General → Sharing → Remote Login). The rest exercise the tree and the route pane.
 #
@@ -11,7 +11,7 @@ user = "root"
 [jack.local]
 os = "macos"
 host = "localhost"
-user = "you"          # your own account — [defaults] root won't work here
+user = "you"          # your own account - [defaults] root won't work here
 desc = "your own box, if Remote Login is on"
 
 [jack.bastion]
@@ -34,7 +34,7 @@ os = "postgres"
 host = "10.0.0.5"
 jump = "web"
 forward = ["5432:localhost:5432"]
-desc = "three hops — check the route pane's order"
+desc = "three hops - check the route pane's order"
 
 [jack.web-us]
 os = "ubuntu"
@@ -53,7 +53,7 @@ user = "deploy"
 [jack.scratch]
 os = "synology"
 host = "10.9.9.9"
-desc = "no folders — only shows under All jacks"
+desc = "no folders - only shows under All jacks"
 
 [jack.nas]
 host = "10.0.0.20"
@@ -70,7 +70,7 @@ url = "https://10.0.0.30:8006"
 [jack.gateway]
 host = "10.0.0.1"
 os = "opnsense"
-ssh = false                      # web UI only — no Connect button, no ssh fields
+ssh = false                      # web UI only - no Connect button, no ssh fields
 url = "https://10.0.0.1"
 
 [jack.pi]
@@ -99,7 +99,7 @@ user = "administrator"
 os   = "windows"
 rdp  = 3389                      # RDP has no ProxyJump, so patchbay forwards a port
 jump = "bastion"
-desc = "reached through the bastion — check the Tunnel row after clicking RDP"
+desc = "reached through the bastion - check the Tunnel row after clicking RDP"
 
 [jack.Testo]
 host = "10.0.0.26"

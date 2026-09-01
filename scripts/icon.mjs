@@ -60,7 +60,7 @@ const sdRing = (x, y, cx, cy, r, half) => Math.abs(Math.hypot(x - cx, y - cy) - 
 const sdDisc = (x, y, cx, cy, r) => Math.hypot(x - cx, y - cy) - r;
 
 // A 2x2 bay of jacks; one patch cable runs corner to corner between two of them.
-// (Two ports side by side plus a dipping cable reads as a smiley face — don't.)
+// (Two ports side by side plus a dipping cable reads as a smiley face - don't.)
 const PORTS = [[386, 386], [638, 386], [386, 638], [638, 638]];
 const A = PORTS[0], B = PORTS[3], C = [430, 606];
 const CURVE = Array.from({ length: 96 }, (_, i) => {

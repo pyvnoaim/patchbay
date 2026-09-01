@@ -1,4 +1,4 @@
-// Classic script, no bundler — see the load order in ui/index.html.
+// Classic script, no bundler - see the load order in ui/index.html.
 // Terminal tabs. Each session is an xterm bound to a pty in the Rust side.
 
 // ── sessions ───────────────────────────────────────────────────────────────
@@ -59,10 +59,10 @@ async function openSession(name, task = null) {
   term.onResize(({ cols, rows }) => invoke("resize_session", { id, cols, rows }).catch(() => {}));
 
   // Said before anything is spawned, so a slow or silent host still shows that the
-  // terminal is alive. It is ours to take back: a login that draws with cursor moves —
-  // fastfetch from a .zshrc — puts its box over whatever is already on screen, so the
-  // first byte from the far end gets a clean one. Anything else we wrote — an error
-  // on the way in — stays, because that is not ours to throw away.
+  // terminal is alive. It is ours to take back: a login that draws with cursor moves -
+  // fastfetch from a .zshrc - puts its box over whatever is already on screen, so the
+  // first byte from the far end gets a clean one. Anything else we wrote - an error
+  // on the way in - stays, because that is not ours to throw away.
   let ours = true;
   term.write(`\x1b[2m── ${task ? `${task} ` : ""}${name}… ──\x1b[0m\r\n`);
 
@@ -81,7 +81,7 @@ async function openSession(name, task = null) {
       renderTree();
     }));
   } catch (err) {
-    // `listen` is a core command and needs src-tauri/capabilities — without it the
+    // `listen` is a core command and needs src-tauri/capabilities - without it the
     // session would open and then sit there mute.
     s.dead = true;
     term.write(`\x1b[31mcould not subscribe to the session: ${String(err)}\x1b[0m\r\n`);
@@ -111,7 +111,7 @@ function closeSession(id) {
   dropTab(id);
 }
 
-// Take the tab away without telling the far end anything — either it has already
+// Take the tab away without telling the far end anything - either it has already
 // gone, or it never started.
 function dropTab(id) {
   const s = sessions.get(id);
@@ -144,7 +144,7 @@ function showTab() {
   renderDetail();
 }
 
-// Where the visible web tab is, in page coordinates — or null when none is. A tooltip
+// Where the visible web tab is, in page coordinates - or null when none is. A tooltip
 // asks before drawing itself somewhere it would be invisible.
 function webViewRect() {
   const s = sessions.get(activeId);
@@ -186,7 +186,7 @@ function watchOverlays() {
 }
 
 // Alongside the view, not in front of it. A page a webview won't load paints nothing
-// and explains nothing — no certificate prompt, no error — so this is the only thing
+// and explains nothing - no certificate prompt, no error - so this is the only thing
 // that can say why. Unlike Royal TS we can't offer the click-through: that prompt is
 // WKNavigationDelegate's server-trust challenge, which wry owns and doesn't expose.
 function checkWeb(s, url) {
@@ -208,14 +208,14 @@ function showWebFailure(s) {
     <p class="why">${esc(s.failed)}</p>
     ${cert ? `<p class="fix">A device reached by its address has a certificate naming
       something else, and that never matches. <b>Trust it</b> hands the certificate to
-      macOS the way the browser's "Always trust" does — macOS asks for your password,
+      macOS the way the browser's "Always trust" does - macOS asks for your password,
       and the page opens here from then on.</p>` : ""}
     <div class="btns">
       ${cert ? `<button type="button" class="primary" data-web-cert="${esc(s.failedUrl)}">
         ${icon("check")}Trust it</button>` : ""}
       <button type="button" class="ghost" data-web-browser="${esc(s.name)}">
         ${icon("external-link")}Open in browser</button>
-      ${/* Only removes our check — the webview still judges for itself, so on its own
+      ${/* Only removes our check - the webview still judges for itself, so on its own
             this can leave a blank page. Kept for when the certificate is already
             trusted and it is only rustls, which judges the name separately, refusing. */ ""}
       <button type="button" class="ghost" data-web-trust="${esc(s.failedUrl)}">
@@ -244,7 +244,7 @@ termsEl.addEventListener("click", async (e) => {
     if (cert) {
       // Show it before asking for it. Trusting a certificate you were never shown is
       // the thing Safari's dialog exists to prevent, and we fetch this one over a
-      // connection we deliberately didn't verify — so it is exactly the moment where
+      // connection we deliberately didn't verify - so it is exactly the moment where
       // someone in the way of that connection would get their certificate trusted.
       const c = await invoke("web_cert", { url: cert.dataset.webCert });
       const ok = await ask(
@@ -259,7 +259,7 @@ termsEl.addEventListener("click", async (e) => {
     }
   } catch (err) { return alertish(err); }
 
-  // The page has to be loaded again to be judged again — the webview made its mind up
+  // The page has to be loaded again to be judged again - the webview made its mind up
   // about that certificate before macOS changed its mind about it.
   const name = s.name;
   closeSession(s.id);
@@ -299,7 +299,7 @@ async function listFiles(s, to = null) {
     s.dead = true;
     s.entries = null;
     s.error = String(e);
-    // Nothing here needs a shell — it needs a tty to answer a password in. So the tab
+    // Nothing here needs a shell - it needs a tty to answer a password in. So the tab
     // opens its own connection and asks in the pane, rather than sending you off to
     // open a terminal and come back.
     if (s.error.includes("Permission denied") && !s.master) return signIn(s);
@@ -339,7 +339,7 @@ function renderFiles(s) {
     // you would otherwise make by closing the tab and opening it again.
     return void (s.host.innerHTML = `<div class="panefail">
       <p class="why">${esc(s.error)}</p>
-      <p class="fix">A shell is what authenticates this — once one is open to
+      <p class="fix">A shell is what authenticates this - once one is open to
         ${esc(s.name)}, the listing appears here on its own.</p>
       <div class="btns">
         <button type="button" class="primary" data-files="term">
@@ -348,7 +348,7 @@ function renderFiles(s) {
           ${icon("rotate-cw")}Try again</button>
       </div></div>`);
   }
-  // Folders first, then names — the order every file browser has, so nobody has to
+  // Folders first, then names - the order every file browser has, so nobody has to
   // learn this one.
   const rows = [...s.entries].sort((a, b) =>
     a.dir === b.dir ? a.name.localeCompare(b.name) : (a.dir ? -1 : 1));
@@ -419,7 +419,7 @@ async function signIn(s) {
   watchConnection(s);
 }
 
-// The socket appears the moment ssh authenticates, so that is the signal — nothing to
+// The socket appears the moment ssh authenticates, so that is the signal - nothing to
 // parse out of a terminal. Two minutes is long enough to find a password and short
 // enough that a tab left open isn't polling all afternoon.
 function watchConnection(s) {
@@ -439,7 +439,7 @@ function connected(s) {
   listFiles(s);
 }
 
-// Back to the panel, with the buttons, once signing in here didn't work — the shell
+// Back to the panel, with the buttons, once signing in here didn't work - the shell
 // someone opens by hand is still a connection this tab can ride.
 function failedSignIn(s, why) {
   clearInterval(s.wait);
@@ -456,7 +456,7 @@ function failedSignIn(s, why) {
 // `..` rather than string surgery: the server knows where its own parent is.
 const upFolder = (s) => listFiles(s, s.cwd === "." ? ".." : `${s.cwd}/..`);
 
-// In the pane, not through alertish — that one paints the detail box red, which is
+// In the pane, not through alertish - that one paints the detail box red, which is
 // the wrong colour for a file that arrived exactly as asked.
 function fileNote(s, text, bad = false) {
   const bar = s.host.querySelector(".fpath");
@@ -478,7 +478,7 @@ async function downloadFile(s, name, dir = false) {
   } catch (e) { fileNote(s, String(e), true); }
 }
 
-// Real paths, straight from the webview's own drop event — a file picker would mean a
+// Real paths, straight from the webview's own drop event - a file picker would mean a
 // plugin, and an <input type="file"> would give bytes to copy through JS rather than a
 // path to hand sftp.
 async function watchDrops() {
@@ -525,7 +525,7 @@ async function openWebSession(name) {
       id, name, x: r.left, y: r.top, width: r.width, height: r.height,
     });
   } catch (e) {
-    // Nothing was ever shown in it — a dead tab here is one more thing to close for
+    // Nothing was ever shown in it - a dead tab here is one more thing to close for
     // a page that opened somewhere else, or never existed.
     dropTab(id);
     return alertish(e);
@@ -544,7 +544,7 @@ async function openWebSession(name) {
 }
 
 function renderTabs() {
-  // The browse tab is the crumb — it names the selected folder and counts it.
+  // The browse tab is the crumb - it names the selected folder and counts it.
   const label = group === null ? "All jacks" : groupLabel().split("/").join(" / ");
   const browse = `<div class="tab" data-id="" aria-selected="${activeId === null}">
       ${icon("layers")}<span class="lbl">${esc(label)}</span><span class="n">${shown.length}</span></div>`;
@@ -659,7 +659,7 @@ async function openRdpSession(name) {
   renderTree();
 
   // Tiles start arriving before the invoke resolves, and setting canvas.width
-  // *clears* the canvas — so anything painted before the size is known would be
+  // *clears* the canvas - so anything painted before the size is known would be
   // wiped. Hold them until the server has told us how big the desktop is.
   let pending = [];
   const paint = (buf) => {
