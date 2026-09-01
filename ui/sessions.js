@@ -144,7 +144,9 @@ function placeWebViews() {
   for (const s of sessions.values()) {
     if (s.kind !== "web") continue;
     const r = s.host.getBoundingClientRect();
-    const shown = s.id === activeId && !modalOpen() && r.width > 0;
+    // A failed tab shows our explanation instead, so the blank webview gets out of
+    // the way rather than covering it.
+    const shown = s.id === activeId && !modalOpen() && !s.failed && r.width > 0;
     invoke("place_web_view", {
       id: s.id,
       x: shown ? r.left : 0,
@@ -167,6 +169,39 @@ function watchOverlays() {
   }
 }
 
+// Alongside the view, not in front of it. A page a webview won't load paints nothing
+// and explains nothing — no certificate prompt, no error — so this is the only thing
+// that can say why. Unlike Royal TS we can't offer the click-through: that prompt is
+// WKNavigationDelegate's server-trust challenge, which wry owns and doesn't expose.
+function checkWeb(s, url) {
+  invoke("web_check", { url }).catch((e) => {
+    if (!sessions.has(s.id) || s.failed) return;
+    s.dead = true;
+    s.failed = String(e);
+    renderTabs();
+    showWebFailure(s);
+  });
+}
+
+// The webview is shrunk away and our own panel takes the pane: a blank page with no
+// explanation is the thing that sends people hunting through the app for a bug.
+function showWebFailure(s) {
+  const cert = s.failed.includes("certificate");
+  s.host.innerHTML = `<div class="webfail">
+    <p class="why">${esc(s.failed)}</p>
+    ${cert ? `<p class="fix">A page here has no "continue anyway" — that prompt belongs to the
+      browser. Trust the certificate on this Mac and it opens in the app from then on.</p>` : ""}
+    <div class="btns"><button type="button" class="primary" data-web-browser="${esc(s.name)}">
+      ${icon("external-link")}Open in browser</button></div>
+  </div>`;
+  placeWebViews();
+}
+
+termsEl.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-web-browser]");
+  if (b) invoke("open_url", { name: b.dataset.webBrowser }).catch(alertish);
+});
+
 async function openWebSession(name) {
   watchOverlays();
   const id = nextId++;
@@ -184,8 +219,9 @@ async function openWebSession(name) {
   // The rect only exists once the host is laid out and visible.
   await new Promise((r) => requestAnimationFrame(r));
   const r = host.getBoundingClientRect();
+  let url;
   try {
-    await invoke("open_web_view", {
+    url = await invoke("open_web_view", {
       id, name, x: r.left, y: r.top, width: r.width, height: r.height,
     });
   } catch (e) {
@@ -194,16 +230,16 @@ async function openWebSession(name) {
     return alertish(e);
   }
 
-  // Alongside the view rather than in front of it. A page a webview won't load shows
-  // as blank with no reason of its own, so this is the only thing that can say why.
-  invoke("web_check", { name }).catch(async (e) => {
-    if (!sessions.has(id)) return;
-    s.dead = true;
-    renderTabs();
-    if (await ask(`${e}. Open it in your browser instead?`, null, "Open in browser")) {
-      invoke("open_url", { name }).catch(alertish);
-    }
-  });
+  // Follow the page where it actually goes. A Synology's http port redirects to its
+  // https one in JavaScript, so the certificate that blanks the tab belongs to a url
+  // no http client of ours would ever have seen.
+  try {
+    s.unlisten.push(await listen(`web-nav:${id}`, (e) => {
+      if (e.payload !== url && !s.failed) checkWeb(s, e.payload);
+    }));
+  } catch { /* no capability means no redirect notice, not a broken tab */ }
+
+  checkWeb(s, url);
 }
 
 function renderTabs() {

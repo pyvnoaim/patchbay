@@ -444,9 +444,19 @@ async fn open_web_view(
     // Deliberately no reachability check on this path. It cost a whole round trip
     // before anything appeared, which is most of "the websites load a while" — the
     // view goes up now and `web_check` reports a bad certificate alongside it.
+    // Where it ends up is not where it was sent. A Synology's http port is a three-line
+    // script that redirects to its https one, so the certificate that silently blanks
+    // the page belongs to a url we were never given — and a JS redirect is invisible to
+    // an http client. This is the only way to learn the real destination.
+    let reporter = app.clone();
     window
         .add_child(
-            tauri::webview::WebviewBuilder::new(web_label(id), tauri::WebviewUrl::External(parsed)),
+            tauri::webview::WebviewBuilder::new(web_label(id), tauri::WebviewUrl::External(parsed))
+                .on_navigation(move |to| {
+                    use tauri::Emitter;
+                    let _ = reporter.emit(&format!("web-nav:{id}"), to.to_string());
+                    true
+                }),
             tauri::LogicalPosition::new(x, y),
             tauri::LogicalSize::new(width.max(1.0), height.max(1.0)),
         )
@@ -488,11 +498,13 @@ fn close_web_view(app: tauri::AppHandle, id: u32) {
 }
 
 /// The old preflight, off the critical path: the tab is already up, so this only has
-/// to say *why* a blank one is blank. A certificate a webview won't click through is
-/// still the case worth naming.
+/// to say *why* a blank one is blank. Takes a url rather than a jack, because the one
+/// worth checking is often the redirect's destination rather than the configured one.
 #[tauri::command]
-async fn web_check(name: String) -> Result<(), String> {
-    let (_, url) = web_url_of(&name)?;
+async fn web_check(url: String) -> Result<(), String> {
+    if !is_web_url(&url) {
+        return Err("only http:// and https:// urls can be opened".into());
+    }
     tauri::async_runtime::spawn_blocking(move || web_reachable(&url))
         .await
         .map_err(|e| e.to_string())?

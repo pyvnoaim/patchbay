@@ -406,6 +406,15 @@ button:disabled { opacity: .5; }
    and this div exists only to be measured. The padding the terminal wants would put
    the page off-centre from its own tab, so it goes. */
 .webhost { padding: 0; background: var(--bg); }
+/* Shown in place of the webview when the page won't load — a blank pane explains
+   nothing, and this is the only chance to say what went wrong. */
+.webfail {
+  max-width: 460px; margin: 0 auto; padding: 18vh 20px 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.webfail .why { margin: 0; font-size: 13px; line-height: 1.5; color: var(--fg); }
+.webfail .fix { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--fg-dim); }
+.webfail .btns { justify-content: flex-start; }
 .rdphost { display: grid; place-items: center; background: #000; overflow: hidden; }
 .rdphost canvas { max-width: 100%; max-height: 100%; outline: none; }
 .tabkind { display: inline-flex; opacity: .55; }
