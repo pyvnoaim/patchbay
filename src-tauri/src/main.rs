@@ -347,11 +347,10 @@ fn os_open(arg: &std::ffi::OsStr) -> Result<(), String> {
     Ok(())
 }
 
-/// Opens a jack's web UI in the real browser — the same handoff rule as RDP.
-#[tauri::command]
-fn open_url(name: String) -> Result<String, String> {
+/// A jack's `url`, resolved and checked, for whichever of the two openers wants it.
+fn web_url_of(name: &str) -> Result<(String, String), String> {
     let jacks = read()?;
-    let resolved = patchbay::resolve(&name, &jacks)?;
+    let resolved = patchbay::resolve(name, &jacks)?;
     let url = jacks
         .get(&resolved)
         .and_then(|j| j.url.as_deref())
@@ -362,8 +361,77 @@ fn open_url(name: String) -> Result<String, String> {
     if !is_web_url(&url) {
         return Err("only http:// and https:// urls can be opened".into());
     }
+    Ok((resolved, url))
+}
+
+/// Opens a jack's web UI in the real browser. Still here, and still the fallback:
+/// it is the only one of the two with a certificate interstitial.
+#[tauri::command]
+fn open_url(name: String) -> Result<String, String> {
+    let (_, url) = web_url_of(&name)?;
     os_open(url.as_ref())?;
     Ok(url)
+}
+
+/// One request of our own before the url reaches a webview, because a webview has no
+/// "proceed anyway" for a certificate this machine doesn't trust — it paints nothing
+/// at all and looks like a broken app. This is a deliberate click, not a background
+/// sweep of every host, which is the thing the no-favicons rule is actually about.
+fn web_reachable(url: &str) -> Result<(), String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("no http client: {e}"))?;
+    client.get(url).send().map(|_| ()).map_err(|e| {
+        let why = e.to_string();
+        // rustls names the reason differently depending on what's wrong with the
+        // chain; all of them mean the same thing to the person looking at it.
+        if ["certificate", "UnknownIssuer", "NotValidForName", "CertExpired"]
+            .iter()
+            .any(|s| why.contains(s))
+        {
+            format!("\"{url}\" uses a certificate this machine doesn't trust")
+        } else {
+            format!("\"{url}\": {why}")
+        }
+    })
+}
+
+/// The web UI in a window of its own. Not a tab with an iframe: DSM, OPNsense and
+/// Proxmox all send `X-Frame-Options`, so the one thing an iframe could show is the
+/// devices nobody points a `url` at.
+///
+/// It gets no capability, and must not: a remote origin matches no `ExecutionContext`
+/// in `capabilities/`, so the appliance's own page cannot reach a single one of our
+/// commands. Granting `remote` there would hand every device's web UI `delete_jack`.
+#[tauri::command]
+async fn open_web_window(app: tauri::AppHandle, name: String) -> Result<(), String> {
+    let (resolved, url) = web_url_of(&name)?;
+    let label = format!(
+        "web-{}",
+        resolved.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect::<String>()
+    );
+    // Already open is a focus, not a second window and a build error.
+    if let Some(w) = app.get_webview_window(&label) {
+        let _ = w.set_focus();
+        return Ok(());
+    }
+
+    let checked = url.clone();
+    tauri::async_runtime::spawn_blocking(move || web_reachable(&checked))
+        .await
+        .map_err(|e| e.to_string())??;
+
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        &label,
+        tauri::WebviewUrl::External(url.parse().map_err(|e| format!("\"{url}\": {e}"))?),
+    )
+    .title(format!("{resolved} — {url}"))
+    .inner_size(1200.0, 900.0)
+    .build()
+    .map_err(|e| format!("\"{resolved}\": {e}"))?;
+    Ok(())
 }
 
 /// Remembered state for VPNs with no `check` command — best effort, and the UI
@@ -737,7 +805,7 @@ fn main() {
             vpns, vpn_toggle, vpn_def, save_vpn, delete_vpn, vpn_providers,
             settings, save_settings, colors, save_color, defaults, save_defaults, ssh_keys,
             ssh_hosts,
-            team_sync, team_join, team_create, team_resolve, team_leave,
+            team_sync, team_join, team_create, team_resolve, team_leave, open_web_window,
             open_rdp, open_rdp_session, close_rdp_session, rdp_input, tunnels, close_tunnel,
             open_session, open_task, write_session, resize_session, close_session
         ])

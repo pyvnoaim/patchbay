@@ -289,8 +289,14 @@ function select(i) {
 
 const move = (d) => select(sel + d);
 
+/// In a window of its own, and the browser when that can't work. The one case that
+/// matters is an appliance's self-signed certificate: a webview shows nothing and
+/// offers nothing, where the browser has the click-through everyone already knows.
 async function openWeb(name) {
-  try { await invoke("open_url", { name }); } catch (e) { alertish(e); }
+  try { return await invoke("open_web_window", { name }); } catch (e) { /* below */
+    if (!(await ask(`${e}. Open it in your browser instead?`, null, "Open in browser"))) return;
+    try { await invoke("open_url", { name }); } catch (err) { alertish(err); }
+  }
 }
 
 /// In a tab, like a terminal. "Open in Windows App" on the context menu is still
