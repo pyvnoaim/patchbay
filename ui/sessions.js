@@ -178,6 +178,7 @@ function checkWeb(s, url) {
     if (!sessions.has(s.id) || s.failed) return;
     s.dead = true;
     s.failed = String(e);
+    s.failedUrl = url;
     renderTabs();
     showWebFailure(s);
   });
@@ -189,17 +190,38 @@ function showWebFailure(s) {
   const cert = s.failed.includes("certificate");
   s.host.innerHTML = `<div class="webfail">
     <p class="why">${esc(s.failed)}</p>
-    ${cert ? `<p class="fix">A page here has no "continue anyway" — that prompt belongs to the
-      browser. Trust the certificate on this Mac and it opens in the app from then on.</p>` : ""}
-    <div class="btns"><button type="button" class="primary" data-web-browser="${esc(s.name)}">
-      ${icon("external-link")}Open in browser</button></div>
+    ${cert ? `<p class="fix">A device reached by its address has a certificate naming
+      something else, and that never matches. The "continue anyway" for it lives in the
+      browser — accept it there once, ticking <b>Always trust</b>, and this opens here
+      from then on. <b>Show it anyway</b> stops patchbay asking again either way.</p>` : ""}
+    <div class="btns">
+      <button type="button" class="primary" data-web-browser="${esc(s.name)}">
+        ${icon("external-link")}Open in browser</button>
+      <button type="button" class="ghost" data-web-trust="${esc(s.failedUrl)}">
+        ${icon("globe")}Show it anyway</button>
+    </div>
   </div>`;
   placeWebViews();
 }
 
-termsEl.addEventListener("click", (e) => {
-  const b = e.target.closest("[data-web-browser]");
-  if (b) invoke("open_url", { name: b.dataset.webBrowser }).catch(alertish);
+termsEl.addEventListener("click", async (e) => {
+  const open = e.target.closest("[data-web-browser]");
+  if (open) return invoke("open_url", { name: open.dataset.webBrowser }).catch(alertish);
+
+  // Remembered, because our check is stricter than the webview: once the certificate
+  // is trusted on this machine the page renders fine while rustls still refuses the
+  // name, and being asked every time about a device you have already answered for is
+  // the thing that makes people stop reading the message.
+  const trust = e.target.closest("[data-web-trust]");
+  if (!trust) return;
+  const s = [...sessions.values()].find((x) => x.host.contains(trust));
+  try { await invoke("web_trust", { url: trust.dataset.webTrust }); } catch (err) { return alertish(err); }
+  s.failed = null;
+  s.dead = false;
+  s.host.innerHTML = "";
+  renderTabs();
+  renderDetail();
+  placeWebViews();
 });
 
 async function openWebSession(name) {

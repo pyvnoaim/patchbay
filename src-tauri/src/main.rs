@@ -12,6 +12,7 @@ mod terminal;
 mod vpn;
 
 use serde::Serialize;
+use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 #[derive(Serialize)]
@@ -505,9 +506,57 @@ async fn web_check(url: String) -> Result<(), String> {
     if !is_web_url(&url) {
         return Err("only http:// and https:// urls can be opened".into());
     }
+    if web_trusted(&url) {
+        return Ok(());
+    }
     tauri::async_runtime::spawn_blocking(move || web_reachable(&url))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// Beside the config, for the same reason `rdp_known_hosts` is.
+fn web_trust_store() -> PathBuf {
+    patchbay::config_path().with_file_name("web_trusted")
+}
+
+fn web_trusted(url: &str) -> bool {
+    web_trusted_at(&web_trust_store(), url)
+}
+
+fn web_trusted_at(store: &Path, url: &str) -> bool {
+    std::fs::read_to_string(store)
+        .unwrap_or_default()
+        .lines()
+        .any(|l| l.trim() == url)
+}
+
+/// "Show it anyway", remembered. A NAS is reached by its IP, so its certificate names
+/// something else and never will match — telling someone to re-address every device is
+/// not a fix. We still can't make the webview accept it, because that challenge belongs
+/// to wry; what this buys is that once the certificate *is* trusted on this machine,
+/// our own stricter check stops hiding a page the webview will now render perfectly.
+///
+/// Deliberately not in the config: it is this machine's judgement about one device, and
+/// the config is a document the whole team reads.
+#[tauri::command]
+fn web_trust(url: String) -> Result<(), String> {
+    if !is_web_url(&url) {
+        return Err("only http:// and https:// urls can be opened".into());
+    }
+    web_trust_at(&web_trust_store(), &url)
+}
+
+fn web_trust_at(store: &Path, url: &str) -> Result<(), String> {
+    if web_trusted_at(store, url) {
+        return Ok(());
+    }
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(store)
+        .map_err(|e| format!("{}: {e}", store.display()))?;
+    writeln!(f, "{url}").map_err(|e| format!("{}: {e}", store.display()))
 }
 
 /// Remembered state for VPNs with no `check` command — best effort, and the UI
@@ -882,7 +931,7 @@ fn main() {
             settings, save_settings, colors, save_color, defaults, save_defaults, ssh_keys,
             ssh_hosts,
             team_sync, team_join, team_create, team_resolve, team_leave,
-            open_web_view, place_web_view, close_web_view, web_check,
+            open_web_view, place_web_view, close_web_view, web_check, web_trust,
             open_rdp, open_rdp_session, close_rdp_session, rdp_input, tunnels, close_tunnel,
             open_session, open_task, write_session, resize_session, close_session
         ])
@@ -977,6 +1026,26 @@ host = "x; id"
         );
         assert_eq!(split_domain(".\\alice"), (None, "alice".into()), "a local account");
         assert_eq!(split_domain("\\alice"), (None, "alice".into()));
+    }
+
+    /// A NAS is reached by its IP, so its certificate names something else and never
+    /// will match. "Show it anyway" has to survive a restart, or the answer is asked
+    /// for again every single time and stops being read.
+    #[test]
+    fn showing_a_device_anyway_is_remembered() {
+        let dir = std::env::temp_dir().join(format!("patchbay-webtrust-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("web_trusted");
+        let url = "https://10.0.0.251:5001/";
+
+        assert!(!super::web_trusted_at(&store, url), "trusted before anyone said so");
+        super::web_trust_at(&store, url).unwrap();
+        assert!(super::web_trusted_at(&store, url));
+        // Saying it twice is not two lines, and a different device is still unanswered.
+        super::web_trust_at(&store, url).unwrap();
+        assert_eq!(std::fs::read_to_string(&store).unwrap().lines().count(), 1);
+        assert!(!super::web_trusted_at(&store, "https://10.0.0.9:5001/"));
     }
 
     /// reqwest's own Display is "error sending request for url (…)" and stops there,
