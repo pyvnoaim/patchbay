@@ -550,7 +550,7 @@ fn web_trust(url: String) -> Result<(), String> {
 /// and it can't judge what it hasn't been shown. Same accept-anything verifier the RDP
 /// side needs, for the same reason: we are looking at the certificate, not trusting it.
 #[cfg(target_os = "macos")]
-fn peer_cert(url: &str) -> Result<Vec<u8>, String> {
+fn peer_cert(url: &str) -> Result<(String, Vec<u8>), String> {
     use std::io::Write as _;
     use std::net::ToSocketAddrs as _;
     use tokio_rustls::rustls;
@@ -581,11 +581,13 @@ fn peer_cert(url: &str) -> Result<Vec<u8>, String> {
     // Without a flush the handshake hasn't moved far enough for a peer certificate.
     tls.flush().map_err(|e| format!("{host}: {e}"))?;
 
-    tls.conn
+    let der = tls
+        .conn
         .peer_certificates()
         .and_then(|c| c.first())
         .map(|c| c.as_ref().to_vec())
-        .ok_or_else(|| format!("{host} sent no certificate"))
+        .ok_or_else(|| format!("{host} sent no certificate"))?;
+    Ok((host, der))
 }
 
 /// Hand the certificate to macOS the way the browser's "Always trust" does. `security`
@@ -597,15 +599,21 @@ fn peer_cert(url: &str) -> Result<Vec<u8>, String> {
 /// its certificate names something else, and that is the error being forgiven rather
 /// than the issuer.
 #[cfg(target_os = "macos")]
-fn trust_cert(der: &[u8]) -> Result<(), String> {
+fn trust_cert(host: &str, der: &[u8]) -> Result<(), String> {
     let path = std::env::temp_dir().join(format!("patchbay-cert-{}.der", std::process::id()));
     std::fs::write(&path, der).map_err(|e| format!("{}: {e}", path.display()))?;
     let keychain = dirs::home_dir()
         .ok_or("no home directory")?
         .join("Library/Keychains/login.keychain-db");
 
+    // `-s <host>` is load-bearing: it scopes the trust to connections to *this* device,
+    // which is what Apple's own checkbox says and what we told the user. Without it,
+    // `trustAsRoot -p ssl` makes the certificate a trusted SSL root outright — harmless
+    // for a leaf that can only vouch for itself, and a very bad day if an appliance
+    // hands us a CA certificate instead.
     let out = std::process::Command::new("/usr/bin/security")
-        .args(["add-trusted-cert", "-r", "trustAsRoot", "-p", "ssl", "-e", "hostnameMismatch", "-k"])
+        .args(["add-trusted-cert", "-r", "trustAsRoot", "-p", "ssl", "-e", "hostnameMismatch"])
+        .args(["-s", host, "-k"])
         .arg(&keychain)
         .arg(&path)
         .output()
@@ -635,8 +643,8 @@ async fn web_trust_cert(url: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         let trusted = tauri::async_runtime::spawn_blocking(move || {
-            let der = peer_cert(&url)?;
-            trust_cert(&der)?;
+            let (host, der) = peer_cert(&url)?;
+            trust_cert(&host, &der)?;
             // Our own check still refuses the name — rustls judges that itself and no
             // trust setting changes it — so record the override too, or the panel comes
             // straight back for a page that now loads.
