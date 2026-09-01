@@ -381,9 +381,15 @@ function renderPalette() {
   const rows = palMatches();
   palSel = Math.min(palSel, Math.max(0, rows.length - 1));
   presultsEl.innerHTML = rows.length
-    ? rows.map((j, i) => `<div class="jack" data-pi="${i}" aria-selected="${i === palSel}">
+    ? rows.map((j, i) => {
+        // Same rule as the list: the selected row is a solid block of accent, and a
+        // brand colour tuned against the panel disappears on it.
+        const tint = i === palSel ? null : osColor(j.os);
+        return `<div class="jack" data-pi="${i}" aria-selected="${i === palSel}">
+        <span class="os"${tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(j.os)}</span>
         <span class="name">${esc(j.name)}</span>
-        <span class="host">${esc(j.host)}</span></div>`).join("")
+        <span class="host">${esc(j.host)}</span></div>`;
+      }).join("")
     : `<p class="empty">no match</p>`;
   presultsEl.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
 }
