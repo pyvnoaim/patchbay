@@ -383,9 +383,17 @@ fn web_reachable(url: &str) -> Result<(), String> {
         .build()
         .map_err(|e| format!("no http client: {e}"))?;
     client.get(url).send().map(|_| ()).map_err(|e| {
-        let why = e.to_string();
-        // rustls names the reason differently depending on what's wrong with the
-        // chain; all of them mean the same thing to the person looking at it.
+        // reqwest's own Display is "error sending request for url (…)" and stops
+        // there — the reason is only ever in the source chain, so walk it. Without
+        // this the dialog repeats the url back at you and says nothing.
+        let mut why = e.to_string();
+        let mut cause: Option<&(dyn std::error::Error + 'static)> = std::error::Error::source(&e);
+        while let Some(c) = cause {
+            why = format!("{why}: {c}");
+            cause = c.source();
+        }
+        // rustls names it differently depending on what's wrong with the chain; they
+        // all mean the same thing to the person looking at the dialog.
         if ["certificate", "UnknownIssuer", "NotValidForName", "CertExpired"]
             .iter()
             .any(|s| why.contains(s))
@@ -822,7 +830,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_web_url, keys_in, split_domain, task_argv};
+    use super::{is_web_url, keys_in, split_domain, task_argv, web_reachable};
 
     const CHAIN: &str = r#"
 [jack.bastion]
@@ -900,6 +908,19 @@ host = "x; id"
         );
         assert_eq!(split_domain(".\\alice"), (None, "alice".into()), "a local account");
         assert_eq!(split_domain("\\alice"), (None, "alice".into()));
+    }
+
+    /// reqwest's own Display is "error sending request for url (…)" and stops there,
+    /// so the dialog repeated the url back at the user and said nothing about why.
+    /// The reason only ever lives in the source chain.
+    #[test]
+    fn a_web_ui_that_wont_load_says_why_not_just_which() {
+        let err = web_reachable("https://127.0.0.1:1").unwrap_err();
+        assert!(err.contains("127.0.0.1:1"), "{err}");
+        assert!(
+            err.to_lowercase().contains("refused"),
+            "the cause chain wasn't walked, so the message names no cause: {err}"
+        );
     }
 
     #[test]
