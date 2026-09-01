@@ -191,9 +191,10 @@ function showWebFailure(s) {
   s.host.innerHTML = `<div class="webfail">
     <p class="why">${esc(s.failed)}</p>
     ${cert ? `<p class="fix">A device reached by its address has a certificate naming
-      something else, and that never matches. The "continue anyway" for it lives in the
-      browser — accept it there once, ticking <b>Always trust</b>, and this opens here
-      from then on. <b>Show it anyway</b> stops patchbay asking again either way.</p>` : ""}
+      something else, and that never matches. Patchbay can't offer the click-through —
+      that prompt belongs to the browser. <b>Open in browser first</b>, accept it there
+      ticking <b>Always trust</b>; only then does <b>Show it anyway</b> help, because it
+      just stops patchbay checking. On its own it leaves you a blank page.</p>` : ""}
     <div class="btns">
       <button type="button" class="primary" data-web-browser="${esc(s.name)}">
         ${icon("external-link")}Open in browser</button>
