@@ -120,6 +120,7 @@ async fn probe() -> Result<Vec<Probe>, String> {
             .filter_map(|n| patchbay::entry(n, &jacks).ok().map(|(h, p)| (n.clone(), h, p)))
             .collect();
 
+        // ponytail: one thread per jack, bounded pool if someone brings a thousand
         Ok(std::thread::scope(|s| {
             let handles: Vec<_> = targets
                 .iter()
