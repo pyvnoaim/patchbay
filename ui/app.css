@@ -206,6 +206,11 @@ button { display: flex; align-items: center; justify-content: center; gap: 6px; 
   -webkit-user-select: text; user-select: text;
 }
 .mono.err { color: var(--down); }
+/* The copy sits on the box it copies rather than in the header strip, which at
+   272px was running out of room. */
+.d-cmd { position: relative; }
+.d-cmd .mono { padding-right: 32px; }
+.d-copy { position: absolute; top: 3px; right: 3px; color: var(--fg-faint); }
 .btns { display: flex; gap: 6px; margin-top: 10px; }
 button {
   flex: 1; padding: 7px 10px; border: 0; border-radius: 7px;
