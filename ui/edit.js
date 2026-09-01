@@ -164,6 +164,23 @@ $("ask-cancel").addEventListener("click", () => closeAsk(null));
 askWrap.addEventListener("mousedown", (e) => { if (e.target === askWrap) closeAsk(null); });
 
 // ── jack sheet ─────────────────────────────────────────────────────────────
+/// One way in per device. There is no separate "opens on double-click" any more -
+/// with a single choice the answer is the choice, and `primary` in the config is
+/// whatever Rust resolves from the one field that's set.
+const reachOf = (f) => f.reach.value || "ssh";
+
+/// Show only the fields the chosen way in actually needs.
+function jackFields() {
+  const f = jackForm.elements;
+  const reach = reachOf(f);
+  for (const el of jackForm.querySelectorAll("[data-need]")) {
+    el.hidden = !el.dataset.need.split(" ").includes(reach);
+  }
+  // Sensible starting point rather than an empty box you have to know to fill.
+  if (reach === "rdp" && !f.rdp.value.trim()) f.rdp.value = "3389";
+  if (reach === "vnc" && !f.vnc.value.trim()) f.vnc.value = "5900";
+}
+
 function openJack(j, prefillGroup) {
   editing = j?.name ?? null;
   // Which file this write lands in. An existing device stays where it is; a new one
