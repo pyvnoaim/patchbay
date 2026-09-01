@@ -398,7 +398,13 @@ fn web_reachable(url: &str) -> Result<(), String> {
             .iter()
             .any(|s| why.contains(s))
         {
-            format!("\"{url}\" uses a certificate this machine doesn't trust")
+            // Naming the way out, because otherwise this is a dead end that sends
+            // you to the browser forever for a device you could trust once. Kept
+            // platform-neutral: the store is Keychain here and something else there.
+            format!(
+                "\"{url}\" uses a certificate this machine doesn't trust, so a window \
+                 here would show nothing — trust it on this machine and it opens in the app"
+            )
         } else {
             format!("\"{url}\": {why}")
         }
