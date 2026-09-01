@@ -546,6 +546,113 @@ fn web_trust(url: String) -> Result<(), String> {
     web_trust_at(&web_trust_store(), &url)
 }
 
+/// A device's leaf certificate, fetched without judging it — macOS does the judging,
+/// and it can't judge what it hasn't been shown. Same accept-anything verifier the RDP
+/// side needs, for the same reason: we are looking at the certificate, not trusting it.
+#[cfg(target_os = "macos")]
+fn peer_cert(url: &str) -> Result<Vec<u8>, String> {
+    use std::io::Write as _;
+    use std::net::ToSocketAddrs as _;
+    use tokio_rustls::rustls;
+
+    let u = tauri::Url::parse(url).map_err(|e| format!("\"{url}\": {e}"))?;
+    let host = u.host_str().ok_or_else(|| format!("\"{url}\" has no host"))?.to_string();
+    let port = u.port_or_known_default().unwrap_or(443);
+
+    let addr = format!("{host}:{port}")
+        .to_socket_addrs()
+        .ok()
+        .and_then(|mut a| a.next())
+        .ok_or_else(|| format!("{host}:{port}: no address for that host"))?;
+    let stream = std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(10))
+        .map_err(|e| format!("{host}:{port}: {e}"))?;
+
+    let config = rustls::client::ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(std::sync::Arc::new(rdp_session::verifier::AcceptAny))
+        .with_no_client_auth();
+    let name = host
+        .clone()
+        .try_into()
+        .map_err(|_| format!("\"{host}\" isn't a usable server name"))?;
+    let client = rustls::ClientConnection::new(std::sync::Arc::new(config), name)
+        .map_err(|e| e.to_string())?;
+    let mut tls = rustls::StreamOwned::new(client, stream);
+    // Without a flush the handshake hasn't moved far enough for a peer certificate.
+    tls.flush().map_err(|e| format!("{host}: {e}"))?;
+
+    tls.conn
+        .peer_certificates()
+        .and_then(|c| c.first())
+        .map(|c| c.as_ref().to_vec())
+        .ok_or_else(|| format!("{host} sent no certificate"))
+}
+
+/// Hand the certificate to macOS the way the browser's "Always trust" does. `security`
+/// is the system's own tool and it raises the system's own authorisation prompt, so
+/// nothing is trusted without the user's password — we never write trust settings
+/// ourselves, we ask macOS to.
+///
+/// `-e hostnameMismatch` is the part that matters for an appliance: reached by its IP,
+/// its certificate names something else, and that is the error being forgiven rather
+/// than the issuer.
+#[cfg(target_os = "macos")]
+fn trust_cert(der: &[u8]) -> Result<(), String> {
+    let path = std::env::temp_dir().join(format!("patchbay-cert-{}.der", std::process::id()));
+    std::fs::write(&path, der).map_err(|e| format!("{}: {e}", path.display()))?;
+    let keychain = dirs::home_dir()
+        .ok_or("no home directory")?
+        .join("Library/Keychains/login.keychain-db");
+
+    let out = std::process::Command::new("/usr/bin/security")
+        .args(["add-trusted-cert", "-r", "trustAsRoot", "-p", "ssl", "-e", "hostnameMismatch", "-k"])
+        .arg(&keychain)
+        .arg(&path)
+        .output()
+        .map_err(|e| format!("could not run security: {e}"));
+    let _ = std::fs::remove_file(&path);
+    let out = out?;
+
+    if out.status.success() {
+        return Ok(());
+    }
+    let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(match why.is_empty() {
+        // Cancelling the system prompt is a decision, not a failure to report as one.
+        true => "the certificate wasn't trusted".to_string(),
+        false => format!("the certificate wasn't trusted: {why}"),
+    })
+}
+
+/// Trust a device's certificate on this machine, so the webview will load its page.
+/// Only macOS for now: elsewhere the webview reads a different store and this would
+/// need its own spelling.
+#[tauri::command]
+async fn web_trust_cert(url: String) -> Result<(), String> {
+    if !is_web_url(&url) {
+        return Err("only http:// and https:// urls can be opened".into());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let trusted = tauri::async_runtime::spawn_blocking(move || {
+            let der = peer_cert(&url)?;
+            trust_cert(&der)?;
+            // Our own check still refuses the name — rustls judges that itself and no
+            // trust setting changes it — so record the override too, or the panel comes
+            // straight back for a page that now loads.
+            web_trust_at(&web_trust_store(), &url)
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        return trusted;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = url;
+        Err("trusting a certificate from here is macOS-only so far — accept it in your browser instead".into())
+    }
+}
+
 fn web_trust_at(store: &Path, url: &str) -> Result<(), String> {
     if web_trusted_at(store, url) {
         return Ok(());
@@ -931,7 +1038,7 @@ fn main() {
             settings, save_settings, colors, save_color, defaults, save_defaults, ssh_keys,
             ssh_hosts,
             team_sync, team_join, team_create, team_resolve, team_leave,
-            open_web_view, place_web_view, close_web_view, web_check, web_trust,
+            open_web_view, place_web_view, close_web_view, web_check, web_trust, web_trust_cert,
             open_rdp, open_rdp_session, close_rdp_session, rdp_input, tunnels, close_tunnel,
             open_session, open_task, write_session, resize_session, close_session
         ])

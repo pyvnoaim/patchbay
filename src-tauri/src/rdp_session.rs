@@ -498,12 +498,12 @@ fn public_key(cert: &[u8]) -> Result<Vec<u8>, String> {
 /// rustls has to return a verdict before we can see the certificate at all, so the
 /// real check is [`trust`], which runs on the peer certificate straight after the
 /// handshake and before any credential is sent.
-mod verifier {
+pub(crate) mod verifier {
     use tokio_rustls::rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
     use tokio_rustls::rustls::{pki_types, DigitallySignedStruct, Error, SignatureScheme};
 
     #[derive(Debug)]
-    pub(super) struct AcceptAny;
+    pub(crate) struct AcceptAny;
 
     impl ServerCertVerifier for AcceptAny {
         fn verify_server_cert(

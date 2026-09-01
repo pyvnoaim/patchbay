@@ -191,15 +191,19 @@ function showWebFailure(s) {
   s.host.innerHTML = `<div class="webfail">
     <p class="why">${esc(s.failed)}</p>
     ${cert ? `<p class="fix">A device reached by its address has a certificate naming
-      something else, and that never matches. Patchbay can't offer the click-through —
-      that prompt belongs to the browser. <b>Open in browser first</b>, accept it there
-      ticking <b>Always trust</b>; only then does <b>Show it anyway</b> help, because it
-      just stops patchbay checking. On its own it leaves you a blank page.</p>` : ""}
+      something else, and that never matches. <b>Trust it</b> hands the certificate to
+      macOS the way the browser's "Always trust" does — macOS asks for your password,
+      and the page opens here from then on.</p>` : ""}
     <div class="btns">
-      <button type="button" class="primary" data-web-browser="${esc(s.name)}">
+      ${cert ? `<button type="button" class="primary" data-web-cert="${esc(s.failedUrl)}">
+        ${icon("check")}Trust it</button>` : ""}
+      <button type="button" class="ghost" data-web-browser="${esc(s.name)}">
         ${icon("external-link")}Open in browser</button>
+      ${/* Only removes our check — the webview still judges for itself, so on its own
+            this can leave a blank page. Kept for when the certificate is already
+            trusted and it is only rustls, which judges the name separately, refusing. */ ""}
       <button type="button" class="ghost" data-web-trust="${esc(s.failedUrl)}">
-        ${icon("globe")}Show it anyway</button>
+        ${icon("globe")}Skip the check</button>
     </div>
   </div>`;
   placeWebViews();
@@ -213,16 +217,24 @@ termsEl.addEventListener("click", async (e) => {
   // is trusted on this machine the page renders fine while rustls still refuses the
   // name, and being asked every time about a device you have already answered for is
   // the thing that makes people stop reading the message.
+  const cert = e.target.closest("[data-web-cert]");
   const trust = e.target.closest("[data-web-trust]");
-  if (!trust) return;
-  const s = [...sessions.values()].find((x) => x.host.contains(trust));
-  try { await invoke("web_trust", { url: trust.dataset.webTrust }); } catch (err) { return alertish(err); }
-  s.failed = null;
-  s.dead = false;
-  s.host.innerHTML = "";
-  renderTabs();
-  renderDetail();
-  placeWebViews();
+  const btn = cert ?? trust;
+  if (!btn) return;
+  const s = [...sessions.values()].find((x) => x.host.contains(btn));
+  if (!s) return;
+
+  try {
+    // macOS raises its own authorisation prompt, so this waits on a person.
+    if (cert) await invoke("web_trust_cert", { url: cert.dataset.webCert });
+    else await invoke("web_trust", { url: trust.dataset.webTrust });
+  } catch (err) { return alertish(err); }
+
+  // The page has to be loaded again to be judged again — the webview made its mind up
+  // about that certificate before macOS changed its mind about it.
+  const name = s.name;
+  closeSession(s.id);
+  openWebSession(name);
 });
 
 async function openWebSession(name) {
