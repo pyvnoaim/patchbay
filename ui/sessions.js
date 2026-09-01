@@ -257,8 +257,17 @@ function renderTabs() {
         <span class="x" data-close="${s.id}" data-tip="Close  ${chord('w')}">${icon("x")}</span>
       </div>`).join("");
   // Enough tabs and the strip scrolls even with every label squeezed, so the one you
-  // just switched to has to be brought back into view.
-  tabsEl.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  // just switched to has to be brought back into view. By hand, not scrollIntoView:
+  // that one walks up to *any* scrollable ancestor, and it took the detail pane off
+  // the side of the window with it.
+  const active = tabsEl.querySelector('[aria-selected="true"]');
+  if (active) {
+    const right = active.offsetLeft + active.offsetWidth;
+    if (active.offsetLeft < tabsEl.scrollLeft) tabsEl.scrollLeft = active.offsetLeft;
+    else if (right > tabsEl.scrollLeft + tabsEl.clientWidth) {
+      tabsEl.scrollLeft = right - tabsEl.clientWidth;
+    }
+  }
 }
 
 tabsEl.addEventListener("click", (e) => {
