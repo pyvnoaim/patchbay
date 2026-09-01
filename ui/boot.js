@@ -196,6 +196,11 @@ async function refreshProbes() {
   // Throttled because load() runs on every window focus, and a sweep opens a
   // socket to every jack. Alt-tabbing shouldn't hammer the whole estate.
   if (prefs.probe === false) return;
+  // And nothing at all while the window is in the background: the interval below
+  // outlives your attention, and a socket to every host every 30s is a cost the
+  // machine pays for a pane no one is reading. Coming back calls load(), which
+  // calls this - so the dots are current the moment they're looked at again.
+  if (!document.hasFocus()) return;
   if (Date.now() - lastProbe < PROBE_EVERY) return;
   lastProbe = Date.now();
   try {
