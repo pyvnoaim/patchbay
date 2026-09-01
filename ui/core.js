@@ -3,6 +3,7 @@
 // Separate file, not an inline <script>, so the CSP can stay `script-src 'self'`.
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
+const appEl = $("app");
 const treeEl = $("tree"), listEl = $("list"), detailEl = $("d-body");
 const detailPane = $("detail"), dActions = $("d-actions");
 const searchBtn = $("searchbtn");

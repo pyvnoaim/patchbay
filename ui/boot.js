@@ -133,16 +133,32 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ── load ───────────────────────────────────────────────────────────────────
+/// The window opens on an empty grid while the first load() fetches, so #app waits
+/// hidden and arrives with its contents already in it. The class comes back off
+/// once it has played: the lists are innerHTML and render() runs on every window
+/// focus, so a rule left on the body would re-stagger every row on every alt-tab.
+function reveal() {
+  if (!appEl.hidden) return;
+  appEl.hidden = false;
+  document.body.classList.add("intro");
+  setTimeout(() => document.body.classList.remove("intro"), 700);
+}
+
 async function load() {
   try {
-    // Preferences first: the rest of the UI reads them.
-    prefs = await invoke("settings").catch(() => ({}));
-    if (!sshKeys.length) sshKeys = await invoke("ssh_keys").catch(() => []);
-    colors = await invoke("colors").catch(() => ({}));
-    cfgPath = await invoke("config_path").catch(() => "");
-    spaces = await invoke("spaces").catch(() => []);
-    tunnels = await invoke("tunnels").catch(() => []);
-    all = await invoke("jacks");
+    // Seven independent reads of the same config. Serially they were seven round
+    // trips stacked in front of the first paint, and load() runs on every focus.
+    // `jacks` is the only one left uncaught - it failing is what the error branch
+    // below is for, and Promise.all rejecting is how it still gets there.
+    [prefs, sshKeys, colors, cfgPath, spaces, tunnels, all] = await Promise.all([
+      invoke("settings").catch(() => ({})),
+      sshKeys.length ? sshKeys : invoke("ssh_keys").catch(() => []),
+      invoke("colors").catch(() => ({})),
+      invoke("config_path").catch(() => ""),
+      invoke("spaces").catch(() => []),
+      invoke("tunnels").catch(() => []),
+      invoke("jacks"),
+    ]);
     // Open the first level once, on the first load only - doing it every time
     // would re-open folders the moment the window regains focus.
     if (!seeded) {
@@ -160,6 +176,7 @@ async function load() {
     treeEl.innerHTML = "";
     listEl.innerHTML = `<p class="empty">${esc(e)}</p>`;
   }
+  reveal();
 }
 
 /// Push what we changed, take what they changed. Deliberately not awaited by load():
