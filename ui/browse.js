@@ -138,10 +138,14 @@ function render() {
   listEl.innerHTML = shown.map((j, i) => {
     const p = probes.get(j.name);
     const state = !p ? "unknown" : p.ms == null ? "down" : "up";
+    // `readable()` nudges a brand hex against the *panel*, but the selected row is a
+    // solid block of accent — Synology's navy clears 3:1 there and vanishes here. So
+    // the row's own white wins on that one row, the way .host and .folder already do.
+    const tint = i === sel ? null : osColor(j.os);
     return `<div class="jack" data-i="${i}" aria-selected="${i === sel}">
       <span class="dot ${state}"></span>
       <span class="os"${j.os ? ` data-tip="${esc(j.os)}"` : ""}${
-        osColor(j.os) ? ` style="color:${esc(osColor(j.os))}"` : ""}>${osIcon(j.os)}</span>
+        tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(j.os)}</span>
       <span class="name">${esc(j.name)}</span>
       <span class="host">${esc(j.user ? j.user + "@" + j.host : j.host)}${j.port ? ":" + j.port : ""}</span>
       ${j.url ? `<span class="web" data-tip="${esc(j.url)}" data-tip-at="right">${icon("globe")}</span>` : ""}
