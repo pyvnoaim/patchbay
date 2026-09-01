@@ -28,6 +28,7 @@ const USED = [
   "external-link",
   "globe",
   "monitor",
+  "screen-share",  // vnc
   "unplug",
   "settings",
   "router",
@@ -37,6 +38,8 @@ const USED = [
   "container",
   "printer",
   "cctv",
+  "rotate-cw",     // try that again
+  "arrow-up",      // up a folder
 ];
 
 const inner = (name) =>

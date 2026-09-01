@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { styleText } from "node:util";
 import { fromSshConfig, toToml } from "./import.ts";
-import { configPath, load, matches, resolve, sshArgs, type Jacks } from "./patchbay.ts";
+import { configPath, loadAll, matches, resolve, spacePath, sshArgs, type Jacks } from "./patchbay.ts";
 
 const TEMPLATE = `# patchbay — every host, one jack away
 # Anything here is inherited by every jack below.
@@ -52,8 +52,8 @@ function pick(names: string[]): string | undefined {
   return r.status === 0 ? r.stdout.trim() || undefined : undefined;
 }
 
-function edit() {
-  const path = configPath();
+function edit(space?: string) {
+  const path = spacePath(space);
   if (!existsSync(path)) {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, TEMPLATE);
@@ -75,11 +75,11 @@ bay <name>       connect — substring is enough
 bay <name> -n    print the ssh command instead of running it
 bay <name> -- <cmd>   run a command instead of a shell
 bay ls [filter]  list jacks, filtered by name or folder
-bay edit         open ${configPath()}
+bay edit [space] open ${configPath()}, or spaces/<space>.toml
 bay import [file]  print TOML for the hosts in your ssh config`);
   process.exit(0);
 }
-if (cmd === "edit") edit();
+if (cmd === "edit") edit(rest[0]);
 
 // Stdout, not the config file: config.rs is the only thing that edits a patchbay.toml,
 // and printing means you read it before you keep it.
@@ -98,7 +98,7 @@ if (!existsSync(path)) die(`no config at ${path} — run \`bay edit\` to start o
 
 let jacks: Jacks;
 try {
-  jacks = load(path);
+  jacks = loadAll(path);
 } catch (e) {
   die(`${path}: ${(e as Error).message}`);
 }

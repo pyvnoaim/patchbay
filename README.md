@@ -5,7 +5,7 @@
 
 **Every host, one jack away.**
 
-A connection manager that is one TOML file and a `ssh` exec. No Electron, no sync
+A connection manager that is a TOML file and a `ssh` exec. No Electron, no sync
 service, no license key, no crown.
 
 ```
@@ -20,6 +20,11 @@ bay import [file]     print TOML for the hosts in your ssh config
 
 The CLI prints the TOML for you to check and paste. In the app it's the same list with
 tick boxes — right-click the device list, or the button on the empty state.
+
+The window adds what a terminal can't: sessions, remote desktop, a device's web UI and
+its files, all as tabs; a folder tree with per-folder VPNs; and an optional shared list
+for a team. Everything it knows is still those TOML files, so `bay` and the window
+never disagree.
 
 
 ## Install
@@ -39,6 +44,11 @@ everywhere; without it, bare `bay` just lists.
 
 `~/.config/patchbay/patchbay.toml`, or `%APPDATA%\patchbay\patchbay.toml` on Windows —
 or wherever `$PATCHBAY_CONFIG` points. `bay edit` creates it.
+
+That file is your own list. **A space is another one of these**, in `spaces/` beside it,
+same format, shown under its own heading in the sidebar — `bay edit <space>` opens one.
+Keep a customer's machines apart from your own, or share one with a team without ever
+handing over the rest.
 
 ```toml
 [defaults]                       # inherited by every jack; the jack wins
@@ -94,9 +104,9 @@ the context menu when you'd rather have your own terminal.
 ## Folders, VPNs and web UIs
 
 A folder with slashes (`prod/eu/web`) nests in the sidebar, and `folders` is a list,
-so a device can sit in several branches at once. A device says how it is reached —
-`ssh` (on by default), `rdp = <port>`, `url` — and `primary` picks what Enter and a
-double-click do. A folder can carry a VPN, which is how one-customer-per-folder
+so a device can sit in several branches at once. A device says how it is reached — `ssh`
+(on by default), `rdp = <port>`, `vnc = <port>` or `url`, one of them — and that is what
+Enter and a double-click open. A folder can carry a VPN, which is how one-customer-per-folder
 works — flip the switch, or let it come up on its own when you connect.
 
 ```toml
@@ -107,41 +117,64 @@ profile  = "acme"
 [jack.acme-nas]
 host = "10.80.0.20"
 os   = "synology"               # picks the icon, and its colour
-url  = "https://10.80.0.20:5001"   # opens in your browser
+url  = "https://10.80.0.20:5001"   # opens in a tab
 folders = ["acme/prod"]
 
 [jack.acme-dc]
 host = "10.80.0.5"
 rdp  = 3389                     # remote desktop, in a tab
 ssh  = false
-primary = "rdp"                 # what Enter opens
 folders = ["acme/prod"]
 ```
 
-A `custom` VPN runs whatever `up`/`down`/`check` you give it, so treat a config
-someone sends you the way you'd treat their shell script.
+A `custom` VPN runs whatever `up`/`down`/`check` you give it — so nothing in a `[vpn]`
+block runs until you've been shown it and said yes, and changing a command asks again.
+That matters most on a team, where those commands arrive from colleagues rather than
+from you.
+
+A device's web UI opens in a tab, beside your terminals. Appliances are usually reached
+by IP, so their certificate names something else and the page would be blank with no
+explanation — patchbay says which certificate and why, and can hand it to your system's
+trust store the way the browser's **Always trust** does. Plain `http` works too, but
+only to your own network; a public one goes to the browser.
+
+## Files
+
+`ssh` ships `sftp`, so patchbay uses it. Right-click a device and **Browse files**, or
+the folder button in the detail pane: a tab listing the remote side, double-click to go
+into a folder or to download a file, and drop files onto it to upload.
+
+Same connection as everything else — your agent, your `~/.ssh/config`, your jump chain.
+Repeated listings share one ssh session, so only the first one authenticates.
 
 ## Teams
 
-One shared list, on a server you run — `npm run server`, or the `patchbay-server`
-binary anywhere that has a disk. Settings → Team → **Create a team** hands you a code;
-anyone who types that code into their own window has the same list.
+**A team is a space with a server behind it.** Make a space, put the devices you want
+to share in it, then Settings → Spaces → **Share with a team** — that hands you a code,
+and anyone who types it into their own window gets that space. Joining one writes a new
+file and touches nothing you already had; your own list is never read, never uploaded,
+and never replaced.
 
-The shared thing is the config file itself, so there is nothing new to learn: devices,
-folders, VPNs and colours are the team's, while the preferences above them stay on your
-machine. The window syncs when it gets focus and after every edit; `bay` reads whatever
-that left on disk, so the CLI never waits on a server.
+Run the server yourself: `npm run server`, or the `patchbay-server` binary anywhere that
+has a disk. The window syncs when it gets focus and after every edit; `bay` reads
+whatever that left on disk, so the CLI never waits on a server.
 
-There is no merge and no account. The code *is* the credential — anyone who has it has
-the list — and if your list and the team's have both moved since they last agreed, the
-window says so and asks which one wins. Whichever loses is kept as `patchbay.toml.bak`.
+Two people adding two devices is not a disagreement — those merge. Only the same field
+on both sides needs an answer, and then the window asks which one wins; whichever loses
+is kept as `<space>.toml.bak`. There are no accounts: the code *is* the credential, so
+anyone who has it has that space.
+
+`/team` is plain HTTP — `GET` with an `ETag`, `PUT` with `If-Match` — so a space can
+point at any file over HTTP instead. Leave the code blank and give the address of a TOML
+file someone publishes, a raw git URL included, and you get a read-only copy of it.
 
 Three seats are free; past that everyone can still read the list, and writing asks you
 to pay. Nothing is stored anywhere unless you point patchbay at a server yourself.
 
 Worth knowing before you join one: a `[vpn]` block runs the commands written in it, and
-joining a team means those arrive from your colleagues rather than from you. Join teams
-you'd trust with a shell script, which is the same rule as any config someone sends you.
+joining a team means those arrive from your colleagues rather than from you. Nothing in
+one runs until you have been shown it and said yes — on first sight and again whenever it
+changes — but the rule still holds: join teams you'd trust with a shell script.
 
 ## What it deliberately isn't
 
@@ -152,4 +185,13 @@ here and never will be: a session is `/usr/bin/ssh` on a pty, in a tab.
 Remote desktop is a tab too. That one decodes RDP itself — IronRDP, pure Rust,
 painted onto a canvas — so there is still no FreeRDP and no embedded graphics
 toolkit, which was always the actual objection. "Remote desktop in system client"
-hands a `.rdp` file to mstsc / Windows App / xfreerdp if you'd rather. VNC isn't in.
+hands a `.rdp` file to mstsc / Windows App / xfreerdp if you'd rather.
+
+VNC is a handoff and only a handoff: `vnc = 5900` opens `vnc://` with whatever viewer
+the machine already has — Screen Sharing on macOS — over the same forwarded port when
+the device is behind a bastion. A second protocol decoder in here would have to earn
+its place, and one screen-sharing tab already exists.
+
+Files are `sftp`, the binary, not a library. A web UI is a webview showing the device's
+own page, not something we render. The pattern holds: patchbay knows where your machines
+are and what to run — the running is someone else's job.

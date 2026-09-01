@@ -1,7 +1,13 @@
 # patchbay
 
-SSH connection manager: one TOML file, exec `ssh`. A deliberately tiny answer to
+SSH connection manager: TOML files, exec `ssh`. A deliberately tiny answer to
 Royal TS — no Electron, no sync service, no stored credentials.
+
+**A space is a config file.** Your own list is `patchbay.toml`; every other space is
+one file in `spaces/` beside it, same format, loaded and shown alongside. A *team*
+space is one of those files with a server behind it. That is the whole model, and
+everything about teams follows from it: joining one writes a new file and cannot
+touch what you already had.
 
 Two front ends over one config format:
 
@@ -11,20 +17,23 @@ Two front ends over one config format:
 - `test/patchbay.test.ts`, `test/import.test.ts` — `node:test` + `assert`.
 - `src-tauri/src/patchbay.rs` — **a port of `src/patchbay.ts`**, because the app can't import TypeScript. Same behaviour, same errors, same argv; its tests mirror the TS ones. Change one, change both.
 - `src-tauri/src/import.rs` — the port of `src/import.ts`. Parses only; the window writes what was ticked through `save_jack` like any other edit.
-- `src-tauri/src/config.rs` — the only code that *writes* the config. Everything else reads. Also owns `[settings]` and `[colors]`.
-- `src-tauri/src/vpn.rs` — per-folder VPN toggles: provider presets, and running the up/down/check commands.
-- `server/src/main.rs` — the team server. One shared config document per team, no accounts, seat limit enforced here. Never parses the TOML.
-- `src-tauri/src/team.rs` — the client half: `team.toml` beside the config, and the fetch-then-push-or-adopt loop behind the single `team_sync` command. **The window syncs; `bay` doesn't** — the CLI reads whatever file the window last agreed on, because a round trip on every `bay web` is a launcher that waits on a server.
+- `src-tauri/src/config.rs` — the only code that *writes* a config. Everything else reads. Also owns `[settings]`, `[colors]`, and making, deleting and moving devices between spaces. Every writer takes the space's file; `space_slug` is what stops a space name being a path.
+- `src-tauri/src/vpn.rs` — per-folder VPN toggles: provider presets, running the up/down/check commands, and `approval`, which is what stops a command running before someone here has read it.
+- `server/src/main.rs` — the team server. One shared config document per team, no accounts, seat limit enforced here. Never parses the TOML. `/team` is **plain HTTP** — `GET` returns the document with an `ETag`, `PUT` takes `If-Match` and answers 412 — so a space can point at a bucket or a static file instead, and the client keeps one code path. Seats and `paid` ride along as advisory `x-` headers nothing else sends.
+- `src-tauri/src/team.rs` — the client half: `team.toml` beside the config, and the fetch-then-push-or-adopt loop behind the single `team_sync` command, run once per team space. **The window syncs; `bay` doesn't** — the CLI reads whatever file the window last agreed on, because a round trip on every `bay web` is a launcher that waits on a server.
 - `src-tauri/src/pty.rs` — in-app sessions: ssh on a real pty, streamed to xterm.js as `pty:<id>` events.
-- `src-tauri/src/rdp.rs` — remote desktop by handoff: writes a `.rdp`, and forwards a local port over the jump chain when there is one.
+- `src-tauri/src/sftp.rs` — files, by handing them to `/usr/bin/sftp`. Stateless commands sharing one ssh session through `ControlMaster`, because a fresh handshake per directory listing makes browsing feel broken. `sftp` takes `-P` for the port where ssh takes `-p`, and its batch language is line-based — so a path with a newline or a quote in it is refused, the same way a `.rdp` refuses one.
+- `src-tauri/src/rdp.rs` — remote desktop by handoff: writes a `.rdp`, and forwards a local port over the jump chain when there is one. Its `Tunnels` and `free_port` are what `vnc = <port>` uses too — VNC is a handoff and nothing else, `vnc://` to whatever viewer the machine has, so there is no `vnc_session.rs` and adding one needs the same argument `rdp_session.rs` had to win.
 - `src-tauri/src/rdp_session.rs` — the other remote desktop: IronRDP decoded to a framebuffer and blitted onto a `<canvas>`, the way `pty.rs` streams a terminal. The only place patchbay speaks a protocol itself.
 - `src-tauri/src/clipboard.rs` — the CLIPRDR backend behind `rdp_session.rs`. Text only, both directions lazy.
 - `src-tauri/capabilities/default.json` — grants `core:default`. Load-bearing; see Non-obvious.
+- `src-tauri/Info.plist` — merged into the macOS bundle. Load-bearing: without it a plain-http device page is a silent white pane.
+- Files kept *beside* the config, never in it, because each is this machine's answer rather than the team's: `team.toml` (device id, and a table per team space), `spaces/<name>.toml.base` (the merge base), `vpn_approved` (commands read and allowed), `web_trusted` (checks waived), `rdp_known_hosts` (certs seen).
 - `src-tauri/src/terminal.rs` — the other path: hands the ssh command to the *system* terminal.
 - `src-tauri/src/main.rs` — Tauri setup and the `#[tauri::command]` surface. Thin; logic belongs in `patchbay.rs`.
 - `ui/` — no framework, no bundler. **Classic scripts sharing one global scope, so the order in `index.html` matters**: `core.js` (state + helpers) → `browse.js` (tree, list, detail, palette) → `sessions.js` (terminal tabs) → `edit.js` (menu, sheets, config writes) → `boot.js` (wires the keyboard and starts up; the only file that *runs* rather than declares). Anything reaching across files must do it inside a function body, never at top level.
 - `ui/gen/` — generated by `npm run icons` / `npm run brands`. `ui/vendor/` — third-party (xterm), by `npm run vendor`. Committed, but never edit either by hand.
-- `dev/patchbay.toml` — the sample config `npm run dev` and `npm run cli` read. Not shipped.
+- `dev/patchbay.example.toml` — the sample config, tracked. `dev.mjs` copies it to `dev/patchbay.toml` on first run; that copy is gitignored, because it fills up with your own machines and a real address belongs in a public repo about as much as a password does. Everything else `dev/` accumulates (`team.toml`, `vpn_approved`, `web_trusted`, the `.bak`/`.base`) is ignored for the same reason.
 - `scripts/` — one-job node scripts, run via npm. Never imported by the app; `dev.mjs` is the single entry point for running anything locally.
 
 ## Commands
@@ -41,20 +50,26 @@ npm run icons    # regenerate ui/gen/icons.js after editing USED in scripts/icon
 
 ## "push"
 
-When I say **push**, that is not just `git push`. It means: review first, then push
-only if the review comes back clean.
+When I say **push**, that is not just `git push`. It is the whole procedure, and it is
+the *only* time anything is committed:
 
-1. Review everything that would go out — bugs and correctness, security, performance, and anything worth simplifying or deleting. Check both implementations when the change touched shared logic; a fix in `patchbay.ts` that missed `patchbay.rs` is the standing risk here.
-2. Run `npm test` — both suites, not one.
-3. **Clean → commit and push.** Sensible commit messages, split into separate commits when the changes are unrelated.
-4. **Not clean → stop and tell me what you found.** Don't push and don't fix it silently; a behaviour change is my call. Trivial nits (a typo, dead code) you can just fix, mention, and carry on.
+1. **Take everything open.** Uncommitted changes, staged and unstaged, new files, and anything already committed but unpushed. The review covers the lot, not just the last thing worked on.
+2. **Review it all**, in these four passes:
+   - **Bugs and correctness** — including both implementations when the change touched shared logic; a fix in `patchbay.ts` that missed `patchbay.rs` is the standing risk here.
+   - **Security** — problems *and* improvements. Anything reaching a shell, the trust store, a `style` attribute, the desktop opener, or a file someone else wrote.
+   - **Performance** — problems *and* improvements. Something that got slower, an extra round trip on a hot path, work done before the user sees anything.
+   - **Simplification** — what can be deleted, reused, or replaced by something already here.
+3. **Run `npm test`** — all three suites, not one.
+4. **Clean → commit and push.** Sensible commit messages, split into separate commits when the changes are unrelated.
+5. **Not clean → stop and tell me what you found.** Don't push and don't fix it silently; a behaviour change is my call. Trivial nits (a typo, dead code, a stale comment) you can just fix, mention, and carry on.
 
 Findings first, one line each. Don't push a "probably fine".
 
-**Never push unless I've asked for it in that message.** Not after a cleanup, not
-because the work looks finished, not because the tree is clean. Finishing a task is
-not permission to publish it — `git push` only ever runs when I say so. Committing
-locally is fine; pushing is mine to call.
+**Never commit or push unless I've asked for it in that message.** Not after a
+cleanup, not because the work looks finished, not because the tree is clean, and not
+because a change is small. Finishing a task is not permission to record it — leave
+the work in the tree and say what's ready. Both `git commit` and `git push` only ever
+run when I say **push**.
 
 ## Conventions
 
@@ -91,22 +106,27 @@ aren't obvious from reading:
 - Icons are Lucide via `icon("name")`. Add the name to `USED` in `scripts/icons.mjs` and run `npm run icons` — don't paste SVG into `app.js`, and don't add `lucide-react` (there is no React here, and it wraps the same artwork).
 - A jack's `os = "..."` renders through `osIcon()`: a simple-icons brand mark if one exists, else a Lucide shape from `BRAND_FALLBACKS`, else `server`. Both maps live in `scripts/brands.mjs`; run `npm run brands`. Matching is loose on purpose so `"Ubuntu 22.04"` and `"ubuntu"` land on the same glyph. Brand marks are *filled* paths, Lucide ones are *stroked* — `.i.brand` clears the stroke.
 - Don't fetch favicons from devices to use as icons. It needs an HTTP client and TLS in the app, nearly every appliance ships a self-signed cert, half of them sit behind a bastion where the app can't reach them anyway, and it turns opening the window into outbound requests to every host. The curated set covers the real cases.
-- A device declares how it is reached: `ssh` (default true), `rdp = <port>`, `url`. `primary` picks what Enter and a double-click do, resolved in Rust so an option pointing at something the device no longer has falls back rather than doing nothing.
+- **A device is reached one way.** The sheet's row is a radio, and saving clears the other two — so a device edited there keeps only what it was set to, including one written back when the row allowed several. `primary` is still *read* (old configs, and hand-edited ones can still set two), and Rust still resolves it so an option pointing at something the device no longer has falls back rather than doing nothing — but the window no longer writes it, because with one field set the answer is derivable.
 - **Anything spawned detached must be killed on exit.** A pty session dies when its master fd closes, but `ssh -N -L` does not — `RunEvent::Exit` calls `close_all()`, or tunnels outlive the window holding their ports.
 - `.rdp` is line-based, so a newline in a host or username injects directives — `alternate shell:s:` runs a program. Control characters are rejected before anything is written.
 - Brand colours are unusable raw — nine of the 29 fail contrast on one theme. `readable()` nudges lightness until a colour clears 3:1 against the current surface; never paint a brand hex directly.
-- A new full-screen overlay has to be added in **three** places besides `index.html`, and all three failures are quiet. The third is `OVERLAYS()` in `core.js`: a web tab is an OS-level view stacked above the page, so anything that opens over it must appear in that list or the webview paints straight through it — that list feeds both `modalOpen()` and the observer that shrinks the tab away. The context menu was missed first time round, because the sidebar stays live while a session tab is open. The `#sheetwrap, #askwrap, #vpnwrap` rule in `app.css`: left out, it has no `position: fixed` and sits in normal flow at the end of `<body>`, escaping the window and stretching the layout behind it. And the modal guard in `boot.js` that returns early while a sheet is open: left out, Escape doesn't close it and every global chord still fires — ⌘N opens the jack sheet on top of it.
+- **A new full-screen overlay has to be registered in three places besides `index.html`, and all three failures are quiet:**
+  - `OVERLAYS()` in `core.js` — feeds `modalOpen()` and the observer that shrinks a web tab away. Left out, the webview paints straight over your overlay. (The context menu was missed first time round: the sidebar stays live while a session tab is open.)
+  - the `#sheetwrap, #askwrap, #vpnwrap` rule in `app.css` — left out, it has no `position: fixed`, sits in normal flow at the end of `<body>`, and stretches the layout behind it.
+  - the modal guard in `boot.js` — left out, Escape doesn't close it and every global chord still fires; ⌘N opens the jack sheet on top of it.
+- **The sidebar's top level is spaces, and a selected row is `{space, path}`, not a folder string.** Two spaces can each have a `prod`, so everything keyed by a folder — `expanded`, `pending`, `vpns`, `vpnBusy` — goes through `gkey()`. The space header is hidden when there is only one space, which is everyone's normal case. The VPN *approval* store is deliberately not scoped: its fingerprint covers the command text, so the same command in two spaces is the same agreement.
 - One render path: mutate state, call `render()`. No targeted DOM patching — the lists are tens of rows, not thousands.
 - The default `contextmenu` is suppressed app-wide (it's the webview's Reload/Inspect menu). Right-click is ours; new actions go in the `contextmenu` handler as well as a visible button, since a menu alone isn't discoverable.
 - Shortcut labels come from `chord("k")`, never a hardcoded `⌘` — it reads `Ctrl+K` off macOS.
 - **A live session owns the keyboard.** The global `keydown` handler returns early when `activeId !== null`; every keystroke belongs to ssh. Only window-level chords (⌘K, ⌘N, ⌘W, ⌘[/]) may be intercepted, and each one you add is a key someone can no longer send to their remote shell.
 - xterm needs a laid-out element to size itself, so `fit()` after the pane is visible, not before.
 - **Core commands need a capability; ours don't.** Anything declared with `#[tauri::command]` and listed in `generate_handler!` works with no permission at all, but Tauri's own APIs — `listen`, `emit`, clipboard, path — are denied unless `src-tauri/capabilities/*.json` grants them. Deleting that file doesn't break `invoke("jacks")`, it just makes sessions open and sit there mute, which reads like a UI bug and isn't. If a `window.__TAURI__` call rejects for no visible reason, check the capability first.
-- **"Ours don't" means ours don't *from the local origin*.** A device's web UI opens in a Tauri webview of its own (`open_web_window`), and that page is an `Origin::Remote`, which matches no `ExecutionContext` in `capabilities/` — so it reaches none of our commands. That is the only thing standing between a Synology's login page and `delete_jack`. **Never add `remote` to a capability**, however reasonable the reason looks.
-- A webview has no certificate interstitial: a self-signed appliance cert paints an empty window and offers nothing, which reads as a broken app. `web_reachable` makes the request once, ourselves, before the url reaches a window, and the failure hands the user the browser instead. That single deliberate request is not the thing the no-favicons rule forbids — that rule is about sweeping every host in the config unprompted.
-- The web UI is a **window**, never an iframe in a tab: DSM, OPNsense and Proxmox all send `X-Frame-Options`, so an iframe would work only for the devices nobody points a `url` at.
-- **`src-tauri/Info.plist` is load-bearing on macOS.** App Transport Security blocks cleartext http inside WKWebView *silently* — an empty white window, no error, nothing to click — so `NSAllowsArbitraryLoadsInWebContent` is what makes an http device page open at all. It's merged into the bundle by the Tauri CLI; if a plain-http url opens white, check this file before suspecting the device.
-- A web window's label carries the **url**, not just the jack name. Keyed on the name alone, the first window opened for a device was focused by every later click — the preflight never re-ran and the page never changed, so editing a `url` looked like it did nothing and a failed load stayed on screen for good.
+- **"Ours don't" means ours don't *from the local origin*.** A device's web UI is a child webview, and that page is an `Origin::Remote`, which matches no `ExecutionContext` in `capabilities/` — so it reaches none of our commands. That is the only thing between a Synology's login page and `delete_jack`. **Never add `remote` to a capability**, however reasonable the reason looks.
+- The web UI is a **tab**, like ssh and RDP — a child webview via `Window::add_child`, which is why `tauri` carries the `unstable` feature. Never an iframe: DSM, OPNsense and Proxmox all send `X-Frame-Options`, so an iframe would work only for the devices nobody points a `url` at.
+- **A child webview is an OS view above the page.** It obeys no CSS of ours — not `hidden`, not z-index, not a sheet — so it is either sized exactly over its host div or sized to nothing. Tooltips check `webViewRect()` and flip, or don't draw.
+- A webview has no certificate interstitial: an untrusted cert paints an empty pane and offers nothing. `web_check` runs *alongside* the tab, not in front of it, and `on_navigation` follows redirects a http client can't see — a Synology's http port is three lines of JavaScript pointing at its https one.
+- **Cleartext is LAN-only, enforced in `is_private_host`.** `Info.plist` turns ATS off for web content because Apple offers nothing narrower that covers a bare `192.168.x.x`; the narrowing is ours, so a public `http://` url goes to the browser instead.
+- A web tab's label carries the **url**, not just the jack name. Keyed on the name alone, the first view opened for a device was reused by every later click — the check never re-ran and the page never changed.
 
 **The config can now run commands**
 
@@ -116,13 +136,18 @@ aren't obvious from reading:
 
 **Teams**
 
-- The config file *is* the shared document, so the team code and device id live in `team.toml` beside it, never in it — a code in the config is a credential in a file the whole team reads.
-- `[settings]` is stripped on the way out and re-inserted on the way in. Everything else — jacks, folders, `[vpn]`, `[colors]`, `[defaults]` — is the team's. The hash that decides "did we change anything" is taken over the *stripped* document, or toggling a local preference asks for a push.
-- There is no merge. Both sides moved is a `conflict` the user resolves by picking a side. Don't invent a three-way merge for a file people hand-edit.
-- **Every overwrite of the local config keeps a `patchbay.toml.bak`**, which is why they all go through `adopt`. Not just the conflict paths: the server keeps one revision and no history, so on an ordinary pull the document being replaced exists nowhere else, and one teammate truncating their config would otherwise take the list off every machine.
+- **A team is a space, and a space is a whole config file.** `team.toml` beside the main config holds this machine's `device` id and one `[space.<name>]` table per team — never in a space, because a space file is what gets uploaded and a code in there is a credential in a file the whole team reads.
+- **Joining writes a new file and reads none of yours.** `join_at` creates the space, fetches, and adopts into it; `create_at` hands an *existing* space to a new team, so filling a space first is how you choose what gets shared. Nothing is stripped in either direction any more — a team space holds the team's devices and nothing else, which is exactly what makes joining safe.
+- `[settings]` lives in the main config only and never travels, because the main config is never a team space.
+- **A space with no code is read-only** — a plain `GET` of whatever the URL names, no headers, no writes. `doc_url` tells the two apart by whether the URL has a path: a bare host gets our `/team`, anything else is already the document. Editing one locally reports `readonly` rather than failing on every sync or silently discarding the edit.
+- Only `POST /teams` still speaks JSON, because it is the one call no file store has. Everything else is the document as the body.
+- **A `[vpn]` block is the one part of the config that runs commands, and teams deliver it automatically.** Nothing in it runs — `up`, `down`, or the `check` that fires on every sweep with nobody clicking — until someone on this machine has been shown it: approved on first sight and again on every change, recorded in `vpn_approved` beside the config. Deliberately *not* trust-on-first-use, which is right for `rdp_known_hosts` and wrong here, because first sight is exactly the dangerous case: a config that arrived from a team you joined a moment ago.
+- **Merged per leaf, never per line.** Both sides moved is a `conflict` only when they moved the *same* leaf; two people adding two devices — or setting two different fields of one device — merges silently. `changed_paths` walks as deep as both sides stay tables, because `[jack.web]` and `[jack.db]` are both edits to `jack` and stopping short would call them the same change. Still no *text* merge: don't put conflict markers in a file people hand-edit.
+- `<space>.toml.base` beside the space is the base a merge needs — the server keeps one revision and no history, so once you edit locally the last agreed version exists nowhere else. **`settle()` is the single place that records agreement**; a caller that sets `synced` without it is a machine that quietly stops being able to merge.
+- **Every overwrite of a space keeps a `<space>.toml.bak`**, which is why they all go through `adopt`. Not just the conflict paths: the server keeps one revision and no history, so on an ordinary pull the document being replaced exists nowhere else, and one teammate truncating their space would otherwise take the list off every machine. An *empty* space has nothing to lose, which is the join case.
 - **Never push a config we couldn't read or can't parse.** A read error is not an empty list — `read_local` returns an error rather than `""`, or an I/O blip uploads a deletion of everything. And `to_push` parses before sending, because `replace_at` refuses a broken document on the way in: pushing one strands the whole team on our syntax error.
 - `state` splits the blame: `offline` is the server's fault and clears itself, `error` is this machine's config and needs the user. Don't collapse them — the UI apologises for the server in one case and points at your file in the other.
-- Everything routes through `team_sync`, which is idempotent and serialized on `RUNNING` — new callers just call it. Two overlapping syncs would race their own puts and report the loser's 409 as a conflict nobody had. It is never awaited by `load()`: a dead server must not hold the device list up for the timeout.
+- Everything routes through `team_sync`, which syncs every team space in turn and returns one `Status` each, idempotent and serialized on `RUNNING` — new callers just call it. Two overlapping syncs would race their own puts and report the loser's 409 as a conflict nobody had. It is never awaited by `load()`: a dead server must not hold the device list up for the timeout.
 
 **Writing the config**
 
@@ -135,6 +160,7 @@ aren't obvious from reading:
 
 - **`$PATCHBAY_CONFIG`** overrides the config path — that's how you exercise either front end without touching `~/.config`. Everything local goes through `scripts/dev.mjs`, which sets it to an absolute `dev/patchbay.toml` (absolute because `tauri dev` runs the binary with `src-tauri/` as its cwd) and puts `~/.cargo/bin` on PATH so a terminal opened before rustup still works. That's why `test:app` shells through it too. Don't reintroduce an env-var prefix in an npm script — it doesn't work in cmd.exe.
 - Config lives at `%APPDATA%\patchbay\` on Windows, `$XDG_CONFIG_HOME` or `~/.config` elsewhere. Both implementations must agree.
+- **Spaces load first-wins**: the main config, then `spaces/*.toml` sorted, and a name already taken is skipped. The `.toml` test is load-bearing — `.toml.base` and `.toml.bak` sit in the same directory and are not spaces. `load_all` stamps each jack's `space`; `load` stays single-file so the tests and the writers can use it.
 - Jump chains resolve by walking `jump` until it hits a non-jack name (passed through raw) or runs out. The cycle guard is load-bearing; don't drop it.
 - **`-J` order is reversed relative to the walk.** Walking `jump` goes *outward* from the target, but `ssh -J a,b` dials `a` first. `db → web → bastion` must emit `-J bastion,web`. Both implementations reverse, and both have a test pinning it — that bug is invisible until a chain is three deep.
 - The status dot probes the chain's *entry point* (the outermost bastion), not the target. Anything past the first hop is only reachable through ssh, so there's nothing to TCP-probe.

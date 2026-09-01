@@ -162,8 +162,17 @@ mod tests {
         sessions.0.lock().unwrap().insert(7, s);
 
         sessions.write(7, "ping\n").unwrap();
-        let out = rx.recv_timeout(Duration::from_secs(5)).expect("cat echoed nothing back");
-        assert!(out.contains("ping"), "got {out:?}");
+        // A pty is a stream: the first chunk can be "pin" with the rest still in
+        // flight, and asserting on one read made this fail under load roughly once in
+        // ten. Gather until the echo is whole, or the deadline says it never will be.
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut out = String::new();
+        while !out.contains("ping") && std::time::Instant::now() < deadline {
+            if let Ok(chunk) = rx.recv_timeout(Duration::from_millis(200)) {
+                out.push_str(&chunk);
+            }
+        }
+        assert!(out.contains("ping"), "cat echoed {out:?}");
     }
 
     #[test]

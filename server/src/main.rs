@@ -3,6 +3,13 @@
 //! It never parses the TOML. A team is `code -> { doc, version }`, so a new field in
 //! the config needs no migration here and the server never learns what a jack is.
 //!
+//! `/team` is plain HTTP on purpose: `GET` hands back the document with an `ETag`,
+//! `PUT` takes `If-Match` and refuses a stale one with 412. That is the same
+//! optimistic concurrency it always had, spelled the way every other HTTP file store
+//! spells it — so a space can point at a bucket or a static file instead of here, and
+//! the client keeps one code path. Seats and the paid flag ride along as advisory
+//! `x-` headers, which anywhere else simply won't send.
+//!
 //! There are no accounts. The team code *is* the credential, which matches the trust
 //! model — everyone on a team sees everything — and removes the entire login layer.
 //! Being the credential is also why it travels in `x-team` and never in the path: a
@@ -17,14 +24,14 @@
 
 use axum::{
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::{header, HeaderMap, HeaderName, StatusCode},
     response::{IntoResponse, Response},
     routing::post,
     Json, Router,
 };
 use rand::Rng;
 use rusqlite::{Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -142,12 +149,36 @@ async fn create_team(State(db): State<Db>) -> Result<Json<Created>, Fail> {
     Ok(Json(Created { code }))
 }
 
-#[derive(Serialize)]
-struct Doc {
-    doc: String,
-    version: i64,
-    seats: i64,
-    paid: bool,
+/// The document, its version as an `ETag`, and what the client shows about the team.
+/// The `x-` headers are ours; nothing outside this server sends them and the client
+/// treats them as absent rather than zero.
+fn doc_response(doc: String, version: i64, seats: i64, paid: bool) -> Response {
+    (
+        [
+            (header::ETAG, format!("\"{version}\"")),
+            (header::CONTENT_TYPE, "text/plain; charset=utf-8".into()),
+            (
+                HeaderName::from_static("x-seats"),
+                seats.to_string(),
+            ),
+            (
+                HeaderName::from_static("x-paid"),
+                (paid as u8).to_string(),
+            ),
+        ],
+        doc,
+    )
+        .into_response()
+}
+
+/// `"3"` and `W/"3"` both mean version 3. Anything else means nothing here.
+fn if_match(headers: &HeaderMap) -> Result<i64, Fail> {
+    headers
+        .get(header::IF_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.trim().trim_start_matches("W/").trim_matches('"'))
+        .and_then(|v| v.parse().ok())
+        .ok_or_else(|| Fail(StatusCode::BAD_REQUEST, "a put needs an If-Match".into()))
 }
 
 fn team(db: &Connection, code: &str) -> Result<(String, i64, bool), Fail> {
@@ -165,28 +196,23 @@ fn team(db: &Connection, code: &str) -> Result<(String, i64, bool), Fail> {
 /// Reading stays open past the seat limit on purpose. Locking a team out of its own
 /// device list is exactly the wrong thing to do during an outage; writes are where
 /// the value is, so that's where the paywall goes.
-async fn get_doc(State(db): State<Db>, headers: HeaderMap) -> Result<Json<Doc>, Fail> {
+async fn get_doc(State(db): State<Db>, headers: HeaderMap) -> Result<Response, Fail> {
     let code = header(&headers, "x-team")?;
     let dev = header(&headers, "x-device")?;
     let db = db.lock().unwrap();
     let (doc, version, paid) = team(&db, &code)?;
     touch(&db, &code, &dev)?;
-    Ok(Json(Doc { doc, version, seats: seats(&db, &code)?, paid }))
-}
-
-#[derive(Deserialize)]
-struct Put {
-    doc: String,
-    version: i64,
+    Ok(doc_response(doc, version, seats(&db, &code)?, paid))
 }
 
 async fn put_doc(
     State(db): State<Db>,
     headers: HeaderMap,
-    Json(body): Json<Put>,
-) -> Result<Json<Doc>, Fail> {
+    body: String,
+) -> Result<Response, Fail> {
     let code = header(&headers, "x-team")?;
     let dev = header(&headers, "x-device")?;
+    let sent = if_match(&headers)?;
     let db = db.lock().unwrap();
     let (_, version, paid) = team(&db, &code)?;
     touch(&db, &code, &dev)?;
@@ -194,9 +220,9 @@ async fn put_doc(
     // Optimistic concurrency: whoever writes second re-fetches and re-applies. The
     // app changes one field at a time through toml_edit, so a retry is cheap and
     // there is no merge algorithm to get wrong.
-    if body.version != version {
+    if sent != version {
         return Err(Fail(
-            StatusCode::CONFLICT,
+            StatusCode::PRECONDITION_FAILED,
             "the config changed underneath you — fetch it again".into(),
         ));
     }
@@ -211,9 +237,9 @@ async fn put_doc(
     let next = version + 1;
     db.execute(
         "update teams set doc = ?1, version = ?2 where code = ?3",
-        (&body.doc, next, &code),
+        (&body, next, &code),
     )?;
-    Ok(Json(Doc { doc: body.doc, version: next, seats: count, paid }))
+    Ok(doc_response(body, next, count, paid))
 }
 
 fn app(db: Db) -> Router {
@@ -247,39 +273,60 @@ mod tests {
         Arc::new(Mutex::new(open(":memory:")))
     }
 
-    async fn call(db: &Db, req: Request<Body>) -> (StatusCode, serde_json::Value) {
+    /// What a caller actually gets back: the status, the body as text, and the
+    /// `ETag` — which is the document's version and the whole concurrency story.
+    struct Res {
+        status: StatusCode,
+        body: String,
+        etag: Option<String>,
+        headers: HeaderMap,
+    }
+    impl Res {
+        /// Only the error bodies are JSON now; the document is the body itself.
+        fn json(&self) -> serde_json::Value {
+            serde_json::from_str(&self.body).unwrap_or(serde_json::Value::Null)
+        }
+        fn head(&self, name: &str) -> String {
+            self.headers.get(name).and_then(|v| v.to_str().ok()).unwrap_or("").to_string()
+        }
+    }
+
+    async fn call(db: &Db, req: Request<Body>) -> Res {
         let res = app(db.clone()).oneshot(req).await.unwrap();
         let status = res.status();
+        let headers = res.headers().clone();
+        let etag = headers.get(header::ETAG).and_then(|v| v.to_str().ok()).map(str::to_owned);
         let bytes = res.into_body().collect().await.unwrap().to_bytes();
-        (status, serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null))
+        Res { status, body: String::from_utf8_lossy(&bytes).into_owned(), etag, headers }
     }
 
     /// An empty `team` sends no `x-team` header — creating a team is the one call
-    /// that has no code yet.
+    /// that has no code yet. `etag` becomes `If-Match`, which every put needs.
     fn req(
         method: &str,
         uri: &str,
         dev: &str,
         team: &str,
-        body: Option<serde_json::Value>,
+        etag: Option<&str>,
+        body: Option<&str>,
     ) -> Request<Body> {
         let mut b = Request::builder().method(method).uri(uri).header("x-device", dev);
         if !team.is_empty() {
             b = b.header("x-team", team);
         }
+        if let Some(e) = etag {
+            b = b.header(header::IF_MATCH, e);
+        }
         match body {
-            Some(v) => b
-                .header("content-type", "application/json")
-                .body(Body::from(v.to_string()))
-                .unwrap(),
+            Some(v) => b.body(Body::from(v.to_string())).unwrap(),
             None => b.body(Body::empty()).unwrap(),
         }
     }
 
     async fn a_team(db: &Db) -> String {
-        let (status, v) = call(db, req("POST", "/teams", "d1", "", None)).await;
-        assert_eq!(status, StatusCode::OK);
-        v["code"].as_str().unwrap().to_string()
+        let r = call(db, req("POST", "/teams", "d1", "", None, None)).await;
+        assert_eq!(r.status, StatusCode::OK);
+        r.json()["code"].as_str().unwrap().to_string()
     }
 
     #[tokio::test]
@@ -287,17 +334,17 @@ mod tests {
         let db = db();
         let code = a_team(&db).await;
 
-        let (status, v) = call(&db, req("GET", "/team", "d1", &code, None)).await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(v["doc"], "");
-        assert_eq!(v["version"], 1);
+        let r = call(&db, req("GET", "/team", "d1", &code, None, None)).await;
+        assert_eq!(r.status, StatusCode::OK);
+        assert_eq!(r.body, "");
+        assert_eq!(r.etag.as_deref(), Some("\"1\""), "the version travels as an ETag");
 
-        let (status, v) = call(&db, req("GET", "/team", "d1", "nope", None)).await;
-        assert_eq!(status, StatusCode::NOT_FOUND);
+        let r = call(&db, req("GET", "/team", "d1", "nope", None, None)).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND);
         // The code is a credential, so the error names the failure without repeating it.
-        let err = v["error"].as_str().unwrap();
-        assert!(err.contains("no team"), "got {v}");
-        assert!(!err.contains("nope"), "the code came back in the error: {v}");
+        let err = r.json()["error"].as_str().unwrap().to_string();
+        assert!(err.contains("no team"), "got {err}");
+        assert!(!err.contains("nope"), "the code came back in the error: {err}");
     }
 
     #[tokio::test]
@@ -306,19 +353,25 @@ mod tests {
         let code = a_team(&db).await;
         let doc = "[jack.web]\nhost = \"10.0.0.4\"\n";
 
-        let body = serde_json::json!({ "doc": doc, "version": 1 });
-        let (status, v) = call(&db, req("PUT", "/team", "d1", &code, Some(body.clone()))).await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(v["version"], 2);
+        let r = call(&db, req("PUT", "/team", "d1", &code, Some("\"1\""), Some(doc))).await;
+        assert_eq!(r.status, StatusCode::OK);
+        assert_eq!(r.etag.as_deref(), Some("\"2\""));
 
         // The teammate who still thinks it's version 1 gets refused, not silently
         // overwritten — and the document on the server is untouched.
-        let (status, _) = call(&db, req("PUT", "/team", "d2", &code, Some(body))).await;
-        assert_eq!(status, StatusCode::CONFLICT);
+        let r = call(&db, req("PUT", "/team", "d2", &code, Some("\"1\""), Some(doc))).await;
+        assert_eq!(r.status, StatusCode::PRECONDITION_FAILED);
 
-        let (_, v) = call(&db, req("GET", "/team", "d2", &code, None)).await;
-        assert_eq!(v["doc"], doc);
-        assert_eq!(v["version"], 2);
+        // A weak validator is the same version, and a put with no If-Match at all is
+        // the one thing that must never be taken as "overwrite whatever is there".
+        let r = call(&db, req("PUT", "/team", "d2", &code, Some("W/\"2\""), Some("x = 1"))).await;
+        assert_eq!(r.status, StatusCode::OK);
+        let r = call(&db, req("PUT", "/team", "d2", &code, None, Some("y = 2"))).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST);
+
+        let r = call(&db, req("GET", "/team", "d2", &code, None, None)).await;
+        assert_eq!(r.body, "x = 1");
+        assert_eq!(r.etag.as_deref(), Some("\"3\""));
     }
 
     #[tokio::test]
@@ -326,20 +379,20 @@ mod tests {
         let db = db();
         let code = a_team(&db).await;
         for d in ["d1", "d2", "d3"] {
-            let (status, _) = call(&db, req("GET", "/team", d, &code, None)).await;
-            assert_eq!(status, StatusCode::OK);
+            let r = call(&db, req("GET", "/team", d, &code, None, None)).await;
+            assert_eq!(r.status, StatusCode::OK);
         }
-        let body = serde_json::json!({ "doc": "host = \"x\"", "version": 1 });
-        let (status, _) = call(&db, req("PUT", "/team", "d3", &code, Some(body))).await;
-        assert_eq!(status, StatusCode::OK, "three seats are free");
+        let r = call(&db, req("PUT", "/team", "d3", &code, Some("\"1\""), Some("host = \"x\""))).await;
+        assert_eq!(r.status, StatusCode::OK, "three seats are free");
 
-        let (status, v) = call(&db, req("PUT", "/team", "d4", &code, Some(serde_json::json!({ "doc": "", "version": 2 })))).await;
-        assert_eq!(status, StatusCode::PAYMENT_REQUIRED);
-        assert!(v["error"].as_str().unwrap().contains("still read"), "got {v}");
+        let r = call(&db, req("PUT", "/team", "d4", &code, Some("\"2\""), Some(""))).await;
+        assert_eq!(r.status, StatusCode::PAYMENT_REQUIRED);
+        assert!(r.json()["error"].as_str().unwrap().contains("still read"), "got {}", r.body);
 
-        let (status, v) = call(&db, req("GET", "/team", "d4", &code, None)).await;
-        assert_eq!(status, StatusCode::OK, "a paywall must not lock a team out of its own list");
-        assert_eq!(v["seats"], 4);
+        let r = call(&db, req("GET", "/team", "d4", &code, None, None)).await;
+        assert_eq!(r.status, StatusCode::OK, "a paywall must not lock a team out of its own list");
+        assert_eq!(r.head("x-seats"), "4");
+        assert_eq!(r.head("x-paid"), "0");
     }
 
     #[tokio::test]
@@ -347,16 +400,16 @@ mod tests {
         let db = db();
         let code = a_team(&db).await;
         for d in ["d1", "d2", "d3", "d4"] {
-            call(&db, req("GET", "/team", d, &code, None)).await;
+            call(&db, req("GET", "/team", d, &code, None, None)).await;
         }
         db.lock()
             .unwrap()
             .execute("update teams set paid = 1 where code = ?1", [&code])
             .unwrap();
 
-        let body = serde_json::json!({ "doc": "host = \"x\"", "version": 1 });
-        let (status, _) = call(&db, req("PUT", "/team", "d4", &code, Some(body))).await;
-        assert_eq!(status, StatusCode::OK);
+        let r = call(&db, req("PUT", "/team", "d4", &code, Some("\"1\""), Some("host = \"x\""))).await;
+        assert_eq!(r.status, StatusCode::OK);
+        assert_eq!(r.head("x-paid"), "1");
     }
 
     #[tokio::test]
@@ -369,8 +422,7 @@ mod tests {
             .header("x-team", &code)
             .body(Body::empty())
             .unwrap();
-        let (status, _) = call(&db, r).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(call(&db, r).await.status, StatusCode::BAD_REQUEST);
     }
 
     /// The code only ever arrives in a header now, so a request that leaves it out is
@@ -379,11 +431,11 @@ mod tests {
     async fn a_request_without_a_team_header_is_refused() {
         let db = db();
         let code = a_team(&db).await;
-        let (status, _) = call(&db, req("GET", "/team", "d1", "", None)).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let r = call(&db, req("GET", "/team", "d1", "", None, None)).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST);
 
-        let (status, _) = call(&db, req("GET", &format!("/team/{code}"), "d1", "", None)).await;
-        assert_eq!(status, StatusCode::NOT_FOUND, "no route carries the code any more");
+        let r = call(&db, req("GET", &format!("/team/{code}"), "d1", "", None, None)).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND, "no route carries the code any more");
     }
 
     #[test]

@@ -4,10 +4,10 @@
 // ── sidebar tree ───────────────────────────────────────────────────────────
 // A tag of "prod/eu/web" nests three deep; a jack counts toward every ancestor,
 // and toward more than one branch if it carries more than one tag.
-function buildTree() {
+function buildTree(jacks, space) {
   const root = new Map();
-  const placed = all.flatMap((j) => j.folders.map((f) => [j, f]));
-  for (const p of pending) placed.push([null, p]);
+  const placed = jacks.flatMap((j) => j.folders.map((f) => [j, f]));
+  for (const p of pending.values()) if ((p.space ?? null) === space) placed.push([null, p.path]);
   for (const [j, folder] of placed) {
     {
       let level = root, path = "";
@@ -23,63 +23,90 @@ function buildTree() {
   return root;
 }
 
+// Your own list always exists, even empty — it's the config file. The rest come
+// from the files beside it rather than from the devices, so a space you just made
+// and haven't filled yet is still there.
+function spacesOf() {
+  const out = [null];
+  const add = (s) => { if (!out.includes(s ?? null)) out.push(s ?? null); };
+  for (const j of all) add(j.space);
+  for (const s of spaces) add(s);
+  for (const p of pending.values()) add(p.space);
+  return out;
+}
+
 // Nested folders sort ahead of flat ones so a hierarchy doesn't get buried among
 // alphabetically-interleaved single names. They are the same kind of thing either
 // way — a folder is just a string a device carries.
 function renderTree() {
-  const tree = buildTree();
   const live = new Set([...sessions.values()].filter((s) => !s.dead).map((s) => s.name));
+  const names = (js) => new Set(js.map((j) => j.name));
   const rows = [
-    row({ name: "All jacks", path: null, members: new Set(all.map((j) => j.name)), children: new Map() },
-        0, "layers", live),
+    row({ name: "All jacks", members: names(all), children: new Map() }, 0, "layers", live, null),
   ];
 
-  const walk = (level, depth) => {
+  const walk = (level, depth, space) => {
     for (const node of [...level.values()].sort((a, b) => a.name.localeCompare(b.name))) {
-      rows.push(row(node, depth, undefined, live));
-      if (expanded.has(node.path)) walk(node.children, depth + 1);
+      rows.push(row(node, depth, undefined, live, { space, path: node.path }));
+      if (expanded.has(gkey({ space, path: node.path }))) walk(node.children, depth + 1, space);
     }
   };
 
-  const roots = [...tree.values()].sort(
-    (a, b) => (b.children.size > 0) - (a.children.size > 0) || a.name.localeCompare(b.name),
-  );
-  for (const node of roots) {
-    rows.push(row(node, 0, undefined, live));
-    if (expanded.has(node.path)) walk(node.children, 1);
+  // One space is everyone's normal case, and a header above your only list is a row
+  // that says nothing. The folders sit at the top level until there's a second space.
+  const spaces = spacesOf();
+  const nested = spaces.length > 1;
+  for (const space of spaces) {
+    const mine = all.filter((j) => (j.space ?? null) === space);
+    // The space's own folders are its children, so its row folds like any other and
+    // a space with nothing but loose devices correctly has nothing to fold.
+    const tree = buildTree(mine, space);
+    if (nested) {
+      rows.push(row({ name: space ?? "Private", members: names(mine), children: tree },
+                    0, "box", live, { space, path: null }));
+      if (!expanded.has(gkey({ space, path: null }))) continue;
+    }
+    const roots = [...tree.values()].sort(
+      (a, b) => (b.children.size > 0) - (a.children.size > 0) || a.name.localeCompare(b.name),
+    );
+    for (const node of roots) {
+      rows.push(row(node, nested ? 1 : 0, undefined, live, { space, path: node.path }));
+      if (expanded.has(gkey({ space, path: node.path }))) walk(node.children, nested ? 2 : 1, space);
+    }
   }
 
   treeEl.innerHTML = rows.join("");
 }
 
-function row(node, depth, glyph, live) {
+function row(node, depth, glyph, live, id) {
   const kids = node.children.size > 0;
-  const open = expanded.has(node.path);
+  const open = expanded.has(gkey(id));
   const g = glyph ?? (kids && open ? "folder-open" : "folder");
   // The dot is always in the layout so it can carry the auto margin; it is only
   // painted when something under this node has a session open.
   const on = live && [...node.members].some((n) => live.has(n));
-  return `<div class="group" data-path="${esc(node.path ?? "")}" data-has-kids="${kids}"
-       aria-current="${group === node.path}" style="padding-left:${8 + depth * 13}px">
+  return `<div class="group" data-space="${esc(id?.space ?? "")}" data-path="${esc(id?.path ?? "")}"
+       data-group="${id ? "1" : ""}" data-has-kids="${kids}"
+       aria-current="${sameGroup(group, id)}" style="padding-left:${8 + depth * 13}px">
     <span class="twist ${kids ? "" : "leaf"} ${open ? "open" : ""}">${icon("chevron-right")}</span>
     <span class="gi">${icon(g)}</span>
     <span class="label">${esc(node.name)}</span>
     <span class="live ${on ? "on" : ""}"${on ? ' data-tip="A session is open in here"' : ""}></span>
-    ${vpnSwitch(node.path)}
+    ${vpnSwitch(id)}
     <span class="n">${node.members.size}</span>
   </div>`;
 }
 
 // Only folders named by a [vpn."..."] section get one.
-function vpnSwitch(path) {
-  const v = path && vpns.get(path);
+function vpnSwitch(id) {
+  const v = id?.path && vpns.get(gkey(id));
   if (!v) return "";
-  const busy = vpnBusy.has(path);
+  const busy = vpnBusy.has(gkey(id));
   const title = busy ? "working…"
     : v.up ? `VPN up${v.known ? "" : " (remembered, no check command)"} — click to disconnect`
     : "VPN down — click to connect";
   return `<span class="vpn ${v.up ? "on" : ""} ${busy ? "busy" : ""}"
-     data-vpn="${esc(path)}" role="switch" aria-checked="${!!v.up}"
+     data-vpn="1" role="switch" aria-checked="${!!v.up}"
      data-tip="${esc(title)}" data-tip-at="right"><i></i></span>`;
 }
 
@@ -87,7 +114,9 @@ function vpnSwitch(path) {
 // test the sidebar splits Folders from Tags on, so the wording matches the tree.
 const inGroup = (j) =>
   group === null ? true
-  : j.folders.some((f) => f === group || f.startsWith(group + "/"));
+  : (j.space ?? null) !== group.space ? false
+  : group.path === null ? true
+  : j.folders.some((f) => f === group.path || f.startsWith(group.path + "/"));
 
 // ── list ───────────────────────────────────────────────────────────────────
 function render() {
@@ -103,16 +132,16 @@ function render() {
   $("newjack").innerHTML = `${icon("plus")}Device<kbd>${chord("n")}</kbd>`;
   $("newgroup").innerHTML = icon("folder-plus");
   $("newgroup").dataset.tip = "New folder";
-  $("newgroup").dataset.tipAt = "left";
+  $("newspace").innerHTML = icon("box");
+  $("newspace").dataset.tip = "New space — a config file of its own";
   $("editcfg").innerHTML = icon("file-pen-line");
   $("editcfg").dataset.tip = `Open the config file  ${chord("e")}`;
-  $("editcfg").dataset.tipAt = "left";
   $("settings").innerHTML = icon("settings");
   $("settings").dataset.tip = `Settings  ${chord(",")}`;
   $("settings").dataset.tipAt = "right";
   // A stuck sync means your edits are not reaching anyone and it needs an answer from
   // you — so it shows on the button that leads there, not only inside the sheet.
-  const stuck = TEAM_STUCK[team.state];
+  const stuck = teams.map((t) => TEAM_STUCK[t.state]).find(Boolean);
   $("settings").classList.toggle("warn", !!stuck);
   if (stuck) $("settings").dataset.tip = stuck;
 
@@ -165,7 +194,9 @@ function renderDetail() {
 }
 
 const groupLabel = () =>
-  group === null ? "All jacks" : group;
+  group === null ? "All jacks"
+  : group.path === null ? (group.space ?? "Private")
+  : group.path;
 
 function renderGroup() {
   const members = all.filter(inGroup);
@@ -177,14 +208,16 @@ function renderGroup() {
   const down = members.filter((j) => state(j) === "down").length;
   const unknown = members.length - up - down;
   const open = [...sessions.values()].filter((s) => !s.dead && members.some((j) => j.name === s.name));
-  const real = group !== null;
-  const v = real && vpns.get(group);
-  const busy = real && vpnBusy.has(group);
+  // A space row has no folder to rename, delete, or hang a VPN on.
+  const real = group !== null && group.path !== null;
+  const v = real && vpns.get(gkey(group));
+  const busy = real && vpnBusy.has(gkey(group));
 
   detailEl.innerHTML = `
-    <div class="d-name"><span class="d-os">${icon(real ? "folder-open" : "layers")}</span>${esc(groupLabel())}</div>
+    <div class="d-name"><span class="d-os">${icon(
+      real ? "folder-open" : group === null ? "layers" : "box")}</span>${esc(groupLabel())}</div>
     <div class="d-desc">${members.length} device${members.length === 1 ? "" : "s"}${
-      real && group.includes("/") ? ` · in ${esc(group.slice(0, group.lastIndexOf("/")))}` : ""}</div>
+      real && group.path.includes("/") ? ` · in ${esc(group.path.slice(0, group.path.lastIndexOf("/")))}` : ""}</div>
 
     <div class="d-sec">${icon("plug")}Reachable</div>
     <div class="tallies">
@@ -274,11 +307,15 @@ function renderJack(j, live) {
       ? `<button class="primary" data-act="disconnect">${icon("x")}${
           live.dead || live.kind === "web" ? "Close" : "Disconnect"}</button>`
       : j.primary === "rdp" ? `<button class="primary" data-act="rdp">${icon("monitor")}Connect</button>`
+      : j.primary === "vnc" ? `<button class="primary" data-act="vnc">${icon("screen-share")}Share screen</button>`
       : j.primary === "web" ? `<button class="primary" data-act="web">${icon("globe")}Open</button>`
+      : j.primary === "sftp" ? `<button class="primary" data-act="files">${icon("folder")}Browse files</button>`
       : `<button class="primary" data-act="connect">${icon("square-terminal")}Connect</button>`}
     ${j.ssh && j.primary !== "ssh" ? `<button class="ghost" data-act="connect" data-tip="Connect over ssh">${icon("square-terminal")}</button>` : ""}
+    ${j.ssh && j.primary !== "sftp" ? `<button class="ghost" data-act="files" data-tip="Browse files over sftp">${icon("folder")}</button>` : ""}
     ${j.url && j.primary !== "web" ? `<button class="ghost" data-act="web" data-tip="Open web UI">${icon("globe")}</button>` : ""}
     ${j.rdp && j.primary !== "rdp" ? `<button class="ghost" data-act="rdp" data-tip="Remote desktop">${icon("monitor")}</button>` : ""}
+    ${j.vnc && j.primary !== "vnc" ? `<button class="ghost" data-act="vnc" data-tip="Screen sharing">${icon("screen-share")}</button>` : ""}
     <button class="ghost" data-act="edit" data-tip="Edit device">${icon("pencil")}</button>`;
 }
 
@@ -309,6 +346,12 @@ async function openRdp(name) {
   await refreshTunnels();
 }
 
+// No tab of our own: the OS opens whatever registered `vnc://`, the way the system
+// RDP client is handed a `.rdp`.
+async function openVnc(name) {
+  try { await invoke("open_vnc", { name }); } catch (e) { alertish(e); }
+}
+
 async function handOffRdp(name) {
   try {
     await invoke("open_rdp", { name });
@@ -326,7 +369,9 @@ function primary(name) {
   const j = all.find((x) => x.name === name);
   if (!j) return;
   if (j.primary === "rdp") return openRdp(name);
+  if (j.primary === "vnc") return openVnc(name);
   if (j.primary === "web") return openWeb(name);
+  if (j.primary === "sftp") return openFilesSession(name);
   return connect(name);
 }
 
@@ -335,9 +380,10 @@ function vpnFor(name) {
   const j = all.find((x) => x.name === name);
   if (!j) return null;
   let best = null;
-  for (const path of vpns.keys()) {
-    const covers = j.folders.some((f) => f === path || f.startsWith(path + "/"));
-    if (covers && (!best || path.length > best.length)) best = path;
+  for (const v of vpns.values()) {
+    if ((v.space ?? null) !== (j.space ?? null)) continue;
+    const covers = j.folders.some((f) => f === v.path || f.startsWith(v.path + "/"));
+    if (covers && (!best || v.path.length > best.path.length)) best = { space: v.space ?? null, path: v.path };
   }
   return best;
 }

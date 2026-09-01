@@ -20,15 +20,7 @@ const theme = () => {
   };
 };
 
-/// `task` is "ping" or "trace": the same pty and the same tab, running a one-shot
-/// check instead of a shell. It runs on the jump host when there is one, because a
-/// device behind a bastion isn't reachable from here to begin with.
-async function openSession(name, task = null) {
-  const id = nextId++;
-  const host = document.createElement("div");
-  host.className = "termhost";
-  termsEl.append(host);
-
+function makeTerm(host) {
   const term = new Terminal({
     fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace',
     fontSize: 12.5,
@@ -41,6 +33,19 @@ async function openSession(name, task = null) {
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(host);
+  return { term, fit };
+}
+
+/// `task` is "ping" or "trace": the same pty and the same tab, running a one-shot
+/// check instead of a shell. It runs on the jump host when there is one, because a
+/// device behind a bastion isn't reachable from here to begin with.
+async function openSession(name, task = null) {
+  const id = nextId++;
+  const host = document.createElement("div");
+  host.className = "termhost";
+  termsEl.append(host);
+
+  const { term, fit } = makeTerm(host);
 
   const s = { id, name, task, kind: "term", term, fit, host, dead: false, unlisten: [] };
   sessions.set(id, s);
@@ -53,8 +58,22 @@ async function openSession(name, task = null) {
   term.onData((d) => invoke("write_session", { id, data: d }).catch(() => {}));
   term.onResize(({ cols, rows }) => invoke("resize_session", { id, cols, rows }).catch(() => {}));
 
+  // Said before anything is spawned, so a slow or silent host still shows that the
+  // terminal is alive. It is ours to take back: a login that draws with cursor moves —
+  // fastfetch from a .zshrc — puts its box over whatever is already on screen, so the
+  // first byte from the far end gets a clean one. Anything else we wrote (a VPN coming
+  // up, an error) stays, because that is not ours to throw away.
+  let ours = true;
+  term.write(`\x1b[2m── ${task ? `${task} ` : ""}${name}… ──\x1b[0m\r\n`);
+
   try {
-    s.unlisten.push(await listen(`pty:${id}`, (e) => term.write(e.payload)));
+    s.unlisten.push(await listen(`pty:${id}`, (e) => {
+      if (ours) {
+        ours = false;
+        term.write("\x1b[2J\x1b[3J\x1b[H");
+      }
+      term.write(e.payload);
+    }));
     s.unlisten.push(await listen(`pty-exit:${id}`, (e) => {
       s.dead = true;
       term.write(`\r\n\x1b[2m── ${task ?? "ssh"} exited (${e.payload}) · ${chord("w")} to close ──\x1b[0m\r\n`);
@@ -72,10 +91,11 @@ async function openSession(name, task = null) {
 
   // Bring the folder's VPN up first, so connecting is one action, not two.
   const vpath = prefs.vpn_auto_connect !== false ? vpnFor(name) : null;
-  if (vpath && !vpns.get(vpath)?.up) {
-    term.write(`\x1b[2m── ${vpath} VPN is down, connecting… ──\x1b[0m\r\n`);
+  if (vpath && !vpns.get(gkey(vpath))?.up) {
+    ours = false;
+    term.write(`\x1b[2m── ${vpath.path} VPN is down, connecting… ──\x1b[0m\r\n`);
     try {
-      await invoke("vpn_toggle", { path: vpath, on: true });
+      await invoke("vpn_toggle", { ...vpath, on: true });
       await refreshVpns();
       term.write(`\x1b[2m── VPN up ──\x1b[0m\r\n`);
     } catch (err) {
@@ -84,13 +104,12 @@ async function openSession(name, task = null) {
   }
 
   try {
-    const line = task
-      ? await invoke("open_task", { id, name, task, cols: term.cols, rows: term.rows })
-      : await invoke("open_session", { id, name, cols: term.cols, rows: term.rows });
-    // Written locally, so seeing it proves the terminal renders even when the
-    // remote end is slow or silent.
-    term.write(`\x1b[2m${line}\x1b[0m\r\n`);
+    // The argv it returns is already on screen, in the detail pane's COMMAND box.
+    await (task
+      ? invoke("open_task", { id, name, task, cols: term.cols, rows: term.rows })
+      : invoke("open_session", { id, name, cols: term.cols, rows: term.rows }));
   } catch (err) {
+    ours = false;
     s.dead = true;
     term.write(`\r\n\x1b[31m${String(err)}\x1b[0m\r\n`);
   }
@@ -104,6 +123,22 @@ function closeSession(id) {
   const vpath = prefs.vpn_auto_disconnect === true ? vpnFor(s.name) : null;
   const closer = { rdp: "close_rdp_session", web: "close_web_view" }[s.kind] ?? "close_session";
   invoke(closer, { id }).catch(() => {});
+  dropTab(id);
+
+  // Only once nothing else in that folder is still connected.
+  if (vpath && ![...sessions.values()].some((o) => sameGroup(vpnFor(o.name), vpath))) {
+    invoke("vpn_toggle", { ...vpath, on: false }).then(refreshVpns).catch(() => {});
+  }
+}
+
+// Take the tab away without telling the far end anything — either it has already
+// gone, or it never started.
+function dropTab(id) {
+  const s = sessions.get(id);
+  if (!s) return;
+  if (s.master != null) invoke("close_session", { id: s.master }).catch(() => {});
+  clearInterval(s.wait);
+  clearTimeout(s.noteTimer);
   s.unlisten.forEach((f) => f());
   s.term?.dispose();
   s.host.remove();
@@ -112,11 +147,6 @@ function closeSession(id) {
   showTab();
   renderTabs();
   renderTree();
-
-  // Only once nothing else in that folder is still connected.
-  if (vpath && ![...sessions.values()].some((o) => vpnFor(o.name) === vpath)) {
-    invoke("vpn_toggle", { path: vpath, on: false }).then(refreshVpns).catch(() => {});
-  }
 }
 
 // activeId === null is the "All jacks" tab; anything else is a session.
@@ -134,12 +164,18 @@ function showTab() {
   renderDetail();
 }
 
+// Where the visible web tab is, in page coordinates — or null when none is. A tooltip
+// asks before drawing itself somewhere it would be invisible.
+function webViewRect() {
+  const s = sessions.get(activeId);
+  if (!s || s.kind !== "web" || s.failed || modalOpen()) return null;
+  const r = s.host.getBoundingClientRect();
+  return r.width > 0 ? r : null;
+}
+
 // A child webview is an OS view stacked above the page: `hidden` does nothing to it
 // and it covers every sheet. So each one is either exactly over its own host div or
 // sized to nothing, and anything that opens on top has to call this again.
-// ponytail: `#tip` is left out on purpose. Blanking the page on every hover would be
-// worse than a tooltip clipped at the pane edge; give it the same treatment as the
-// menu if tooltips ever land over the web area often enough to matter.
 function placeWebViews() {
   for (const s of sessions.values()) {
     if (s.kind !== "web") continue;
@@ -188,7 +224,7 @@ function checkWeb(s, url) {
 // explanation is the thing that sends people hunting through the app for a bug.
 function showWebFailure(s) {
   const cert = s.failed.includes("certificate");
-  s.host.innerHTML = `<div class="webfail">
+  s.host.innerHTML = `<div class="panefail">
     <p class="why">${esc(s.failed)}</p>
     ${cert ? `<p class="fix">A device reached by its address has a certificate naming
       something else, and that never matches. <b>Trust it</b> hands the certificate to
@@ -225,9 +261,22 @@ termsEl.addEventListener("click", async (e) => {
   if (!s) return;
 
   try {
-    // macOS raises its own authorisation prompt, so this waits on a person.
-    if (cert) await invoke("web_trust_cert", { url: cert.dataset.webCert });
-    else await invoke("web_trust", { url: trust.dataset.webTrust });
+    if (cert) {
+      // Show it before asking for it. Trusting a certificate you were never shown is
+      // the thing Safari's dialog exists to prevent, and we fetch this one over a
+      // connection we deliberately didn't verify — so it is exactly the moment where
+      // someone in the way of that connection would get their certificate trusted.
+      const c = await invoke("web_cert", { url: cert.dataset.webCert });
+      const ok = await ask(
+        `Trust this certificate?\n\n${c.subject}\nissued by ${c.issuer}\n` +
+        `expires ${c.expires}\nSHA-256 ${c.fingerprint}`,
+        null, "Trust it");
+      if (!ok) return;
+      // macOS raises its own authorisation prompt on top of this one.
+      await invoke("web_trust_cert", { url: cert.dataset.webCert });
+    } else {
+      await invoke("web_trust", { url: trust.dataset.webTrust });
+    }
   } catch (err) { return alertish(err); }
 
   // The page has to be loaded again to be judged again — the webview made its mind up
@@ -236,6 +285,242 @@ termsEl.addEventListener("click", async (e) => {
   closeSession(s.id);
   openWebSession(name);
 });
+
+// ── files ──────────────────────────────────────────────────────────────────
+// sftp in a tab. Ordinary HTML, unlike the web tab: nothing here is a foreign page,
+// so it lives in our own webview and behaves like the rest of the app.
+async function openFilesSession(name) {
+  const id = nextId++;
+  const host = document.createElement("div");
+  host.className = "termhost filehost";
+  termsEl.append(host);
+
+  watchDrops();
+  const s = { id, name, kind: "sftp", host, cwd: ".", dead: false, unlisten: [] };
+  sessions.set(id, s);
+  activeId = id;
+  showTab();
+  renderTabs();
+  renderTree();
+  await listFiles(s);
+}
+
+async function listFiles(s, to = null) {
+  if (to !== null) s.cwd = to;
+  s.host.innerHTML = `<div class="files"><p class="loading">Listing ${esc(s.cwd)}…</p></div>`;
+  try {
+    // The server's own answer to where that took us, so the bar shows a real path
+    // and the next hop starts from one.
+    const at = await invoke("sftp_ls", { name: s.name, path: s.cwd });
+    s.cwd = at.path;
+    s.entries = at.entries;
+    s.dead = false;
+  } catch (e) {
+    s.dead = true;
+    s.entries = null;
+    s.error = String(e);
+    // Nothing here needs a shell — it needs a tty to answer a password in. So the tab
+    // opens its own connection and asks in the pane, rather than sending you off to
+    // open a terminal and come back.
+    if (s.error.includes("Permission denied") && !s.master) return signIn(s);
+  }
+  renderTabs();
+  renderFiles(s);
+}
+
+const fileSize = (n) => {
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${i === 0 ? n : n.toFixed(1)} ${u[i]}`;
+};
+
+// A listing that came back with nothing looks exactly like a tab that failed to draw.
+// And on macOS it is usually neither: TCC answers for these three with an empty
+// directory rather than an error, which is a long afternoon if nobody says so.
+function emptyNote(s) {
+  const tcc = /^\/Users\/[^/]+\/(Desktop|Documents|Downloads)\/?$/.test(s.cwd);
+  if (!tcc) return `<p class="fempty">Nothing here.</p>`;
+  // The setting lives on the machine running sftp-server, so the button is only
+  // honest when that machine is this one.
+  const host = all.find((j) => j.name === s.name)?.host ?? "";
+  const here = /^(localhost|127\.0\.0\.1|::1)$/i.test(host);
+  return `<p class="fempty">Nothing here. macOS keeps Desktop, Documents and Downloads
+    out of an ssh session's reach until <b>sftp-server</b> has Full Disk Access${
+      here ? "" : ` on ${esc(s.name)}`}.</p>
+    ${here ? `<div class="btns"><button type="button" class="ghost" data-files="fda">
+      ${icon("settings")}Open Full Disk Access</button></div>` : ""}`;
+}
+
+function renderFiles(s) {
+  if (!s.entries) {
+    // The two answers to a listing that failed, rather than instructions to go and
+    // find them: a shell is what authenticates the browse, and the retry is the click
+    // you would otherwise make by closing the tab and opening it again.
+    return void (s.host.innerHTML = `<div class="panefail">
+      <p class="why">${esc(s.error)}</p>
+      <p class="fix">A shell is what authenticates this — once one is open to
+        ${esc(s.name)}, the listing appears here on its own.</p>
+      <div class="btns">
+        <button type="button" class="primary" data-files="term">
+          ${icon("square-terminal")}Open a terminal</button>
+        <button type="button" class="ghost" data-files="retry">
+          ${icon("rotate-cw")}Try again</button>
+      </div></div>`);
+  }
+  // Folders first, then names — the order every file browser has, so nobody has to
+  // learn this one.
+  const rows = [...s.entries].sort((a, b) =>
+    a.dir === b.dir ? a.name.localeCompare(b.name) : (a.dir ? -1 : 1));
+
+  s.host.innerHTML = `<div class="files">
+    <div class="fpath">
+      <button type="button" class="flat" data-up="1" data-tip="Up a folder">${icon("chevron-right")}</button>
+      <span class="mono">${esc(s.cwd)}</span>
+      <span class="fhint">${icon("download")}drop files here to upload</span>
+    </div>
+    <div class="flist">${rows.length ? "" : emptyNote(s)}${rows.map((e, i) => `
+      <div class="frow" data-fi="${i}" data-dir="${e.dir}">
+        ${icon(e.dir ? "folder" : "file-pen-line")}
+        <span class="fname">${esc(e.name)}</span>
+        <span class="fsize">${e.dir ? "" : esc(fileSize(e.size))}</span>
+        <span class="fwhen">${esc(e.modified)}</span>
+      </div>`).join("")}</div>
+  </div>`;
+  s.rows = rows;
+}
+
+termsEl.addEventListener("click", (e) => {
+  const s = sessions.get(activeId);
+  if (!s || s.kind !== "sftp") return;
+  const act = e.target.closest("[data-files]")?.dataset.files;
+  if (act === "term") return openSession(s.name);
+  if (act === "fda") return invoke("open_full_disk_access").catch(alertish);
+  if (act === "retry") return listFiles(s);
+  if (e.target.closest("[data-up]")) return upFolder(s);
+  const row = e.target.closest("[data-fi]");
+  if (!row || e.detail !== 2) return;
+  const entry = s.rows[+row.dataset.fi];
+  if (entry.dir) return listFiles(s, `${s.cwd}/${entry.name}`);
+  downloadFile(s, entry.name);
+});
+
+// `ssh -N` on a pty, in the pane: a password, a host-key question or a passphrase is
+// answered where it was asked. The connection it leaves behind is the one every sftp
+// call in this tab rides, so it lives as long as the tab does.
+async function signIn(s) {
+  const id = nextId++;
+  s.master = id;
+  s.host.innerHTML = "";
+  const { term, fit } = makeTerm(s.host);
+  s.term = term;
+  s.fit = fit;
+  renderTabs();
+  fit.fit();
+  term.focus();
+  term.onData((d) => invoke("write_session", { id, data: d }).catch(() => {}));
+
+  try {
+    s.unlisten.push(await listen(`pty:${id}`, (e) => term.write(e.payload)));
+    s.unlisten.push(await listen(`pty-exit:${id}`, async () => {
+      if (s.master !== id || s.entries) return;
+      // A sign-in that worked ends this process too: ControlPersist backgrounds the
+      // client the moment it has nothing left to do, leaving the connection behind. So
+      // the socket, not the exit, is what says which of the two just happened.
+      await new Promise((r) => setTimeout(r, 400));
+      if (await invoke("sftp_ready", { name: s.name }).catch(() => false)) return connected(s);
+      failedSignIn(s, "that sign-in didn't finish");
+    }));
+    term.write(`\x1b[2m── signing in to ${s.name} for files ──\x1b[0m\r\n`);
+    await invoke("open_master", { id, name: s.name, cols: term.cols, rows: term.rows });
+  } catch (e) {
+    return failedSignIn(s, String(e));
+  }
+  watchConnection(s);
+}
+
+// The socket appears the moment ssh authenticates, so that is the signal — nothing to
+// parse out of a terminal. Two minutes is long enough to find a password and short
+// enough that a tab left open isn't polling all afternoon.
+function watchConnection(s) {
+  clearInterval(s.wait);
+  const until = Date.now() + 120_000;
+  s.wait = setInterval(async () => {
+    if (!sessions.has(s.id) || Date.now() > until) return clearInterval(s.wait);
+    if (await invoke("sftp_ready", { name: s.name }).catch(() => false)) connected(s);
+  }, 800);
+}
+
+// The sign-in is over and the pane belongs to the file list now.
+function connected(s) {
+  clearInterval(s.wait);
+  s.term?.dispose();
+  s.term = s.fit = null;
+  listFiles(s);
+}
+
+// Back to the panel, with the buttons, once signing in here didn't work — the shell
+// someone opens by hand is still a connection this tab can ride.
+function failedSignIn(s, why) {
+  clearInterval(s.wait);
+  s.term?.dispose();
+  s.term = s.fit = null;
+  s.master = null;
+  s.dead = true;
+  s.error = why;
+  renderTabs();
+  renderFiles(s);
+  watchConnection(s);
+}
+
+// `..` rather than string surgery: the server knows where its own parent is.
+const upFolder = (s) => listFiles(s, s.cwd === "." ? ".." : `${s.cwd}/..`);
+
+// In the pane, not through alertish — that one paints the detail box red, which is
+// the wrong colour for a file that arrived exactly as asked.
+function fileNote(s, text, bad = false) {
+  const bar = s.host.querySelector(".fpath");
+  if (!bar) return;
+  bar.querySelector(".fnote")?.remove();
+  const note = document.createElement("span");
+  note.className = `fnote ${bad ? "bad" : ""}`;
+  note.textContent = text;
+  bar.append(note);
+  clearTimeout(s.noteTimer);
+  s.noteTimer = setTimeout(() => note.remove(), 6000);
+}
+
+async function downloadFile(s, name, dir = false) {
+  fileNote(s, `Fetching ${name}…`);
+  try {
+    const at = await invoke("sftp_get", { name: s.name, remote: `${s.cwd}/${name}`, recurse: dir });
+    fileNote(s, `Saved to ${at}`);
+  } catch (e) { fileNote(s, String(e), true); }
+}
+
+// Real paths, straight from the webview's own drop event — a file picker would mean a
+// plugin, and an <input type="file"> would give bytes to copy through JS rather than a
+// path to hand sftp.
+async function watchDrops() {
+  if (watchDrops.on) return;
+  watchDrops.on = true;
+  try {
+    await listen("tauri://drag-drop", async (e) => {
+      const s = sessions.get(activeId);
+      if (!s || s.kind !== "sftp") return;
+      const paths = e.payload?.paths ?? [];
+      if (!paths.length) return;
+      fileNote(s, `Uploading ${paths.length} file${paths.length === 1 ? "" : "s"}…`);
+      let failed = null;
+      for (const local of paths) {
+        try { await invoke("sftp_put", { name: s.name, local, remoteDir: s.cwd }); }
+        catch (err) { failed = String(err); break; }
+      }
+      await listFiles(s);
+      if (failed) fileNote(s, failed, true);
+    });
+  } catch { /* no capability means no drag-drop, not a broken tab */ }
+}
 
 async function openWebSession(name) {
   watchOverlays();
@@ -260,8 +545,9 @@ async function openWebSession(name) {
       id, name, x: r.left, y: r.top, width: r.width, height: r.height,
     });
   } catch (e) {
-    s.dead = true;
-    renderTabs();
+    // Nothing was ever shown in it — a dead tab here is one more thing to close for
+    // a page that opened somewhere else, or never existed.
+    dropTab(id);
     return alertish(e);
   }
 
@@ -279,7 +565,7 @@ async function openWebSession(name) {
 
 function renderTabs() {
   // The browse tab is the crumb — it names the selected folder and counts it.
-  const label = group === null ? "All jacks" : group.split("/").join(" / ");
+  const label = group === null ? "All jacks" : groupLabel().split("/").join(" / ");
   const browse = `<div class="tab" data-id="" aria-selected="${activeId === null}">
       ${icon("layers")}<span class="lbl">${esc(label)}</span><span class="n">${shown.length}</span></div>`;
   tabsEl.innerHTML = browse + [...sessions.values()].map((s) => `
@@ -287,6 +573,7 @@ function renderTabs() {
         <span class="dot ${s.dead ? "down" : "up"}"></span>
         ${s.kind === "rdp" ? `<span class="tabkind">${icon("monitor")}</span>` : ""}
         ${s.kind === "web" ? `<span class="tabkind">${icon("globe")}</span>` : ""}
+        ${s.kind === "sftp" ? `<span class="tabkind">${icon("folder")}</span>` : ""}
         ${s.task ? `<span class="tabkind">${icon(s.task === "trace" ? "waypoints" : "plug")}</span>` : ""}
         <span class="lbl">${esc(s.task ? `${s.task} ${s.name}` : s.name)}</span>
         <span class="x" data-close="${s.id}" data-tip="Close  ${chord('w')}">${icon("x")}</span>

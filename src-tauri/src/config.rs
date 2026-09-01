@@ -18,6 +18,7 @@ pub struct JackInput {
     pub os: Option<String>,
     pub url: Option<String>,
     pub rdp: Option<u16>,
+    pub vnc: Option<u16>,
     pub ssh: Option<bool>,
     pub primary: Option<String>,
     pub desc: Option<String>,
@@ -134,10 +135,6 @@ fn set_arr(t: &mut Table, k: &str, items: &[String]) {
 
 /// `original` is None when adding, Some(old_name) when editing — passing a different
 /// name than the original renames the jack.
-pub fn save_jack(original: Option<String>, j: JackInput) -> Result<(), String> {
-    save_jack_at(&patchbay::config_path(), original, j)
-}
-
 pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Result<(), String> {
     let name = j.name.trim().to_string();
     if name.is_empty() {
@@ -193,6 +190,12 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
             t.remove("ssh");
         }
     }
+    match j.vnc {
+        Some(p) => t["vnc"] = value(p as i64),
+        None => {
+            t.remove("vnc");
+        }
+    }
     match j.rdp {
         Some(p) => t["rdp"] = value(p as i64),
         None => {
@@ -220,8 +223,76 @@ pub fn replace_at(path: &Path, src: &str) -> Result<(), String> {
     write_doc(path, &doc)
 }
 
-pub fn delete_jack(name: &str) -> Result<(), String> {
-    delete_jack_at(&patchbay::config_path(), name)
+/// Move one device's table between two space files, comments and all. Not a
+/// save-then-delete through `JackInput`: that would bake the source space's
+/// `[defaults]` into the jack and drop any key the sheet can't edit.
+pub fn move_jack_at(from: &Path, to: &Path, name: &str) -> Result<(), String> {
+    if from == to {
+        return Ok(());
+    }
+    let mut src = read_doc(from)?;
+    let table = jack_table(&mut src)?
+        .get(name)
+        .and_then(Item::as_table)
+        .ok_or_else(|| format!("no jack named \"{name}\""))?
+        .clone();
+
+    let mut dst = read_doc(to)?;
+    let jacks = jack_table(&mut dst)?;
+    if jacks.contains_key(name) {
+        return Err(format!("there's already a jack named \"{name}\" there"));
+    }
+    // Rebuilt rather than moved whole: a table carries the position it had in the
+    // old file, which means nothing in the new one. The keys keep their own decor,
+    // and the comment above the jack is carried across by hand.
+    let mut moved = Table::new();
+    for (k, v) in table.iter() {
+        moved.insert(k, v.clone());
+    }
+    if let Some(prefix) = table.decor().prefix().and_then(|p| p.as_str()) {
+        moved.decor_mut().set_prefix(prefix.to_string());
+    }
+    jacks.insert(name, Item::Table(moved));
+
+    // The copy lands first. If the removal then fails the device exists in both
+    // files, which is visible and fixable; the other order loses it.
+    write_doc(to, &dst)?;
+    delete_jack_at(from, name)
+}
+
+/// A space's name becomes a file name, so it is checked as one. No dots, which is
+/// what keeps `..` and a second extension out of it.
+pub fn space_slug(name: &str) -> Result<String, String> {
+    let s = name.trim();
+    if s.is_empty() {
+        return Err("a space needs a name".into());
+    }
+    if s.chars().count() > 40 {
+        return Err("a space name has to be shorter than that".into());
+    }
+    if !s.chars().all(|c| c.is_ascii_alphanumeric() || " -_".contains(c)) {
+        return Err(format!("\"{s}\" can only have letters, digits, spaces, - and _"));
+    }
+    Ok(s.to_string())
+}
+
+pub fn create_space_at(cfg: &Path, name: &str) -> Result<String, String> {
+    let slug = space_slug(name)?;
+    let path = patchbay::space_path(cfg, Some(&slug));
+    if path.exists() {
+        return Err(format!("there's already a space called \"{slug}\""));
+    }
+    write_doc(&path, &DocumentMut::new())?;
+    Ok(slug)
+}
+
+/// Kept as a `.bak`, never unlinked — the file is somebody's device list, and it is
+/// the same reasoning the team code's `backup` runs on.
+pub fn delete_space_at(cfg: &Path, name: &str) -> Result<(), String> {
+    let slug = space_slug(name)?;
+    let path = patchbay::space_path(cfg, Some(&slug));
+    std::fs::rename(&path, path.with_extension("toml.bak"))
+        .map_err(|e| format!("{}: {e}", path.display()))
 }
 
 pub fn delete_jack_at(path: &Path, name: &str) -> Result<(), String> {
@@ -437,10 +508,6 @@ fn vpn_table(doc: &mut DocumentMut) -> Result<&mut Table, String> {
     Ok(t)
 }
 
-pub fn save_vpn(path: &str, v: &crate::vpn::Vpn) -> Result<(), String> {
-    save_vpn_at(&patchbay::config_path(), path, v)
-}
-
 pub fn save_vpn_at(file: &Path, path: &str, v: &crate::vpn::Vpn) -> Result<(), String> {
     let path = path.trim();
     if path.is_empty() {
@@ -471,10 +538,6 @@ pub fn save_vpn_at(file: &Path, path: &str, v: &crate::vpn::Vpn) -> Result<(), S
     set_str(t, "down", if custom { v.down.as_deref() } else { None });
     set_str(t, "check", if custom { v.check.as_deref() } else { None });
     write_doc(file, &doc)
-}
-
-pub fn delete_vpn(path: &str) -> Result<(), String> {
-    delete_vpn_at(&patchbay::config_path(), path)
 }
 
 pub fn delete_vpn_at(file: &Path, path: &str) -> Result<(), String> {
@@ -532,10 +595,6 @@ fn map_folders(file: &Path, path: &str, to: Option<&str>) -> Result<usize, Strin
     Ok(touched)
 }
 
-pub fn rename_group(from: &str, to: &str) -> Result<usize, String> {
-    rename_group_at(&patchbay::config_path(), from, to)
-}
-
 pub fn rename_group_at(file: &Path, from: &str, to: &str) -> Result<usize, String> {
     let to = to.trim().trim_matches('/');
     if to.is_empty() {
@@ -559,10 +618,6 @@ pub fn rename_group_at(file: &Path, from: &str, to: &str) -> Result<usize, Strin
         write_doc(file, &doc)?;
     }
     Ok(touched)
-}
-
-pub fn delete_group(path: &str) -> Result<usize, String> {
-    delete_group_at(&patchbay::config_path(), path)
 }
 
 pub fn delete_group_at(file: &Path, path: &str) -> Result<usize, String> {
@@ -600,7 +655,7 @@ folders = ["prod/eu/web"]
     fn input(name: &str, host: &str) -> JackInput {
         JackInput {
             name: name.into(), host: host.into(),
-            user: None, port: None, key: None, jump: None, os: None, url: None, rdp: None, ssh: None, primary: None, desc: None,
+            user: None, port: None, key: None, jump: None, os: None, url: None, rdp: None, vnc: None, ssh: None, primary: None, desc: None,
             folders: vec![], forward: vec![],
         }
     }
@@ -814,5 +869,55 @@ folders = ["prod/eu/web"]
         let _ = std::fs::remove_dir_all(p.parent().unwrap());
         save_jack_at(&p, None, input("first", "10.0.0.1")).unwrap();
         assert!(read(&p).contains("[jack.first]"));
+    }
+
+    #[test]
+    fn moving_a_jack_carries_its_comment_and_leaves_the_defaults_behind() {
+        let dir = std::env::temp_dir().join(format!("patchbay-{}-move", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let from = dir.join("patchbay.toml");
+        let to = dir.join("spaces/acme.toml");
+        std::fs::write(
+            &from,
+            "[defaults]\nuser = \"root\"\n\n# the old one\n[jack.web]\nhost = \"10.0.0.4\"\nrdp = 3389\n",
+        )
+        .unwrap();
+
+        move_jack_at(&from, &to, "web").unwrap();
+        let landed = read(&to);
+        assert!(landed.contains("[jack.web]"), "{landed}");
+        assert!(landed.contains("# the old one"), "the comment stayed behind: {landed}");
+        // Everything the sheet can't edit comes too, and nothing the source's
+        // [defaults] merely lent it does.
+        assert!(landed.contains("rdp = 3389"), "{landed}");
+        assert!(!landed.contains("user"), "an inherited default was baked in: {landed}");
+        assert!(!read(&from).contains("[jack.web]"), "still in the old file");
+
+        // The same name on both sides is refused rather than silently overwritten.
+        std::fs::write(&from, "[jack.web]\nhost = \"other\"\n").unwrap();
+        assert!(move_jack_at(&from, &to, "web").is_err());
+    }
+
+    #[test]
+    fn a_space_name_cannot_climb_out_of_the_directory_and_deleting_keeps_a_copy() {
+        for bad in ["../evil", "a/b", "sneaky.toml", "", "   "] {
+            assert!(space_slug(bad).is_err(), "{bad:?} was allowed as a space name");
+        }
+        assert_eq!(space_slug("  Acme Ops  ").unwrap(), "Acme Ops");
+
+        let dir = std::env::temp_dir().join(format!("patchbay-{}-spacefiles", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("patchbay.toml");
+        create_space_at(&cfg, "acme").unwrap();
+        let file = dir.join("spaces/acme.toml");
+        assert!(file.exists());
+        assert!(create_space_at(&cfg, "acme").is_err(), "made the same space twice");
+
+        std::fs::write(&file, "[jack.web]\nhost = \"10.0.0.4\"\n").unwrap();
+        delete_space_at(&cfg, "acme").unwrap();
+        assert!(!file.exists());
+        assert!(read(&dir.join("spaces/acme.toml.bak")).contains("[jack.web]"));
     }
 }

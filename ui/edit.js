@@ -38,8 +38,10 @@ document.addEventListener("contextmenu", (e) => {
     select(+jackRow.dataset.i);
     const j = shown[sel];
     return showCtx(e.clientX, e.clientY, j.name, [
-      { icon: "square-terminal", label: "Connect", run: () => connect(j.name) },
-      { icon: "external-link", label: "Open in Terminal", run: () => connect(j.name, true) },
+      ...(j.ssh ? [
+        { icon: "square-terminal", label: "Connect", run: () => connect(j.name) },
+        { icon: "external-link", label: "Open in Terminal", run: () => connect(j.name, true) },
+      ] : []),
       ...(j.url ? [
         { icon: "globe", label: "Open web UI", run: () => openWeb(j.name) },
         // The handoff stays, the way Terminal and the system RDP client do — and it's
@@ -50,32 +52,71 @@ document.addEventListener("contextmenu", (e) => {
         { icon: "monitor", label: "Remote desktop", run: () => openRdp(j.name) },
         { icon: "external-link", label: "Remote desktop in system client", run: () => handOffRdp(j.name) },
       ] : []),
+      // A handoff like the system RDP client, for the same reason: the viewer is the
+      // one already installed, and patchbay speaks no VNC.
+      ...(j.vnc ? [{ icon: "screen-share", label: "Screen sharing", run: () => openVnc(j.name) }] : []),
+      // sftp rides the ssh connection, so it is offered exactly where ssh is.
+      ...(j.ssh ? [{ icon: "folder", label: "Browse files", run: () => openFilesSession(j.name) }] : []),
       { icon: "copy", label: "Copy ssh command", run: () => navigator.clipboard.writeText(j.command).catch(() => {}) },
       "-",
       { icon: "plug", label: "Ping", run: () => openSession(j.name, "ping") },
       { icon: "waypoints", label: "Trace route", run: () => openSession(j.name, "trace") },
       "-",
       { icon: "pencil", label: "Edit…", run: () => openJack(j) },
-      { icon: "trash-2", label: "Delete", danger: true, run: () => removeJack(j.name) },
+      { icon: "trash-2", label: "Delete", danger: true, run: () => removeJack(j.name, j.space ?? null) },
+    ]);
+  }
+
+  if (groupRow && groupRow.dataset.group && !groupRow.dataset.path) {
+    const space = groupRow.dataset.space || null;
+    return showCtx(e.clientX, e.clientY, space ?? "Private", [
+      { icon: "plus", label: "New device here…", run: () => openJack(null, { space, path: null }) },
+      { icon: "folder-plus", label: "New folder…", run: () => newGroup({ space, path: null }) },
+      "-",
+      { icon: "box", label: "New space…", run: () => newSpace() },
+      // Your own list is the config file; there is no version of it to remove.
+      ...(space ? [{ icon: "trash-2", label: "Delete space", danger: true, run: () => removeSpace(space) }] : []),
     ]);
   }
 
   if (groupRow) {
-    const path = groupRow.dataset.path;
-    if (!path) return;   // "All jacks" isn't a real folder
-    return showCtx(e.clientX, e.clientY, path, [
-      { icon: "plus", label: "New device here…", run: () => openJack(null, path) },
-      { icon: "folder-plus", label: "New subfolder…", run: () => newGroup(path) },
+    const id = { space: groupRow.dataset.space || null, path: groupRow.dataset.path || null };
+    if (!id.path) return;   // "All jacks" isn't a folder
+    return showCtx(e.clientX, e.clientY, id.path, [
+      { icon: "plus", label: "New device here…", run: () => openJack(null, id) },
+      { icon: "folder-plus", label: "New subfolder…", run: () => newGroup(id) },
       "-",
-      { icon: "pencil", label: "Rename…", run: () => renameGroup(path) },
-      { icon: "plug", label: vpns.has(path) ? "VPN settings…" : "Add a VPN…", run: () => openVpn(path) },
-      { icon: "trash-2", label: "Delete folder", danger: true, run: () => removeGroup(path) },
+      { icon: "pencil", label: "Rename…", run: () => renameGroup(id) },
+      { icon: "plug", label: vpns.has(gkey(id)) ? "VPN settings…" : "Add a VPN…", run: () => openVpn(id) },
+      { icon: "trash-2", label: "Delete folder", danger: true, run: () => removeGroup(id) },
+    ]);
+  }
+
+  // The file browser is a list of its own, and the app's menu is no use over it.
+  if (e.target.closest(".files")) {
+    const s = sessions.get(activeId);
+    if (!s) return;
+    const row = e.target.closest("[data-fi]");
+    const entry = row && s.rows[+row.dataset.fi];
+    if (!entry) {
+      return showCtx(e.clientX, e.clientY, s.cwd, [
+        { icon: "rotate-cw", label: "Refresh", run: () => listFiles(s) },
+        { icon: "arrow-up", label: "Up a folder", run: () => upFolder(s) },
+      ]);
+    }
+    const path = `${s.cwd}/${entry.name}`;
+    return showCtx(e.clientX, e.clientY, entry.name, [
+      ...(entry.dir ? [{ icon: "folder-open", label: "Open", run: () => listFiles(s, path) }] : []),
+      { icon: "download", label: entry.dir ? "Download folder" : "Download",
+        run: () => downloadFile(s, entry.name, entry.dir) },
+      { icon: "copy", label: "Copy path", run: () => navigator.clipboard.writeText(path).catch(() => {}) },
     ]);
   }
 
   showCtx(e.clientX, e.clientY, null, [
     { icon: "plus", label: "New device…", run: () => openJack(null, group) },
-    { icon: "folder-plus", label: "New folder…", run: () => newGroup(null) },
+    { icon: "folder-plus", label: "New folder…", run: () => newGroup({ space: group?.space ?? null, path: null }) },
+    { icon: "box", label: "New space…", run: () => newSpace() },
     "-",
     { icon: "download", label: "Import from ssh config…", run: () => openImport() },
     { icon: "file-pen-line", label: "Open config file", run: () => invoke("open_config") },
@@ -126,15 +167,18 @@ askWrap.addEventListener("mousedown", (e) => { if (e.target === askWrap) closeAs
 // ── jack sheet ─────────────────────────────────────────────────────────────
 function openJack(j, prefillGroup) {
   editing = j?.name ?? null;
+  // Which file this write lands in. An existing device stays where it is; a new one
+  // goes wherever you were standing.
+  editingSpace = j ? j.space ?? null : prefillGroup?.space ?? null;
   $("sheet-title").textContent = j ? `Edit ${j.name}` : "New device";
   jfDelete.hidden = !j;
   jfDelete.innerHTML = `${icon("trash-2")}Delete`;
   jfErr.hidden = true;
   const f = jackForm.elements;
   // Editing reflects what the device already has; a new one starts at terminal.
-  f.use_ssh.checked = j ? j.ssh : true;
-  f.use_rdp.checked = !!j?.rdp;
-  f.use_web.checked = !!j?.url;
+  // A device saved before this row was one choice may still carry two; `primary` is
+  // already resolved in Rust, so it is the honest answer to "which one is this".
+  f.reach.value = j?.primary ?? "ssh";
   f.name.value = j?.name ?? "";
   f.host.value = j?.host ?? "";
   f.user.value = j?.user ?? "";
@@ -147,9 +191,14 @@ function openJack(j, prefillGroup) {
   setScheme(m ? m[1].toLowerCase() : "https://");
   f.url.value = m ? m[2] : "";
   f.rdp.value = j?.rdp ?? "";
-  f.primary.value = j?.primary ?? "ssh";
+  f.vnc.value = j?.vnc ?? "";
   f.desc.value = j?.desc ?? "";
-  f.folders.value = (j?.folders ?? (prefillGroup ? [prefillGroup] : [])).join(", ");
+  f.folders.value = (j?.folders ?? (prefillGroup?.path ? [prefillGroup.path] : [])).join(", ");
+  // Only worth a control once there is somewhere else to put it.
+  $("jf-space").hidden = !spaces.length;
+  f.space.innerHTML = [null, ...spaces]
+    .map((sp) => `<option value="${esc(sp ?? "")}"${sp === editingSpace ? " selected" : ""}>${esc(sp ?? "Private")}</option>`)
+    .join("");
   f.forward.value = (j?.forward ?? []).join(", ");
   $("oschoices").innerHTML = OS_CHOICES.map((o) => `<option value="${esc(o)}">`).join("");
   renderFolderSuggestions();
@@ -163,86 +212,129 @@ const list2 = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
 jackForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = jackForm.elements;
-  const on = { ssh: f.use_ssh.checked, rdp: f.use_rdp.checked, web: f.use_web.checked };
-  if (!on.ssh && !on.rdp && !on.web) return showErr(jfErr, "pick at least one way to reach it");
+  const reach = reachOf(f);
+  // Files ride the ssh connection, so they keep every ssh field — the choice only
+  // changes what a double-click does, which is the one thing `primary` records.
+  const overSsh = reach === "ssh" || reach === "sftp";
   const port = f.port.value.trim();
-  const rdp = on.rdp ? f.rdp.value.trim() : "";
-  if (on.ssh && port && !/^\d+$/.test(port)) return showErr(jfErr, "ssh port has to be a number");
-  if (on.rdp && !/^\d+$/.test(rdp)) return showErr(jfErr, "rdp port has to be a number");
+  const rdp = reach === "rdp" ? f.rdp.value.trim() : "";
+  const vnc = reach === "vnc" ? f.vnc.value.trim() : "";
+  if (overSsh && port && !/^\d+$/.test(port)) return showErr(jfErr, "ssh port has to be a number");
+  if (reach === "rdp" && !/^\d+$/.test(rdp)) return showErr(jfErr, "rdp port has to be a number");
+  if (reach === "vnc" && !/^\d+$/.test(vnc)) return showErr(jfErr, "vnc port has to be a number");
+  const target = f.space.value || null;
   try {
+    // The move goes first and carries the raw table: saving into the other file
+    // would bake this space's [defaults] in and drop whatever the sheet can't edit.
+    if (editing && target !== editingSpace) {
+      await invoke("move_jack", { from: editingSpace, to: target, name: editing });
+      editingSpace = target;
+    }
     await invoke("save_jack", {
+      space: target,
       original: editing,
       jack: {
         name: f.name.value.trim(),
         host: f.host.value.trim(),
         user: f.user.value.trim() || null,
-        // A protocol that is off must clear its fields, not leave them lying about.
-        port: on.ssh && port ? +port : null,
-        key: on.ssh ? f.key.value.trim() || null : null,
-        jump: on.ssh ? f.jump.value.trim() || null : null,
-        forward: on.ssh ? list2(f.forward.value) : [],
+        // One way in, so the other two are cleared rather than left lying about — a
+        // device edited here keeps only what it was set to, including one saved back
+        // when this row allowed several.
+        port: overSsh && port ? +port : null,
+        key: overSsh ? f.key.value.trim() || null : null,
+        jump: overSsh ? f.jump.value.trim() || null : null,
+        forward: reach === "ssh" ? list2(f.forward.value) : [],
         os: f.os.value.trim() || null,
-        url: on.web && f.url.value.trim() ? scheme + f.url.value.trim() : null,
+        url: reach === "web" && f.url.value.trim() ? scheme + f.url.value.trim() : null,
         rdp: rdp ? +rdp : null,
-        ssh: on.ssh ? null : false,
-        // Only stored when it differs from "the first one it has".
-        primary: (() => {
-          const first = ["ssh", "rdp", "web"].find((k) => on[k]);
-          return f.primary.value !== first ? f.primary.value : null;
-        })(),
+        vnc: vnc ? +vnc : null,
+        ssh: overSsh ? null : false,
+        // Only "sftp" needs saying: the other three are each derivable from the one
+        // field that's set, but ssh-for-a-shell and ssh-for-files look identical.
+        primary: reach === "sftp" ? "sftp" : null,
         desc: f.desc.value.trim() || null,
         folders: list2(f.folders.value),
       },
     });
-    for (const f2 of list2(f.folders.value)) pending.delete(f2);
+    for (const f2 of list2(f.folders.value)) pending.delete(gkey({ space: target, path: f2 }));
     closeJack();
     await load();
   } catch (err) { showErr(jfErr, String(err)); }
 });
 $("jf-cancel").addEventListener("click", closeJack);
 sheetWrap.addEventListener("mousedown", (e) => { if (e.target === sheetWrap) closeJack(); });
-jfDelete.addEventListener("click", () => { const n = editing; closeJack(); removeJack(n); });
+jfDelete.addEventListener("click", () => {
+  const [n, sp] = [editing, editingSpace];
+  closeJack();
+  removeJack(n, sp);
+});
 
 function showErr(el, msg) { el.textContent = msg; el.hidden = false; }
 
 // ── mutations ──────────────────────────────────────────────────────────────
-async function removeJack(name) {
+async function removeJack(name, space) {
   if (!(await ask(`Delete "${name}"? This edits your config file.`, null, "Delete"))) return;
-  try { await invoke("delete_jack", { name }); sel = 0; await load(); }
+  try { await invoke("delete_jack", { space, name }); sel = 0; await load(); }
   catch (e) { alertish(e); }
 }
 
-async function newGroup(parent) {
-  const name = await ask(parent ? `New folder inside ${parent}` : "New folder", "", "Create");
+async function newSpace() {
+  const name = await ask("A space is a config file of its own — its devices, folders and "
+    + "defaults are separate from your list.\n\nName it", "", "Create");
   if (!name) return;
-  const path = parent ? `${parent}/${name.replace(/^\/+|\/+$/g, "")}` : name.replace(/^\/+|\/+$/g, "");
-  pending.add(path);
-  expanded.add(path.split("/")[0]);
-  group = path;
-  render();
-}
-
-async function renameGroup(path) {
-  const to = await ask(`Rename folder ${path} to`, path.split("/").pop(), "Rename");
-  if (!to) return;
-  const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-  const next = parent ? `${parent}/${to}` : to;
   try {
-    await invoke("rename_group", { from: path, to: next });
-    if (pending.delete(path)) pending.add(next);
-    if (group === path) group = next;
+    const slug = await invoke("create_space", { name });
+    group = { space: slug, path: null };
+    expanded.add(gkey(group));
     await load();
   } catch (e) { alertish(e); }
 }
 
-async function removeGroup(path) {
-  const n = all.filter((j) => j.folders.some((f) => f === path || f.startsWith(path + "/"))).length;
-  const msg = `Remove folder "${path}" from ${n} device${n === 1 ? "" : "s"}? The devices stay.`;
+async function removeSpace(space) {
+  const n = all.filter((j) => (j.space ?? null) === space).length;
+  const msg = `Delete the space "${space}" and its ${n} device${n === 1 ? "" : "s"}?`
+    + `\n\nThe file is kept beside your config as ${space}.toml.bak.`;
+  if (!(await ask(msg, null, "Delete"))) return;
+  try {
+    await invoke("delete_space", { name: space });
+    if (group?.space === space) group = null;
+    await load();
+  } catch (e) { alertish(e); }
+}
+
+async function newGroup(parent) {
+  const name = await ask(parent?.path ? `New folder inside ${parent.path}` : "New folder", "", "Create");
+  if (!name) return;
+  const leaf = name.replace(/^\/+|\/+$/g, "");
+  const id = { space: parent?.space ?? null, path: parent?.path ? `${parent.path}/${leaf}` : leaf };
+  pending.set(gkey(id), id);
+  expanded.add(gkey({ space: id.space, path: id.path.split("/")[0] }));
+  group = id;
+  render();
+}
+
+async function renameGroup(id) {
+  const to = await ask(`Rename folder ${id.path} to`, id.path.split("/").pop(), "Rename");
+  if (!to) return;
+  const parent = id.path.includes("/") ? id.path.slice(0, id.path.lastIndexOf("/")) : "";
+  const next = { space: id.space, path: parent ? `${parent}/${to}` : to };
+  try {
+    await invoke("rename_group", { space: id.space, from: id.path, to: next.path });
+    if (pending.delete(gkey(id))) pending.set(gkey(next), next);
+    if (sameGroup(group, id)) group = next;
+    await load();
+  } catch (e) { alertish(e); }
+}
+
+async function removeGroup(id) {
+  const n = all.filter((j) => (j.space ?? null) === id.space
+    && j.folders.some((f) => f === id.path || f.startsWith(id.path + "/"))).length;
+  const msg = `Remove folder "${id.path}" from ${n} device${n === 1 ? "" : "s"}? The devices stay.`;
   if (!(await ask(msg, null, "Remove"))) return;
   try {
-    await invoke("delete_group", { path });
-    pending.delete(path);
-    if (group === path || group?.startsWith(path + "/")) group = null;
+    await invoke("delete_group", { space: id.space, path: id.path });
+    pending.delete(gkey(id));
+    if (sameGroup(group, id) || (group?.space === id.space && group?.path?.startsWith(id.path + "/"))) group = null;
     await load();
   } catch (e) { alertish(e); }
 }
@@ -337,21 +429,20 @@ impForm.addEventListener("submit", async (e) => {
 let vpnEditing = null;
 
 /// Show only the fields the chosen protocols actually need.
+/// One way in per device. There is no separate "opens on double-click" any more —
+/// with a single choice the answer is the choice, and `primary` in the config is
+/// whatever Rust resolves from the one field that's set.
+const reachOf = (f) => f.reach.value || "ssh";
+
 function jackFields() {
   const f = jackForm.elements;
-  const on = { ssh: f.use_ssh.checked, rdp: f.use_rdp.checked, web: f.use_web.checked };
+  const reach = reachOf(f);
   for (const el of jackForm.querySelectorAll("[data-need]")) {
-    el.hidden = !el.dataset.need.split(" ").some((k) => on[k]);
+    el.hidden = !el.dataset.need.split(" ").includes(reach);
   }
   // Sensible starting point rather than an empty box you have to know to fill.
-  if (on.rdp && !f.rdp.value.trim()) f.rdp.value = "3389";
-
-  // Only worth asking when there is actually a choice to make.
-  const opts = [["ssh", "Terminal"], ["rdp", "Remote desktop"], ["web", "Web UI"]].filter(([k]) => on[k]);
-  $("primary-row").hidden = opts.length < 2;
-  const keep = f.primary.value;
-  f.primary.innerHTML = opts.map(([k, l]) => `<option value="${k}">${l}</option>`).join("");
-  f.primary.value = opts.some(([k]) => k === keep) ? keep : opts[0]?.[0] ?? "ssh";
+  if (reach === "rdp" && !f.rdp.value.trim()) f.rdp.value = "3389";
+  if (reach === "vnc" && !f.vnc.value.trim()) f.vnc.value = "5900";
 }
 
 function vpnFields() {
@@ -364,11 +455,11 @@ function vpnFields() {
   $("vpn-profiles").innerHTML = (p?.profiles ?? []).map((n) => `<option value="${esc(n)}">`).join("");
 }
 
-async function openVpn(path) {
-  vpnEditing = path;
-  $("vpn-title").textContent = `VPN for ${path}`;
+async function openVpn(id) {
+  vpnEditing = id;
+  $("vpn-title").textContent = `VPN for ${id.path}`;
   vpnErr.hidden = true;
-  vpnDelete.hidden = !vpns.has(path);
+  vpnDelete.hidden = !vpns.has(gkey(id));
   vpnDelete.innerHTML = `${icon("trash-2")}Remove`;
   const f = vpnForm.elements;
   f.provider.innerHTML = providers
@@ -379,8 +470,8 @@ async function openVpn(path) {
   vpnFields();
   vpnWrap.hidden = false;
   try {
-    const def = await invoke("vpn_def", { path });
-    if (def && vpnEditing === path) {
+    const def = await invoke("vpn_def", { ...id });
+    if (def && sameGroup(vpnEditing, id)) {
       f.provider.value = def.provider ?? "custom";
       f.profile.value = def.profile ?? "";
       f.up.value = def.up ?? "";
@@ -398,7 +489,8 @@ vpnForm.addEventListener("submit", async (e) => {
   const f = vpnForm.elements;
   try {
     await invoke("save_vpn", {
-      path: vpnEditing,
+      space: vpnEditing.space,
+      path: vpnEditing.path,
       def: {
         provider: f.provider.value,
         profile: f.profile.value.trim() || null,
@@ -415,10 +507,10 @@ vpnForm.addEventListener("submit", async (e) => {
 $("vpn-cancel").addEventListener("click", closeVpn);
 vpnWrap.addEventListener("mousedown", (e) => { if (e.target === vpnWrap) closeVpn(); });
 vpnDelete.addEventListener("click", async () => {
-  const path = vpnEditing;
-  if (!(await ask(`Remove the VPN on "${path}"? The folder and its devices stay.`, null, "Remove"))) return;
+  const id = vpnEditing;
+  if (!(await ask(`Remove the VPN on "${id.path}"? The folder and its devices stay.`, null, "Remove"))) return;
   closeVpn();
-  try { await invoke("delete_vpn", { path }); await refreshVpns(); syncTeam(); }
+  try { await invoke("delete_vpn", { ...id }); await refreshVpns(); syncTeam(); }
   catch (e) { alertish(e); }
 });
 
@@ -443,7 +535,7 @@ async function openSettings() {
   renderTeam();
   // Land on the thing that needs answering. The sidebar button was already warning
   // about it, so opening on VPN would make you hunt for what you clicked it for.
-  showPane(TEAM_STUCK[team.state] ? "team" : "vpn");
+  showPane(teams.some((t) => TEAM_STUCK[t.state]) ? "team" : "vpn");
   syncTeam();   // seats and state, fresh, while the sheet is already up
   $("page-openconfig").innerHTML = `${icon("file-pen-line")}Open config file`;
   setWrap.hidden = false;
@@ -496,53 +588,86 @@ $("set-cancel").addEventListener("click", closeSettings);
 $("page-openconfig").addEventListener("click", () => invoke("open_config"));
 setWrap.addEventListener("mousedown", (e) => { if (e.target === setWrap) closeSettings(); });
 
-// ── team ───────────────────────────────────────────────────────────────────
-// The config file is the shared document. Everything here is one call away from
-// team_sync, which is the only thing in the app that talks to the server.
+// ── spaces ─────────────────────────────────────────────────────────────────
+// A space is a config file; a team space is one with a server behind it. Everything
+// here is one call away from team_sync, the only thing in the app that talks to it.
 function renderTeam() {
+  const byName = new Map(teams.map((t) => [t.space, t]));
   // Same warning as the sidebar button, on the rail that now stands between them.
-  setNav.querySelector('[data-pane="team"]').classList.toggle("warn", !!TEAM_STUCK[team.state]);
-  const joined = team.state !== "off";
-  $("team-off").hidden = joined;
-  $("team-on").hidden = !joined;
-  if (!joined) return;
-  $("team-leave").innerHTML = `${icon("unplug")}Leave the team`;
-  $("team-where").textContent = `${team.code}   ${team.url}`;
-  $("team-fix").hidden = team.state !== "conflict";
-  const seats = `${team.seats} seat${team.seats === 1 ? "" : "s"}${team.paid ? "" : ", free up to three"}`;
-  const say = {
-    conflict: "Your list and the team's have both changed since they last agreed. Pick one — " +
-      "whichever you drop is kept beside your config as patchbay.toml.bak.",
-    blocked: `${team.error ?? ""} Your edits stay on this machine until the team has room for them.`,
-    offline: `Not reaching the server: ${team.error ?? ""} — your list still works, and changes go up when it answers.`,
-    // Nothing to do with the server, so don't blame it: this machine's own config is
-    // in the way, and nothing syncs either direction until it's readable again.
-    error: `${team.error ?? "the sync stopped here"} — nothing is going up or coming down until that's sorted.`,
-  };
-  $("team-state").textContent = say[team.state] ?? `In sync · ${seats}`;
+  setNav.querySelector('[data-pane="team"]')
+    .classList.toggle("warn", teams.some((t) => TEAM_STUCK[t.state]));
+
+  $("spaces-list").innerHTML = [null, ...spaces].map((sp) => {
+    const t = sp && byName.get(sp);
+    const n = all.filter((j) => (j.space ?? null) === sp).length;
+    const count = `${n} device${n === 1 ? "" : "s"}`;
+    if (!t) {
+      return `<div class="space-row">
+        <div class="space-name">${icon("box")}${esc(sp ?? "Private")}</div>
+        <div class="space-note">${count} · on this machine only</div>
+        ${sp ? `<div class="btns"><button type="button" class="ghost" data-sact="share" data-space="${esc(sp)}">
+          ${icon("network")}Share with a team…</button></div>` : ""}
+      </div>`;
+    }
+    const seats = `${t.seats} seat${t.seats === 1 ? "" : "s"}${t.paid ? "" : ", free up to three"}`;
+    const say = {
+      conflict: "This space and the team's have both changed since they last agreed. Pick one — " +
+        `whichever you drop is kept beside it as ${sp}.toml.bak.`,
+      blocked: `${t.error ?? ""} Your edits stay on this machine until the team has room for them.`,
+      offline: `Not reaching the server: ${t.error ?? ""} — the list still works, and changes go up when it answers.`,
+      // Nothing is wrong with it: it is a subscription, and only an edit makes it awkward.
+      readonly: `${t.error ?? "read-only"} — undo them, or copy the devices you want into a space of your own.`,
+      // Nothing to do with the server, so don't blame it: this machine's own copy is
+      // in the way, and nothing syncs either direction until it's readable again.
+      error: `${t.error ?? "the sync stopped here"} — nothing is going up or coming down until that's sorted.`,
+    };
+    return `<div class="space-row">
+      <div class="space-name">${icon("network")}${esc(sp)}</div>
+      <div class="mono">${t.code ? `${esc(t.code)}   ` : ""}${esc(t.url)}</div>
+      <div class="space-note">${count} · ${esc(say[t.state] ?? `In sync · ${seats}`)}</div>
+      <div class="btns">
+        ${t.state === "conflict" ? `
+          <button type="button" class="ghost" data-sact="theirs" data-space="${esc(sp)}">Take the team's list</button>
+          <button type="button" class="ghost" data-sact="mine" data-space="${esc(sp)}">Push mine instead</button>` : ""}
+        ${t.code ? `<button type="button" class="ghost" data-sact="copy" data-space="${esc(sp)}">${icon("copy")}Copy the code</button>` : ""}
+        <button type="button" class="ghost" data-sact="leave" data-space="${esc(sp)}">${icon("unplug")}${t.code ? "Leave the team" : "Stop following"}</button>
+      </div>
+    </div>`;
+  }).join("");
 }
 
 async function teamCall(fn) {
   teamErr.hidden = true;
   try {
-    team = await fn();
-    renderTeam();
-    await load();
+    await fn();
+    await load();       // load() runs syncTeam(), which re-renders this pane
   } catch (e) { showErr(teamErr, String(e)); }
 }
 
-const teamUrl = () => $("team-url").value.trim();
-$("team-join").addEventListener("click", () =>
-  teamCall(() => invoke("team_join", { url: teamUrl(), code: $("team-code").value.trim() })));
-$("team-create").addEventListener("click", () =>
-  teamCall(() => invoke("team_create", { url: teamUrl() })));
-$("team-theirs").addEventListener("click", () =>
-  teamCall(() => invoke("team_resolve", { keep: "theirs" })));
-$("team-mine").addEventListener("click", () =>
-  teamCall(() => invoke("team_resolve", { keep: "mine" })));
-$("team-leave").addEventListener("click", async () => {
-  if (!(await ask("Leave the team? Your copy of the list stays on this machine.", null, "Leave"))) return;
-  teamCall(async () => { await invoke("team_leave"); return { state: "off" }; });
+$("team-join").addEventListener("click", () => teamCall(() => invoke("team_join", {
+  name: $("team-name").value.trim() || $("team-code").value.trim().slice(0, 9) || "shared",
+  url: $("team-url").value.trim(),
+  code: $("team-code").value.trim(),
+})));
+
+$("spaces-list").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-sact]");
+  if (!b) return;
+  const space = b.dataset.space;
+  const t = teams.find((x) => x.space === space);
+  if (b.dataset.sact === "copy") return navigator.clipboard.writeText(t?.code ?? "").catch(() => {});
+  if (b.dataset.sact === "share") {
+    const url = await ask(`Hand "${space}" to a new team — every device in it becomes the `
+      + "team's list.\n\nThe address of your team server", "https://", "Share");
+    if (!url) return;
+    return teamCall(() => invoke("team_create", { space, url: url.trim() }));
+  }
+  if (b.dataset.sact === "leave") {
+    if (!(await ask(`Stop syncing "${space}"? The space stays here as an ordinary `
+      + "config file, with the devices it has now.", null, "Stop"))) return;
+    return teamCall(() => invoke("team_leave", { space }));
+  }
+  teamCall(() => invoke("team_resolve", { space, keep: b.dataset.sact }));
 });
 
 // Every OS actually in use, plus anything already overridden.
@@ -582,8 +707,8 @@ async function setColor(os, hex) {
   } catch (err) { showErr(setErr, String(err)); }
 }
 
-for (const n of ["use_ssh", "use_rdp", "use_web"]) {
-  jackForm.elements[n].addEventListener("change", jackFields);
+for (const r of jackForm.querySelectorAll('[name="reach"]')) {
+  r.addEventListener("change", jackFields);
 }
 
 // ── url scheme + folders ───────────────────────────────────────────────────
@@ -600,10 +725,15 @@ $("url-scheme").addEventListener("click", () =>
 // Suggestions are a plain datalist, same as the OS field. What you have entered
 // is shown underneath as paths, so nesting is legible without a popup panel.
 function renderFolderSuggestions() {
-  const used = [...new Set(all.flatMap((j) => j.folders))].sort();
+  // A folder only means anything inside its own space, so only that space's names
+  // are worth suggesting.
+  const here = all.filter((j) => (j.space ?? null) === (jackForm.elements.space.value || null));
+  const used = [...new Set(here.flatMap((j) => j.folders))].sort();
   $("folderlist").innerHTML = used.map((f) => `<option value="${esc(f)}">`).join("");
   renderCrumbs();
 }
+
+jackForm.elements.space.addEventListener("change", renderFolderSuggestions);
 
 const enteredFolders = () =>
   jackForm.elements.folders.value.split(",").map((x) => x.trim()).filter(Boolean);

@@ -5,7 +5,7 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub type Jacks = IndexMap<String, Jack>;
 
@@ -24,9 +24,11 @@ pub struct Jack {
     pub url: Option<String>,
     /// Port for remote desktop. Absent means this device has none.
     pub rdp: Option<u16>,
+    /// Port for screen sharing. Handed to the system's VNC viewer, never spoken here.
+    pub vnc: Option<u16>,
     /// Absent means yes — most devices are reached over ssh.
     pub ssh: Option<bool>,
-    /// What Enter and a double-click do: "ssh" | "rdp" | "web". Absent picks the
+    /// What Enter and a double-click do: "ssh" | "rdp" | "vnc" | "web". Absent picks the
     /// first one the device actually has.
     pub primary: Option<String>,
     pub folders: Option<Vec<String>>,
@@ -35,6 +37,9 @@ pub struct Jack {
     pub tags: Option<Vec<String>>,
     pub desc: Option<String>,
     pub forward: Option<Vec<String>>,
+    /// Which space this came from — the file it was in, not a field anyone writes.
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
+    pub space: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -86,6 +91,7 @@ pub fn parse(src: &str) -> Result<Jacks, String> {
                 os: j.os.or_else(|| d.os.clone()),
                 url: j.url.or_else(|| d.url.clone()),
                 rdp: j.rdp.or(d.rdp),
+                vnc: j.vnc.or(d.vnc),
                 ssh: j.ssh.or(d.ssh),
                 primary: j.primary.or_else(|| d.primary.clone()),
                 folders: j
@@ -95,15 +101,71 @@ pub fn parse(src: &str) -> Result<Jacks, String> {
                 tags: None,
                 desc: j.desc.or_else(|| d.desc.clone()),
                 forward: j.forward.or_else(|| d.forward.clone()),
+                space: None,
             };
             (name, merged)
         })
         .collect())
 }
 
-pub fn load(path: &std::path::Path) -> Result<Jacks, String> {
+pub fn load(path: &Path) -> Result<Jacks, String> {
     let src = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     parse(&src).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Beside the config: one file per extra space. A space *is* a config, whole.
+pub fn spaces_dir(cfg: &Path) -> PathBuf {
+    cfg.with_file_name("spaces")
+}
+
+/// Where a named space lives. `None` is the main config — that one is your own list.
+pub fn space_path(cfg: &Path, space: Option<&str>) -> PathBuf {
+    match space {
+        Some(s) => spaces_dir(cfg).join(format!("{s}.toml")),
+        None => cfg.to_path_buf(),
+    }
+}
+
+/// Every space that exists: the main config first, then `spaces/*.toml` sorted.
+/// The `.toml` test is load-bearing — a space's `.toml.base` and `.toml.bak` sit in
+/// the same directory and are not spaces.
+pub fn space_paths(cfg: &Path) -> Vec<(Option<String>, PathBuf)> {
+    let mut out = Vec::new();
+    if cfg.exists() {
+        out.push((None, cfg.to_path_buf()));
+    }
+    let Ok(dir) = std::fs::read_dir(spaces_dir(cfg)) else {
+        return out;
+    };
+    let mut spaces: Vec<(Option<String>, PathBuf)> = dir
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "toml"))
+        .filter_map(|p| Some((Some(p.file_stem()?.to_str()?.to_string()), p)))
+        .collect();
+    // read_dir is unordered, and which of two colliding names wins must not depend
+    // on the filesystem.
+    spaces.sort();
+    out.append(&mut spaces);
+    out
+}
+
+/// Every space's jacks in one map. Each file resolves on its own, so `[defaults]` in
+/// a space applies to that space's jacks and nobody else's.
+///
+/// ponytail: a name in two spaces resolves to the first one — the main config, then
+/// spaces alphabetically. Qualify as "acme:web" if two spaces ever collide in practice.
+pub fn load_all(cfg: &Path) -> Result<Jacks, String> {
+    let mut out = Jacks::new();
+    for (space, path) in space_paths(cfg) {
+        for (name, mut j) in load(&path)? {
+            if !out.contains_key(&name) {
+                j.space = space.clone();
+                out.insert(name, j);
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn spec(j: &Jack) -> String {
@@ -181,7 +243,7 @@ fn probe_port(j: &Jack) -> u16 {
     if j.ssh.unwrap_or(true) {
         return j.port.unwrap_or(22);
     }
-    if let Some(p) = j.rdp {
+    if let Some(p) = j.rdp.or(j.vnc) {
         return p;
     }
     j.url.as_deref().and_then(url_port).unwrap_or(443)
@@ -325,6 +387,11 @@ mod tests {
             ssh = false
             url = "https://10.0.0.1"
 
+            [jack.mac]
+            host = "10.0.0.30"
+            ssh = false
+            vnc = 5900
+
             [jack.both]
             host = "10.0.0.9"
             rdp = 3389
@@ -332,6 +399,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(entry("dc", &j).unwrap().1, 3389);
+        assert_eq!(entry("mac", &j).unwrap().1, 5900, "screen sharing is where it listens");
         assert_eq!(entry("nas", &j).unwrap().1, 5001);
         assert_eq!(entry("gateway", &j).unwrap().1, 443, "https with no port");
         assert_eq!(entry("both", &j).unwrap().1, 22, "ssh is still the way in when it has it");
@@ -423,5 +491,44 @@ mod tests {
     fn jacks_keep_file_order() {
         let j = fixture();
         assert_eq!(j.keys().take(3).map(|s| s.as_str()).collect::<Vec<_>>(), ["bastion", "web", "db"]);
+    }
+
+    #[test]
+    fn every_space_loads_the_main_config_wins_a_collision_and_defaults_stay_put() {
+        // Mirrors the TypeScript test of the same name.
+        let dir = std::env::temp_dir().join(format!("patchbay-{}-spaces", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("spaces")).unwrap();
+        let cfg = dir.join("patchbay.toml");
+        std::fs::write(&cfg, "[jack.mine]\nhost = \"h1\"\n\n[jack.both]\nhost = \"ours\"\n").unwrap();
+        std::fs::write(
+            dir.join("spaces/acme.toml"),
+            "[defaults]\nuser = \"root\"\n\n[jack.theirs]\nhost = \"h2\"\n\n[jack.both]\nhost = \"theirs\"\n",
+        )
+        .unwrap();
+        // Neither is a space: they sit beside one and end in something else.
+        std::fs::write(dir.join("spaces/acme.toml.base"), "[jack.stale]\nhost = \"old\"\n").unwrap();
+        std::fs::write(dir.join("spaces/acme.toml.bak"), "[jack.older]\nhost = \"older\"\n").unwrap();
+
+        let all = load_all(&cfg).unwrap();
+        let mut names: Vec<&String> = all.keys().collect();
+        names.sort();
+        assert_eq!(names, ["both", "mine", "theirs"]);
+        assert_eq!(all["mine"].space, None);
+        assert_eq!(all["theirs"].space.as_deref(), Some("acme"));
+        assert_eq!(all["both"].host, "ours");
+        // A space's [defaults] are that space's, not everyone's.
+        assert_eq!(all["theirs"].user.as_deref(), Some("root"));
+        assert_eq!(all["mine"].user, None);
+    }
+
+    #[test]
+    fn no_spaces_directory_is_not_an_error() {
+        let dir = std::env::temp_dir().join(format!("patchbay-{}-nospaces", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("patchbay.toml");
+        std::fs::write(&cfg, "[jack.a]\nhost = \"h1\"\n").unwrap();
+        assert_eq!(load_all(&cfg).unwrap().keys().collect::<Vec<_>>(), ["a"]);
     }
 }

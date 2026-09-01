@@ -23,29 +23,38 @@ if (isMac) document.body.dataset.os = "macos";
 // Shortcut labels: ⌘K on macOS, Ctrl+K everywhere else. The handler already accepts both.
 const chord = (k) => (isMac ? `⌘${k.toUpperCase()}` : `Ctrl+${k.toUpperCase()}`);
 
+// Anything keyed by a folder needs the space too — two spaces can both have a "prod".
+// Sets and Maps only; the space and path travel to Rust separately, never as this.
+const gkey = (g) => (g ? `${g.space ?? ""}\u0000${g.path ?? ""}` : "");
+const sameGroup = (a, b) => gkey(a) === gkey(b);
+
 let all = [];                 // every jack, in file order
 let shown = [];               // what the middle column currently lists
 let probes = new Map();       // name -> { target, ms }
-let group = null;             // selected tag path, null = all
-let expanded = new Set();     // open tag paths
+// The selected row: { space, path }. `path` null is a whole space, and `group`
+// itself null is every jack in every space.
+let group = null;
+let expanded = new Set();     // open rows, by gkey
 let sel = 0;
 let palSel = 0;
 let editing = null;   // jack name being edited, or null when adding
+let editingSpace = null;      // which space's file that save lands in
 // Folders only exist because a jack carries the tag, so a brand-new empty one is
 // held here until something lands in it. Dropped on reload, which is honest.
-let pending = new Set();
+let pending = new Map();      // gkey -> { space, path }
 let seeded = false;           // the tree's initial expansion is a one-off
 let lastProbe = 0;            // epoch ms of the last sweep, for the throttle below
-let vpns = new Map();         // folder path -> { up, known }
-let vpnBusy = new Set();      // paths with an up/down command in flight
+let vpns = new Map();         // gkey -> { space, path, up, known }
+let vpnBusy = new Set();      // gkeys with an up/down command in flight
 let detailMode = "jack";      // what the right pane describes: "jack" or "group"
 let prefs = {};               // [settings] from the config
 let providers = [];           // VPN presets this machine can drive
 let colors = {};              // [colors] overrides, os key -> hex
 let cfgPath = "";             // where the config lives, shown on first run
+let spaces = [];              // the extra config files beside it, by name
 let sshKeys = [];             // private keys found in ~/.ssh, to suggest in the key field
 let tunnels = [];             // live ssh -L forwards holding RDP open
-let team = { state: "off" };  // last answer from team_sync
+let teams = [];               // last answer from team_sync, one per team space
 
 // The team states that need an answer from you rather than just time, and what to say
 // about each. One map, because three places ask "is the sync stuck" and a second copy
@@ -54,6 +63,7 @@ const TEAM_STUCK = {
   conflict: "Your list and the team's have both changed",
   blocked: "The team is out of seats, so your edits stay here",
   error: "The team sync is stuck on this config",
+  readonly: "You edited a read-only space, so those changes stay here",
 };
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));

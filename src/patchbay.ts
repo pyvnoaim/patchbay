@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { parse } from "smol-toml";
 
 export type Jack = {
@@ -12,6 +12,7 @@ export type Jack = {
   os?: string;
   url?: string;
   rdp?: number;
+  vnc?: number;
   ssh?: boolean;
   primary?: string;
   folders?: string[];
@@ -20,6 +21,8 @@ export type Jack = {
   tags?: string[];
   desc?: string;
   forward?: string[];
+  /** Which space this came from — the file it was in, not a field anyone writes. */
+  space?: string;
 };
 
 export type Jacks = Record<string, Jack>;
@@ -33,6 +36,32 @@ const configHome = (): string => {
 
 export const configPath = (): string =>
   process.env.PATCHBAY_CONFIG ?? join(configHome(), "patchbay", "patchbay.toml");
+
+/** Beside the config: one file per extra space. A space *is* a config, whole. */
+export const spacesDir = (cfg = configPath()): string => join(dirname(cfg), "spaces");
+
+/** Where a named space lives. No name is the main config — that one is your own list. */
+export const spacePath = (space?: string, cfg = configPath()): string =>
+  space ? join(spacesDir(cfg), `${space}.toml`) : cfg;
+
+/**
+ * Every space that exists: the main config first, then `spaces/*.toml` sorted.
+ * The `.toml` test is load-bearing — a space's `.toml.base` and `.toml.bak` sit in
+ * the same directory and are not spaces.
+ */
+export function spacePaths(cfg = configPath()): [string | undefined, string][] {
+  const out: [string | undefined, string][] = existsSync(cfg) ? [[undefined, cfg]] : [];
+  let names: string[];
+  try {
+    names = readdirSync(spacesDir(cfg));
+  } catch {
+    return out;
+  }
+  for (const f of names.filter((n) => n.endsWith(".toml")).sort()) {
+    out.push([f.slice(0, -".toml".length), join(spacesDir(cfg), f)]);
+  }
+  return out;
+}
 
 const expand = (p: string) => (p.startsWith("~") ? homedir() + p.slice(1) : p);
 
@@ -54,6 +83,23 @@ export function load(path = configPath()): Jacks {
   return Object.fromEntries(
     Object.entries(raw.jack ?? {}).map(([name, j]) => [name, { ...defaults, ...folders(j) }]),
   );
+}
+
+/**
+ * Every space's jacks in one map. Each file resolves on its own, so `[defaults]` in
+ * a space applies to that space's jacks and nobody else's.
+ *
+ * ponytail: a name in two spaces resolves to the first one — the main config, then
+ * spaces alphabetically. Qualify as "acme:web" if two spaces ever collide in practice.
+ */
+export function loadAll(cfg = configPath()): Jacks {
+  const out: Jacks = {};
+  for (const [space, path] of spacePaths(cfg)) {
+    for (const [name, j] of Object.entries(load(path))) {
+      if (!(name in out)) out[name] = space ? { ...j, space } : j;
+    }
+  }
+  return out;
 }
 
 const spec = (j: Jack) => `${j.user ? j.user + "@" : ""}${j.host}`;

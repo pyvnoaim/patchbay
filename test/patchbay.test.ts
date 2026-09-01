@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { configPath, load, resolve, sshArgs, type Jacks } from "../src/patchbay.ts";
+import { configPath, load, loadAll, resolve, sshArgs, type Jacks } from "../src/patchbay.ts";
 
 const jacks: Jacks = {
   bastion: { host: "bastion.example", user: "jump", port: 2222 },
@@ -102,4 +102,38 @@ test("a jack's own `tags` beats `folders` inherited from [defaults]", () => {
   writeFileSync(path, `[defaults]\nfolders = ["inherited"]\n\n[jack.a]\nhost = "h1"\ntags = ["mine"]\n`);
   // Mirrors the Rust test of the same name — the two disagreed here once.
   assert.deepEqual(load(path).a!.folders, ["mine"]);
+});
+
+test("every space loads, the main config wins a collision, and [defaults] stay put", () => {
+  // Mirrors the Rust test of the same name.
+  const dir = join(tmpdir(), `patchbay-spaces-${process.pid}`);
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(join(dir, "spaces"), { recursive: true });
+  const cfg = join(dir, "patchbay.toml");
+  writeFileSync(cfg, `[jack.mine]\nhost = "h1"\n\n[jack.both]\nhost = "ours"\n`);
+  writeFileSync(
+    join(dir, "spaces", "acme.toml"),
+    `[defaults]\nuser = "root"\n\n[jack.theirs]\nhost = "h2"\n\n[jack.both]\nhost = "theirs"\n`,
+  );
+  // Neither is a space: they sit beside one and end in something else.
+  writeFileSync(join(dir, "spaces", "acme.toml.base"), `[jack.stale]\nhost = "old"\n`);
+  writeFileSync(join(dir, "spaces", "acme.toml.bak"), `[jack.older]\nhost = "older"\n`);
+
+  const all = loadAll(cfg);
+  assert.deepEqual(Object.keys(all).sort(), ["both", "mine", "theirs"]);
+  assert.equal(all.mine!.space, undefined);
+  assert.equal(all.theirs!.space, "acme");
+  assert.equal(all.both!.host, "ours");
+  // A space's [defaults] are that space's, not everyone's.
+  assert.equal(all.theirs!.user, "root");
+  assert.equal(all.mine!.user, undefined);
+});
+
+test("no spaces directory is not an error", () => {
+  const dir = join(tmpdir(), `patchbay-nospaces-${process.pid}`);
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  const cfg = join(dir, "patchbay.toml");
+  writeFileSync(cfg, `[jack.a]\nhost = "h1"\n`);
+  assert.deepEqual(Object.keys(loadAll(cfg)), ["a"]);
 });

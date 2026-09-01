@@ -5,22 +5,24 @@
 // ── events ─────────────────────────────────────────────────────────────────
 searchBtn.addEventListener("click", () => openPalette());
 $("newjack").addEventListener("click", () => openJack(null, group));
-$("newgroup").addEventListener("click", () => newGroup(null));
+$("newgroup").addEventListener("click", () => newGroup({ space: group?.space ?? null, path: null }));
+$("newspace").addEventListener("click", () => newSpace());
 $("editcfg").addEventListener("click", () => invoke("open_config"));
 $("settings").addEventListener("click", openSettings);
 
 treeEl.addEventListener("click", (e) => {
-  const sw = e.target.closest("[data-vpn]");
-  if (sw) { e.stopPropagation(); return toggleVpn(sw.dataset.vpn); }
   const el = e.target.closest(".group");
   if (!el) return;
-  const path = el.dataset.path || null;
+  // "All jacks" carries no group of its own; every other row does.
+  const id = el.dataset.group ? { space: el.dataset.space || null, path: el.dataset.path || null } : null;
+  if (e.target.closest("[data-vpn]")) { e.stopPropagation(); return toggleVpn(id); }
   // Clicking the triangle folds; clicking the row selects.
-  if (e.target.closest(".twist") && el.dataset.hasKids === "true") {
-    expanded.has(path) ? expanded.delete(path) : expanded.add(path);
+  const foldable = el.dataset.hasKids === "true";
+  if (e.target.closest(".twist") && foldable) {
+    expanded.has(gkey(id)) ? expanded.delete(gkey(id)) : expanded.add(gkey(id));
   } else {
-    group = path;
-    if (el.dataset.hasKids === "true") expanded.add(path);
+    group = id;
+    if (foldable) expanded.add(gkey(id));
     sel = 0;
     detailMode = "group";   // the pane describes the folder, not its first device
   }
@@ -59,6 +61,8 @@ detailPane.addEventListener("click", async (e) => {
   if (act === "disconnect") closeSession(activeId);
   if (act === "web") openWeb(j.name);
   if (act === "rdp") openRdp(j.name);
+  if (act === "vnc") openVnc(j.name);
+  if (act === "files") openFilesSession(j.name);
   if (act === "untunnel") {
     for (const t of tunnels.filter((x) => x.jack === j.name)) await invoke("close_tunnel", { id: t.id });
     refreshTunnels();
@@ -125,7 +129,7 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "ArrowUp" || (e.ctrlKey && e.key === "p")) { e.preventDefault(); move(-1); }
   else if (e.key === "Enter" && shown[sel]) { e.preventDefault(); primary(shown[sel].name); }
   else if (e.key === "Escape") { group = null; sel = 0; render(); }
-  else if (shown[sel] && (e.key === "Backspace" || e.key === "Delete")) { e.preventDefault(); removeJack(shown[sel].name); }
+  else if (shown[sel] && (e.key === "Backspace" || e.key === "Delete")) { e.preventDefault(); removeJack(shown[sel].name, shown[sel].space ?? null); }
   else if (mod && e.key === "e") { e.preventDefault(); invoke("open_config"); }
   else if (mod && e.key === "r") { e.preventDefault(); load(); }
   // Just start typing, like fzf — the palette opens carrying the keystroke.
@@ -141,12 +145,17 @@ async function load() {
     if (!sshKeys.length) sshKeys = await invoke("ssh_keys").catch(() => []);
     colors = await invoke("colors").catch(() => ({}));
     cfgPath = await invoke("config_path").catch(() => "");
+    spaces = await invoke("spaces").catch(() => []);
     tunnels = await invoke("tunnels").catch(() => []);
     all = await invoke("jacks");
     // Open the first level once, on the first load only — doing it every time
     // would re-open folders the moment the window regains focus.
     if (!seeded) {
-      for (const j of all) for (const f of j.folders) expanded.add(f.split("/")[0]);
+      for (const j of all) {
+        const space = j.space ?? null;
+        expanded.add(gkey({ space, path: null }));
+        for (const f of j.folders) expanded.add(gkey({ space, path: f.split("/")[0] }));
+      }
       seeded = true;
     }
     render();
@@ -163,27 +172,41 @@ async function load() {
 /// a team server that has gone away must not hold the list up for a timeout, and with
 /// no team configured this returns without touching the network at all.
 async function syncTeam() {
-  team = await invoke("team_sync").catch((e) => ({ state: "offline", error: String(e) }));
+  teams = await invoke("team_sync").catch(() => []);
   renderTeam();
-  // A pull rewrote the config under whatever just read it. One reload, and the next
+  // A pull rewrote a space under whatever just read it. One reload, and the next
   // sync says nothing changed, so this can't loop.
-  if (team.changed) return load();
+  if (teams.some((t) => t.changed)) return load();
   render();
 }
 
 const PROBE_EVERY = 30_000;
-async function toggleVpn(path) {
-  const v = vpns.get(path);
-  if (!v || vpnBusy.has(path)) return;
-  vpnBusy.add(path);
+async function toggleVpn(id) {
+  const key = gkey(id);
+  const v = vpns.get(key);
+  if (!v || vpnBusy.has(key)) return;
+
+  // A [vpn] block runs shell commands, and since teams they arrive from colleagues
+  // on their own. Nothing runs until someone here has read it — asked on first sight
+  // and again whenever the command changes, never trusted just because it is present.
+  try {
+    const unread = await invoke("vpn_pending", { ...id });
+    if (unread) {
+      const ok = await ask(`${id.path} would run:\n\n${unread}\n\nRun it?`, null, "Run");
+      if (!ok) return;
+      await invoke("vpn_approve", { ...id });
+    }
+  } catch (e) { return alertish(e); }
+
+  vpnBusy.add(key);
   renderTree();
   try {
-    await invoke("vpn_toggle", { path, on: !v.up });
-    vpns.set(path, { ...v, up: !v.up });
+    await invoke("vpn_toggle", { ...id, on: !v.up });
+    vpns.set(key, { ...v, up: !v.up });
   } catch (e) {
     alertish(e);
   } finally {
-    vpnBusy.delete(path);
+    vpnBusy.delete(key);
     renderTree();
     refreshVpns();
   }
@@ -191,7 +214,7 @@ async function toggleVpn(path) {
 
 async function refreshVpns() {
   try {
-    vpns = new Map((await invoke("vpns")).map((v) => [v.path, v]));
+    vpns = new Map((await invoke("vpns")).map((v) => [gkey({ space: v.space ?? null, path: v.path }), v]));
     renderTree();
   } catch { /* no [vpn] section is the normal case */ }
 }
@@ -219,19 +242,27 @@ window.addEventListener("focus", load);
 // a sheet clips a ::after tooltip, which is how this started.
 const tipEl = $("tip");
 let tipTimer = null;
+let tipFor = null;
 
 function hideTip() {
   clearTimeout(tipTimer);
+  tipFor = null;
   tipEl.classList.remove("on");
 }
 
 document.addEventListener("mouseover", (e) => {
   const el = e.target.closest("[data-tip]");
   if (!el || !el.dataset.tip) return hideTip();
+  // Crossing from the icon to the button's own padding is another `mouseover` for
+  // the same control, not a new tooltip.
+  if (el === tipFor) return;
   clearTimeout(tipTimer);
+  // Once one is up, the next follows the pointer straight away: a wait between two
+  // adjacent buttons reads as a flicker rather than as patience.
+  const wait = tipEl.classList.contains("on") ? 0 : 150;
+  tipFor = el;
   tipTimer = setTimeout(() => {
     tipEl.textContent = el.dataset.tip;
-    tipEl.classList.add("on");
     const t = el.getBoundingClientRect();
     const r = tipEl.getBoundingClientRect();
     const gap = 7;
@@ -242,12 +273,35 @@ document.addEventListener("mouseover", (e) => {
     const at = el.dataset.tipAt;
     let left = at === "left" ? t.left : at === "right" ? t.right - r.width : t.left + (t.width - r.width) / 2;
     left = Math.max(6, Math.min(left, innerWidth - r.width - 6));
+    const top = below ? t.bottom + gap : t.top - r.height - gap;
+
+    // A web tab is an OS-level view above the page, so a tooltip landing on it is
+    // simply not drawn — an invisible element that still thinks it's showing. Flip to
+    // the other side if that side is clear, and otherwise don't pretend: every tooltip
+    // that can land there labels a control you can already see.
+    const web = webViewRect();
+    const hits = (y) => web && t.left < web.right && t.left + r.width > web.left
+      && y < web.bottom && y + r.height > web.top;
+    let y = top;
+    if (hits(y)) {
+      const flipped = below ? t.top - r.height - gap : t.bottom + gap;
+      if (hits(flipped) || flipped < 4) return hideTip();
+      y = flipped;
+    }
+    // Placed before it is shown: made visible first, it paints one frame wherever the
+    // last tooltip was.
     tipEl.style.left = `${Math.round(left)}px`;
-    tipEl.style.top = `${Math.round(below ? t.bottom + gap : t.top - r.height - gap)}px`;
+    tipEl.style.top = `${Math.round(y)}px`;
+    tipEl.classList.add("on");
     // Long enough not to flash at everything the pointer crosses on the way somewhere,
     // short enough that stopping on a button feels answered rather than waited on.
-  }, 150);
+  }, wait);
 });
-document.addEventListener("mouseout", (e) => { if (e.target.closest("[data-tip]")) hideTip(); });
+// Only when the pointer actually leaves the control — `mouseout` also fires on the way
+// from a button's icon to its padding, and hiding there is the flicker.
+document.addEventListener("mouseout", (e) => {
+  const el = e.target.closest("[data-tip]");
+  if (el && !el.contains(e.relatedTarget)) hideTip();
+});
 document.addEventListener("mousedown", hideTip);
 addEventListener("blur", hideTip);

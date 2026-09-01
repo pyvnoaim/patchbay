@@ -5,3 +5,12 @@ server/target/
 server/*.db*
 src-tauri/rdp-frame.ppm
 dev/rdp_known_hosts
+
+# Your own devices. dev.mjs seeds it from dev/patchbay.example.toml.
+dev/patchbay.toml
+dev/team.toml
+dev/vpn_approved
+dev/web_trusted
+dev/patchbay.toml.bak
+dev/patchbay.toml.base
+dev/spaces/

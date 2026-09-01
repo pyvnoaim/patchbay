@@ -232,9 +232,16 @@ button.primary:hover { filter: brightness(1.1); }
 button.ghost { flex: none; }
 
 /* ── palette ───────────────────────────────────────────────── */
+/* Every overlay dims *and* blurs what's behind it — dimming alone leaves the device
+   list legible through the sheet, which reads as two things competing for attention
+   rather than one on top of the other. Listed together so a new overlay inherits it. */
+#palette, #sheetwrap, #askwrap, #vpnwrap, #importwrap, #setwrap {
+  background: rgba(0,0,0,.34);
+  backdrop-filter: blur(6px) saturate(.9);
+  -webkit-backdrop-filter: blur(6px) saturate(.9);
+}
 #palette {
   position: fixed; inset: 0; z-index: 10;
-  background: rgba(0,0,0,.34);
   display: flex; justify-content: center; padding-top: 14vh;
 }
 /* An id selector outranks the UA's [hidden] rule, so hidden needs saying again here. */
@@ -292,7 +299,6 @@ button.flat:hover { background: var(--row-hover); color: var(--fg); }
    <body>, escaping the window and stretching the layout behind it. */
 #sheetwrap, #askwrap, #vpnwrap, #importwrap {
   position: fixed; inset: 0; z-index: 20;
-  background: rgba(0,0,0,.34);
   display: flex; justify-content: center; align-items: center;
   padding: 5vh 16px;   /* keeps a tall sheet off the window edges */
 }
@@ -307,6 +313,13 @@ button.flat:hover { background: var(--row-hover); color: var(--fg); }
 .sheet-head {
   padding: 13px 16px; border-bottom: 1px solid var(--line);
   font-size: 14px; font-weight: 620; letter-spacing: -.01em;
+}
+/* An ask can carry a command for the user to read before it runs, and a command that
+   silently lost its line breaks is one nobody checks. Monospace only for that body. */
+#ask-title { white-space: pre-line; }
+#ask-title .cmd {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 11.5px; font-weight: 450;
 }
 .sheet-body {
   padding: 14px 16px; overflow-y: auto; scrollbar-width: thin;
@@ -344,6 +357,9 @@ button.flat:hover { background: var(--row-hover); color: var(--fg); }
   background: color-mix(in srgb, var(--down) 16%, transparent);
   color: var(--down); font-size: 12px;
 }
+/* A settings pane indents its own contents, so the sheet's inset would put the
+   message to the right of the fields it is about. */
+.pane .sheet-err { margin: 12px 0 0; }
 .sheet-foot {
   display: flex; align-items: center; gap: 7px;
   padding: 11px 16px; border-top: 1px solid var(--line);
@@ -398,7 +414,7 @@ button.ghost.danger { color: var(--down); }
 button:disabled { opacity: .5; }
 
 /* Settings + option rows. */
-#setwrap { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.34);
+#setwrap { position: fixed; inset: 0; z-index: 20;
            display: flex; justify-content: center; align-items: center; padding: 5vh 16px; }
 /* The desktop keeps its aspect ratio and sits on black, the way every remote
    desktop client letterboxes a session that doesn't match the window. */
@@ -406,26 +422,58 @@ button:disabled { opacity: .5; }
    and this div exists only to be measured. The padding the terminal wants would put
    the page off-centre from its own tab, so it goes. */
 .webhost { padding: 0; background: var(--bg); }
-/* Shown in place of the webview when the page won't load — a blank pane explains
-   nothing, and this is the only chance to say what went wrong. */
-.webfail {
+/* Shown in place of a tab that can't show what it was opened for — a blank pane
+   explains nothing, and this is the only chance to say what went wrong. */
+.panefail {
   max-width: 460px; margin: 0 auto; padding: 18vh 20px 0;
   display: flex; flex-direction: column; gap: 10px;
 }
-.webfail .why { margin: 0; font-size: 13px; line-height: 1.5; color: var(--fg); }
-.webfail .fix { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--fg-dim); }
-.webfail .btns { justify-content: flex-start; }
+/* ssh writes its errors in lines, so keep them. */
+.panefail .why { margin: 0; font-size: 13px; line-height: 1.5; color: var(--fg); white-space: pre-wrap; }
+.panefail .fix { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--fg-dim); }
+.panefail .btns { justify-content: flex-start; }
+/* sftp browser. Ordinary HTML in our own webview, so it inherits everything. */
+.filehost { padding: 0; overflow: hidden; }
+.files { display: flex; flex-direction: column; height: 100%; }
+.fpath {
+  display: flex; align-items: center; gap: 8px; flex: none;
+  padding: 8px 10px; border-bottom: 1px solid var(--line);
+}
+.fpath .flat .i { transform: rotate(180deg); }
+.fpath .mono { background: none; padding: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.fnote { flex: none; color: var(--fg-dim); font-size: 11.5px; }
+.fnote.bad { color: var(--down); }
+.fhint { display: flex; align-items: center; gap: 5px; flex: none; color: var(--fg-faint); font-size: 11.5px; }
+.fhint .i { width: 12px; height: 12px; }
+.flist { flex: 1; overflow-y: auto; padding: 6px; scrollbar-width: thin; }
+.frow {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: 6px; font-size: 12.5px; white-space: nowrap;
+}
+.frow:hover { background: var(--row-hover); }
+.frow .i { color: var(--fg-faint); }
+.frow[data-dir="true"] .i { color: var(--accent); }
+.frow .fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.frow .fsize, .frow .fwhen {
+  flex: none; color: var(--fg-faint); font-size: 11.5px; font-variant-numeric: tabular-nums;
+}
+.frow .fsize { width: 70px; text-align: right; }
+.frow .fwhen { width: 96px; text-align: right; }
+.fempty { margin: 0; padding: 18px 14px; color: var(--fg-dim); font-size: 12.5px; line-height: 1.5; }
+.fempty b { color: var(--fg); font-weight: 550; }
+.flist .btns { padding: 0 14px; }
+.files .loading { padding: 18px 14px; color: var(--fg-dim); font-size: 12.5px; }
 .rdphost { display: grid; place-items: center; background: #000; overflow: hidden; }
 .rdphost canvas { max-width: 100%; max-height: 100%; outline: none; }
 .tabkind { display: inline-flex; opacity: .55; }
 .tabkind svg { width: 12px; height: 12px; }
 
 /* ── settings: a nav rail, not one long scroll ─────────────── */
-.sheet.set { width: min(720px, 92vw); }
+.sheet.set { width: min(860px, 94vw); max-height: 88vh; }
 /* The scroll lives on the panes, so the rail stays put while a pane moves. */
 .sheet.set .sheet-body { display: flex; padding: 0; overflow: hidden; }
 .setnav {
-  width: 164px; flex: none; display: flex; flex-direction: column; gap: 2px;
+  width: 176px; flex: none; display: flex; flex-direction: column; gap: 2px;
   padding: 12px 10px; border-right: 1px solid var(--line);
 }
 .setnav button {
@@ -439,7 +487,7 @@ button:disabled { opacity: .5; }
 .setnav button.warn { color: var(--down); }
 /* A floor, so the sheet doesn't jump size as you move between a short pane and a
    tall one — the rail would move under the cursor that just clicked it. */
-.setpanes { flex: 1; min-width: 0; min-height: 300px; padding: 14px 16px; overflow-y: auto; scrollbar-width: thin; }
+.setpanes { flex: 1; min-width: 0; min-height: 420px; padding: 16px 20px; overflow-y: auto; scrollbar-width: thin; }
 /* The pane's own heading is its title — nothing above it to be spaced away from. */
 .pane > .d-sec:first-child { margin-top: 0; }
 /* The settings sheet is a single column, so a row of fields needs its own grid. */
@@ -466,6 +514,21 @@ button:disabled { opacity: .5; }
 .prov.on .i { color: var(--up); }
 .prov .i { width: 11px; height: 11px; }
 .page-note { margin: 2px 0 8px; font-size: 12px; line-height: 1.5; color: var(--fg-dim); }
+
+/* One block per space in the settings sheet: what it is, where it syncs, what you
+   can do about it. */
+.space-row {
+  padding: 10px 12px; margin-bottom: 8px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--row);
+}
+.space-row .space-name {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13px; font-weight: 550; color: var(--fg);
+}
+.space-row .space-name .i { width: 14px; height: 14px; color: var(--fg-dim); }
+.space-row .space-note { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--fg-dim); }
+.space-row .mono { margin-top: 6px; }
+.space-row .btns { margin-top: 8px; }
 
 /* Tooltips. Native `title` is unreliable in a webview, and a ::after tooltip
    cannot escape an overflow:hidden ancestor — inside a sheet it gets clipped.
@@ -511,15 +574,19 @@ button:disabled { opacity: .5; }
 .firstrun .btns { justify-content: center; }
 
 /* "How do you reach it?" — the form only shows the fields that answer follows. */
+/* The question on its own line and the options as one wrapping row beneath. Inline,
+   the label ate the width of one option and pushed the last one onto a second line by
+   itself, which read as a separate question. */
 .how {
-  grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  grid-column: 1 / -1; display: flex; flex-direction: column; align-items: stretch; gap: 7px;
   padding-bottom: 10px; margin-bottom: 2px; border-bottom: 1px solid var(--line);
 }
-.how-q { font-size: 11px; color: var(--fg-faint); font-weight: 550; margin-right: 2px; }
+.how-q { font-size: 11px; color: var(--fg-faint); font-weight: 550; }
+.how-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .how-opt {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 10px; border-radius: 20px;
-  background: var(--row); color: var(--fg-dim); font-size: 12px;
+  display: flex; align-items: center; gap: 6px; flex: 1 1 auto; justify-content: center;
+  padding: 5px 10px; border-radius: 20px;
+  background: var(--row); color: var(--fg-dim); font-size: 12px; white-space: nowrap;
 }
 .how-opt:hover { background: var(--row-hover); }
 .how-opt input { accent-color: var(--accent); margin: 0; }

@@ -7,6 +7,7 @@ mod patchbay;
 mod pty;
 mod rdp;
 mod rdp_session;
+mod sftp;
 mod team;
 mod terminal;
 mod vpn;
@@ -26,11 +27,14 @@ struct JackView {
     os: Option<String>,
     url: Option<String>,
     rdp: Option<u16>,
+    vnc: Option<u16>,
     ssh: bool,
     primary: String,
     desc: Option<String>,
     folders: Vec<String>,
     forward: Vec<String>,
+    /// Which space's file this came from; absent is the main config.
+    space: Option<String>,
     /// Ordered hops, first one nearest us — what the detail pane draws as the route.
     hops: Vec<String>,
     command: String,
@@ -44,14 +48,16 @@ struct Probe {
     ms: Option<u64>,
 }
 
+/// The file a space's edits go to. `None` is the main config — your own list.
+fn space_file(space: Option<&str>) -> std::path::PathBuf {
+    patchbay::space_path(&patchbay::config_path(), space)
+}
+
+/// Every space, not just the main config. No config at all is not an error in the
+/// window — it's a first run, and the UI has somewhere to put that; `space_paths`
+/// skips what isn't there. A config that exists but won't parse still is one.
 fn read() -> Result<patchbay::Jacks, String> {
-    let path = patchbay::config_path();
-    // No config is not an error in the window — it's a first run, and the UI has
-    // somewhere to put that. A config that exists but won't parse still is one.
-    if !path.exists() {
-        return Ok(patchbay::Jacks::new());
-    }
-    patchbay::load(&path)
+    patchbay::load_all(&patchbay::config_path())
 }
 
 #[tauri::command]
@@ -68,12 +74,17 @@ fn jacks() -> Result<Vec<JackView>, String> {
             os: j.os.clone(),
             url: j.url.clone(),
             rdp: j.rdp,
+            vnc: j.vnc,
             ssh: j.ssh.unwrap_or(true),
             // Resolved here so both the window and any future front end agree.
             primary: {
+                // "sftp" is ssh with a different default action, so it needs ssh and
+                // nothing else. Without this arm it fell through to the url test and a
+                // files-first device quietly opened a terminal instead.
                 let has = |k: &str| match k {
-                    "ssh" => j.ssh.unwrap_or(true),
+                    "ssh" | "sftp" => j.ssh.unwrap_or(true),
                     "rdp" => j.rdp.is_some(),
+                    "vnc" => j.vnc.is_some(),
                     _ => j.url.is_some(),
                 };
                 j.primary
@@ -81,12 +92,13 @@ fn jacks() -> Result<Vec<JackView>, String> {
                     .filter(|p| has(p))
                     .map(str::to_string)
                     .unwrap_or_else(|| {
-                        ["ssh", "rdp", "web"].iter().find(|k| has(k)).unwrap_or(&"ssh").to_string()
+                        ["ssh", "rdp", "vnc", "web"].iter().find(|k| has(k)).unwrap_or(&"ssh").to_string()
                     })
             },
             desc: j.desc.clone(),
             key: j.key.clone(),
             folders: j.folders.clone().unwrap_or_default(),
+            space: j.space.clone(),
             forward: j.forward.clone().unwrap_or_default(),
             hops: patchbay::hops(name, &jacks).unwrap_or_default(),
             // Shown in the detail pane, so you always see what you're about to run.
@@ -257,7 +269,12 @@ fn open_session(
     let jacks = read()?;
     let resolved = patchbay::resolve(&name, &jacks)?;
     let args = patchbay::ssh_args(&resolved, &jacks)?;
-    sessions.open(&app, id, "ssh", &args, cols.max(2), rows.max(2))?;
+    // The shell is also the connection the file browser rides: `sftp -b` cannot ask
+    // for a password, so a session here is what authenticates it. Not shown in the
+    // command line below — that is the command, not our plumbing.
+    let mux = sftp::mux(&sftp::control_path(&resolved));
+    let spawned: Vec<String> = mux.into_iter().chain(args.iter().cloned()).collect();
+    sessions.open(&app, id, "ssh", &spawned, cols.max(2), rows.max(2))?;
     Ok(terminal::command_line(&args))
 }
 
@@ -277,8 +294,8 @@ fn close_session(sessions: tauri::State<'_, pty::Shared>, id: u32) {
 }
 
 #[tauri::command]
-fn save_jack(original: Option<String>, jack: config::JackInput) -> Result<(), String> {
-    config::save_jack(original, jack)
+fn save_jack(space: Option<String>, original: Option<String>, jack: config::JackInput) -> Result<(), String> {
+    config::save_jack_at(&space_file(space.as_deref()), original, jack)
 }
 
 #[derive(Serialize)]
@@ -309,18 +326,45 @@ fn ssh_hosts() -> Result<SshHosts, String> {
 }
 
 #[tauri::command]
-fn delete_jack(name: String) -> Result<(), String> {
-    config::delete_jack(&name)
+fn delete_jack(space: Option<String>, name: String) -> Result<(), String> {
+    config::delete_jack_at(&space_file(space.as_deref()), &name)
+}
+
+/// The spaces beside the config, by name. Listed from the files rather than from the
+/// devices, so a space you just made and haven't filled yet is still there.
+#[tauri::command]
+fn spaces() -> Vec<String> {
+    patchbay::space_paths(&patchbay::config_path())
+        .into_iter()
+        .filter_map(|(space, _)| space)
+        .collect()
 }
 
 #[tauri::command]
-fn rename_group(from: String, to: String) -> Result<usize, String> {
-    config::rename_group(&from, &to)
+fn create_space(name: String) -> Result<String, String> {
+    config::create_space_at(&patchbay::config_path(), &name)
 }
 
 #[tauri::command]
-fn delete_group(path: String) -> Result<usize, String> {
-    config::delete_group(&path)
+fn delete_space(name: String) -> Result<(), String> {
+    config::delete_space_at(&patchbay::config_path(), &name)
+}
+
+/// Which file a device lives in is the one thing the jack sheet can't just write —
+/// it has to come out of one document and into another.
+#[tauri::command]
+fn move_jack(from: Option<String>, to: Option<String>, name: String) -> Result<(), String> {
+    config::move_jack_at(&space_file(from.as_deref()), &space_file(to.as_deref()), &name)
+}
+
+#[tauri::command]
+fn rename_group(space: Option<String>, from: String, to: String) -> Result<usize, String> {
+    config::rename_group_at(&space_file(space.as_deref()), &from, &to)
+}
+
+#[tauri::command]
+fn delete_group(space: Option<String>, path: String) -> Result<usize, String> {
+    config::delete_group_at(&space_file(space.as_deref()), &path)
 }
 
 /// Only http(s) may be handed to the desktop. `open`/`explorer` will happily launch
@@ -439,7 +483,16 @@ async fn open_web_view(
     height: f64,
 ) -> Result<String, String> {
     let (resolved, url) = web_url_of(&name)?;
-    let parsed = url.parse().map_err(|e| format!("\"{url}\": {e}"))?;
+    let parsed: tauri::Url = url.parse().map_err(|e| format!("\"{url}\": {e}"))?;
+    if parsed.scheme() == "http" && !parsed.host_str().is_some_and(is_private_host) {
+        // Say it and mean it: the browser is where a cleartext page on the public
+        // internet goes, and it has its own opinions to show about that.
+        os_open(url.as_ref())?;
+        return Err(format!(
+            "\"{url}\" is plain http to a public address — patchbay opens cleartext \
+             only on your own network, so it opened in your browser instead"
+        ));
+    }
     let window = app.get_window("main").ok_or("the main window has gone")?;
 
     // Deliberately no reachability check on this path. It cost a whole round trip
@@ -546,10 +599,38 @@ fn web_trust(url: String) -> Result<(), String> {
     web_trust_at(&web_trust_store(), &url)
 }
 
+/// Cleartext is for the LAN and nowhere else. The `Info.plist` exemption that lets a
+/// webview load http at all is `NSAllowsArbitraryLoadsInWebContent`, which is broader
+/// than we need — Apple offers nothing narrower that covers a bare `192.168.x.x`. So
+/// the narrowing happens here instead: patchbay itself will only open cleartext to an
+/// address that cannot be on the public internet, and a public http url goes to the
+/// browser, which has its own opinions about that.
+fn is_private_host(host: &str) -> bool {
+    use std::net::{IpAddr, Ipv4Addr};
+    let host = host.trim().trim_start_matches('[').trim_end_matches(']');
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(v4)) => {
+            v4.is_private() || v4.is_loopback() || v4.is_link_local() || v4 == Ipv4Addr::UNSPECIFIED
+        }
+        Ok(IpAddr::V6(v6)) => {
+            // Unique-local (fc00::/7) and link-local (fe80::/10), plus ::1.
+            v6.is_loopback()
+                || (v6.segments()[0] & 0xfe00) == 0xfc00
+                || (v6.segments()[0] & 0xffc0) == 0xfe80
+        }
+        // Not an address: `.local` is mDNS, and a name with no dot at all can only be
+        // resolved by something on this network.
+        Err(_) => {
+            let h = host.to_ascii_lowercase();
+            let h = h.strip_suffix('.').unwrap_or(&h);
+            h == "localhost" || h.ends_with(".local") || h.ends_with(".home.arpa") || !h.contains('.')
+        }
+    }
+}
+
 /// A device's leaf certificate, fetched without judging it — macOS does the judging,
 /// and it can't judge what it hasn't been shown. Same accept-anything verifier the RDP
 /// side needs, for the same reason: we are looking at the certificate, not trusting it.
-#[cfg(target_os = "macos")]
 fn peer_cert(url: &str) -> Result<(String, Vec<u8>), String> {
     use std::io::Write as _;
     use std::net::ToSocketAddrs as _;
@@ -588,6 +669,53 @@ fn peer_cert(url: &str) -> Result<(String, Vec<u8>), String> {
         .map(|c| c.as_ref().to_vec())
         .ok_or_else(|| format!("{host} sent no certificate"))?;
     Ok((host, der))
+}
+
+/// What the user is agreeing to trust, in the words the OS dialog would use. Nobody
+/// should be asked to trust a certificate they have not been shown — Safari puts the
+/// subject, issuer and expiry in front of you, and until this we asked for the same
+/// decision with only an error message on screen.
+#[derive(Serialize)]
+struct CertFacts {
+    subject: String,
+    issuer: String,
+    expires: String,
+    /// SHA-256 over the DER, the digest every other tool prints for a certificate.
+    fingerprint: String,
+}
+
+fn cert_facts(der: &[u8]) -> Result<CertFacts, String> {
+    use x509_cert::der::Decode as _;
+    let c = x509_cert::Certificate::from_der(der).map_err(|e| e.to_string())?;
+    let mut h = <sha2::Sha256 as sha2::Digest>::new();
+    sha2::Digest::update(&mut h, der);
+    let fingerprint = sha2::Digest::finalize(h)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(":");
+    Ok(CertFacts {
+        subject: c.tbs_certificate.subject.to_string(),
+        issuer: c.tbs_certificate.issuer.to_string(),
+        expires: c.tbs_certificate.validity.not_after.to_string(),
+        fingerprint,
+    })
+}
+
+/// Fetch and describe, without trusting anything. Split from `web_trust_cert` so the
+/// window can show the certificate and *then* ask — one round trip each, rather than
+/// one call that both reveals and commits.
+#[tauri::command]
+async fn web_cert(url: String) -> Result<serde_json::Value, String> {
+    if !is_web_url(&url) {
+        return Err("only http:// and https:// urls can be opened".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let (_, der) = peer_cert(&url)?;
+        serde_json::to_value(cert_facts(&der)?).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Hand the certificate to macOS the way the browser's "Always trust" does. `security`
@@ -640,25 +768,52 @@ async fn web_trust_cert(url: String) -> Result<(), String> {
     if !is_web_url(&url) {
         return Err("only http:// and https:// urls can be opened".into());
     }
-    #[cfg(target_os = "macos")]
-    {
-        let trusted = tauri::async_runtime::spawn_blocking(move || {
-            let (host, der) = peer_cert(&url)?;
-            trust_cert(&host, &der)?;
-            // Our own check still refuses the name — rustls judges that itself and no
-            // trust setting changes it — so record the override too, or the panel comes
-            // straight back for a page that now loads.
-            web_trust_at(&web_trust_store(), &url)
-        })
-        .await
-        .map_err(|e| e.to_string())?;
-        return trusted;
+    tauri::async_runtime::spawn_blocking(move || {
+        let (host, der) = peer_cert(&url)?;
+        trust_cert(&host, &der)?;
+        // Our own check still refuses the name — rustls judges that itself and no trust
+        // setting changes it — so record the override too, or the panel comes straight
+        // back for a page that now loads.
+        web_trust_at(&web_trust_store(), &url)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Windows keeps its own store and WebView2 reads it, so `certutil` is the local
+/// spelling of the same idea. `-user` keeps it to this account: the machine store
+/// needs an administrator and this is one person's decision about one appliance.
+///
+/// Narrower than the macOS path in one way worth knowing: Windows has no per-host
+/// "allow this name mismatch". A certificate whose name doesn't match the address is
+/// trusted as an issuer here and WebView2 may still refuse it, which is why the error
+/// says so rather than reporting a success that doesn't hold.
+#[cfg(target_os = "windows")]
+fn trust_cert(_host: &str, der: &[u8]) -> Result<(), String> {
+    let path = std::env::temp_dir().join(format!("patchbay-cert-{}.cer", std::process::id()));
+    std::fs::write(&path, der).map_err(|e| format!("{}: {e}", path.display()))?;
+    let out = std::process::Command::new("certutil")
+        .args(["-user", "-addstore", "Root"])
+        .arg(&path)
+        .output()
+        .map_err(|e| format!("could not run certutil: {e}"));
+    let _ = std::fs::remove_file(&path);
+    let out = out?;
+    if out.status.success() {
+        return Ok(());
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = url;
-        Err("trusting a certificate from here is macOS-only so far — accept it in your browser instead".into())
-    }
+    let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(match why.is_empty() {
+        true => "the certificate wasn't trusted".to_string(),
+        false => format!("the certificate wasn't trusted: {why}"),
+    })
+}
+
+/// Linux has no one store — the webview reads the system bundle, and writing to it is
+/// the distribution's business, not an app's.
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn trust_cert(_host: &str, _der: &[u8]) -> Result<(), String> {
+    Err("trusting a certificate from here isn't supported on this system — accept it in your browser instead".into())
 }
 
 fn web_trust_at(store: &Path, url: &str) -> Result<(), String> {
@@ -679,22 +834,38 @@ fn web_trust_at(store: &Path, url: &str) -> Result<(), String> {
 #[derive(Default)]
 struct VpnState(std::sync::Mutex<std::collections::HashMap<String, bool>>);
 
+/// Two spaces can each have a `prod` folder with its own VPN, so the remembered
+/// state is keyed by both. The approval store is not — its fingerprint covers the
+/// command itself, so an identical command in two spaces is the same agreement.
+fn remember_key(space: Option<&str>, path: &str) -> String {
+    format!("{}\u{0}{path}", space.unwrap_or_default())
+}
+
 #[tauri::command]
 async fn vpns(state: tauri::State<'_, std::sync::Arc<VpnState>>) -> Result<Vec<vpn::VpnView>, String> {
     let remembered = state.0.lock().unwrap().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let defs = vpn::load(&patchbay::config_path())?;
-        Ok(defs
-            .iter()
-            .map(|(path, v)| match vpn::is_up(v) {
-                Some(up) => vpn::VpnView { path: path.clone(), up, known: true },
-                None => vpn::VpnView {
-                    path: path.clone(),
-                    up: *remembered.get(path).unwrap_or(&false),
-                    known: false,
-                },
-            })
-            .collect())
+        let mut out = Vec::new();
+        for (space, file) in patchbay::space_paths(&patchbay::config_path()) {
+            for (path, v) in vpn::load(&file)? {
+                // A `check` runs on every sweep with nobody clicking anything, so an
+                // unapproved one must not run at all. Unknown is the honest answer, and
+                // the same one a VPN with no check at all gets.
+                let measured = vpn::approval::approved(&path, &v.resolve())
+                    .then(|| vpn::is_up(&v))
+                    .flatten();
+                out.push(match measured {
+                    Some(up) => vpn::VpnView { space: space.clone(), path, up, known: true },
+                    None => vpn::VpnView {
+                        up: *remembered.get(&remember_key(space.as_deref(), &path)).unwrap_or(&false),
+                        space: space.clone(),
+                        path,
+                        known: false,
+                    },
+                });
+            }
+        }
+        Ok(out)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -705,22 +876,28 @@ async fn vpns(state: tauri::State<'_, std::sync::Arc<VpnState>>) -> Result<Vec<v
 #[tauri::command]
 async fn vpn_toggle(
     state: tauri::State<'_, std::sync::Arc<VpnState>>,
+    space: Option<String>,
     path: String,
     on: bool,
 ) -> Result<(), String> {
     let handle = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let defs = vpn::load(&patchbay::config_path())?;
+        let defs = vpn::load(&space_file(space.as_deref()))?;
         let v = defs
             .get(&path)
             .ok_or_else(|| format!("no [vpn.\"{path}\"] in the config"))?;
         let r = v.resolve();
+        // The window asks first — this is the backstop, so a caller that forgets to
+        // can't run a command nobody on this machine has read.
+        if !vpn::approval::approved(&path, &r) {
+            return Err(format!("[vpn.\"{path}\"] hasn't been approved on this machine"));
+        }
         let cmd = if on { r.up } else { r.down };
         let cmd = cmd.ok_or_else(|| {
             format!("[vpn.\"{path}\"] has no `{}` command", if on { "up" } else { "down" })
         })?;
         vpn::run(&cmd)?;
-        handle.0.lock().unwrap().insert(path, on);
+        handle.0.lock().unwrap().insert(remember_key(space.as_deref(), &path), on);
         Ok(())
     })
     .await
@@ -728,8 +905,8 @@ async fn vpn_toggle(
 }
 
 #[tauri::command]
-fn save_vpn(path: String, def: vpn::Vpn) -> Result<(), String> {
-    config::save_vpn(&path, &def)
+fn save_vpn(space: Option<String>, path: String, def: vpn::Vpn) -> Result<(), String> {
+    config::save_vpn_at(&space_file(space.as_deref()), &path, &def)
 }
 
 #[derive(Serialize)]
@@ -759,9 +936,8 @@ async fn open_rdp(
     .map_err(|e| e.to_string())?
 }
 
-/// Where to dial a device for RDP, forwarding a local port over the jump chain when
-/// it sits behind one. Shared by the handoff above and the in-app session below, so
-/// both reach a bastioned host the same way.
+/// Where to dial a device for RDP. Shared by the handoff above and the in-app session
+/// below, so both reach a bastioned host the same way.
 fn rdp_address(
     shared: &rdp::SharedTunnels,
     name: &str,
@@ -770,9 +946,23 @@ fn rdp_address(
     let resolved = patchbay::resolve(name, &jacks)?;
     let j = jacks.get(&resolved).ok_or("no such device")?;
     let port = j.rdp.ok_or_else(|| format!("\"{resolved}\" has no rdp port"))?;
-    let hops = patchbay::hops(&resolved, &jacks)?;
+    let addr = dial_address(shared, &jacks, &resolved, port)?;
+    Ok((addr, resolved, j.user.clone()))
+}
 
-    let addr = if hops.is_empty() {
+/// A local address for a port ssh won't carry for us, forwarding over the jump chain
+/// when the device sits behind one. RDP and VNC both need exactly this — it is what
+/// Royal TS sells separately as Royal Server.
+fn dial_address(
+    shared: &rdp::SharedTunnels,
+    jacks: &patchbay::Jacks,
+    resolved: &str,
+    port: u16,
+) -> Result<String, String> {
+    let j = jacks.get(resolved).ok_or("no such device")?;
+    let hops = patchbay::hops(resolved, jacks)?;
+
+    Ok(if hops.is_empty() {
         format!("{}:{port}", j.host)
     } else {
         let local = rdp::free_port()?;
@@ -790,10 +980,45 @@ fn rdp_address(
         // map entry and leak the child with nothing left to kill it.
         static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
         let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        shared.open(id, &resolved, &args, local, hops.join(" → "))?;
+        shared.open(id, resolved, &args, local, hops.join(" → "))?;
         format!("127.0.0.1:{local}")
-    };
-    Ok((addr, resolved, j.user.clone()))
+    })
+}
+
+/// Screen sharing the way remote desktop is handed off: we never speak VNC, the OS
+/// opens `vnc://` with whatever viewer is registered — Screen Sharing on macOS, and
+/// on Windows or Linux whichever client claimed the scheme when it was installed.
+#[tauri::command]
+async fn open_vnc(
+    tunnels: tauri::State<'_, rdp::SharedTunnels>,
+    name: String,
+) -> Result<String, String> {
+    let shared = tunnels.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let jacks = read()?;
+        let resolved = patchbay::resolve(&name, &jacks)?;
+        let j = jacks.get(&resolved).ok_or("no such device")?;
+        let port = j.vnc.ok_or_else(|| format!("\"{resolved}\" has no vnc port"))?;
+        let url = vnc_url(&dial_address(&shared, &jacks, &resolved, port)?, j.user.as_deref())?;
+        os_open(std::ffi::OsStr::new(&url))?;
+        Ok(url)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// This goes to the desktop opener, so it is checked on the way out as well as in: an
+/// `@` or a `/` in the username would move the host the viewer dials. A name that
+/// can't be carried safely is left out rather than mangled — the viewer asks for it.
+fn vnc_url(addr: &str, user: Option<&str>) -> Result<String, String> {
+    if !rdp::is_safe(addr) || addr.contains(['/', '@', '?', '#', ' ']) {
+        return Err(format!("\"{addr}\" isn't a usable address"));
+    }
+    let ok = |u: &&str| u.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
+    Ok(match user.map(str::trim).filter(|u| !u.is_empty()).filter(ok) {
+        Some(u) => format!("vnc://{u}@{addr}"),
+        None => format!("vnc://{addr}"),
+    })
 }
 
 /// `DOMAIN\user` is how Windows people write a domain login, but RDP wants the two
@@ -954,58 +1179,152 @@ async fn vpn_providers() -> Vec<vpn::Provider> {
 }
 
 #[tauri::command]
-fn delete_vpn(path: String) -> Result<(), String> {
-    config::delete_vpn(&path)
+fn delete_vpn(space: Option<String>, path: String) -> Result<(), String> {
+    config::delete_vpn_at(&space_file(space.as_deref()), &path)
 }
 
 /// The raw definition, for the edit sheet — `vpns` returns live state instead.
+/// The commands this folder's VPN would run, if they still need someone's eyes on
+/// them. `None` means approved already and the toggle can just go.
 #[tauri::command]
-fn vpn_def(path: String) -> Result<Option<vpn::Vpn>, String> {
-    Ok(vpn::load(&patchbay::config_path())?.get(&path).cloned())
+fn vpn_pending(space: Option<String>, path: String) -> Result<Option<String>, String> {
+    let defs = vpn::load(&space_file(space.as_deref()))?;
+    let Some(v) = defs.get(&path) else { return Ok(None) };
+    let r = v.resolve();
+    Ok((!vpn::approval::approved(&path, &r)).then(|| vpn::approval::describe(&r)))
 }
 
-/// One call for the whole loop — fetch, then push or adopt, whichever applies. The
-/// window runs it on focus and after every edit; with no team it returns immediately
-/// and touches nothing.
+/// Approve exactly what `vpn_pending` returned. Re-resolved here rather than taking
+/// the text from the window, so what gets recorded is what will actually run.
 #[tauri::command]
-async fn team_sync() -> team::Status {
+fn vpn_approve(space: Option<String>, path: String) -> Result<(), String> {
+    let defs = vpn::load(&space_file(space.as_deref()))?;
+    let v = defs
+        .get(&path)
+        .ok_or_else(|| format!("no [vpn.\"{path}\"] in the config"))?;
+    vpn::approval::approve(&path, &v.resolve())
+}
+
+#[tauri::command]
+fn vpn_def(space: Option<String>, path: String) -> Result<Option<vpn::Vpn>, String> {
+    Ok(vpn::load(&space_file(space.as_deref()))?.get(&path).cloned())
+}
+
+/// One call for the whole loop — every team space fetched, then pushed or adopted,
+/// whichever applies. The window runs it on focus and after every edit; with no team
+/// spaces it returns an empty list and touches nothing.
+#[tauri::command]
+async fn team_sync() -> Vec<team::Status> {
     tauri::async_runtime::spawn_blocking(team::sync)
         .await
-        .unwrap_or_else(|e| team::Status {
-            state: "offline",
-            url: String::new(),
-            code: String::new(),
-            seats: 0,
-            paid: false,
-            error: Some(e.to_string()),
-            changed: false,
-        })
+        .unwrap_or_default()
 }
 
 #[tauri::command]
-async fn team_join(url: String, code: String) -> Result<team::Status, String> {
-    tauri::async_runtime::spawn_blocking(move || team::join(&url, &code))
+async fn team_join(name: String, url: String, code: String) -> Result<team::Status, String> {
+    tauri::async_runtime::spawn_blocking(move || team::join(&name, &url, &code))
         .await
         .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-async fn team_create(url: String) -> Result<team::Status, String> {
-    tauri::async_runtime::spawn_blocking(move || team::create(&url))
+async fn team_create(space: String, url: String) -> Result<team::Status, String> {
+    tauri::async_runtime::spawn_blocking(move || team::create(&space, &url))
         .await
         .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-async fn team_resolve(keep: String) -> Result<team::Status, String> {
-    tauri::async_runtime::spawn_blocking(move || team::resolve(&keep))
+async fn team_resolve(space: String, keep: String) -> Result<team::Status, String> {
+    tauri::async_runtime::spawn_blocking(move || team::resolve(&space, &keep))
         .await
         .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn team_leave() -> Result<(), String> {
-    team::leave()
+fn team_leave(space: String) -> Result<(), String> {
+    team::leave(&space)
+}
+
+/// Files over the existing connection. Each call is its own `sftp` run, sharing one
+/// ssh session through multiplexing — see `sftp.rs`.
+#[tauri::command]
+async fn sftp_ls(name: String, path: String) -> Result<sftp::Listing, String> {
+    tauri::async_runtime::spawn_blocking(move || sftp::ls(&name, &path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Returns where it landed, so the window can say so rather than claiming success and
+/// leaving the user to guess which folder.
+#[tauri::command]
+async fn sftp_get(name: String, remote: String, recurse: bool) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        sftp::get(&name, &remote, &sftp::downloads(), recurse).map(|p| p.display().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The connection a files tab rides when nothing else has authenticated one yet:
+/// `ssh -N` on a real pty, so a password, a host-key question or a key passphrase can
+/// be answered in the tab itself rather than in a shell opened somewhere else. It runs
+/// no command — its whole job is to be the master the `sftp` calls share, which is why
+/// there is nothing to offer on Windows, where ssh has no multiplexing.
+#[tauri::command]
+fn open_master(
+    app: tauri::AppHandle,
+    sessions: tauri::State<'_, pty::Shared>,
+    id: u32,
+    name: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let _ = (app, sessions, id, name, cols, rows);
+        return Err("ssh on Windows can't share a connection, so files need a key or your agent".into());
+    }
+    #[cfg(not(windows))]
+    {
+        let jacks = read()?;
+        let resolved = patchbay::resolve(&name, &jacks)?;
+        let args = without_forwards(patchbay::ssh_args(&resolved, &jacks)?);
+        // -N first: everything after the destination would be a remote command.
+        let mut spawned = vec!["-N".to_string()];
+        spawned.extend(sftp::mux(&sftp::control_path(&resolved)));
+        spawned.extend(args);
+        sessions.open(&app, id, "ssh", &spawned, cols.max(2), rows.max(2))
+    }
+}
+
+/// The Full Disk Access panel, for the case the file browser can name but not fix:
+/// macOS hands `sftp-server` an empty Desktop, Documents or Downloads until it is
+/// listed there. A fixed url, so nothing from a config reaches the opener.
+#[tauri::command]
+fn open_full_disk_access() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    return os_open(std::ffi::OsStr::new(
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+    ));
+    #[cfg(not(target_os = "macos"))]
+    Err("that setting is a macOS one".into())
+}
+
+/// Polled by a files tab waiting on a shell to authenticate. A `stat`, not a
+/// connection — asking by trying would be a failed login attempt every second.
+#[tauri::command]
+fn sftp_ready(name: String) -> Result<bool, String> {
+    sftp::ready(&name)
+}
+
+#[tauri::command]
+async fn sftp_put(name: String, local: String, remote_dir: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        sftp::put(&name, std::path::Path::new(&local), &remote_dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1035,6 +1354,45 @@ fn main() {
                 // bright desktop. This is the material Finder and Mail use.
                 let _ = apply_vibrancy(&w, NSVisualEffectMaterial::Sidebar, None, Some(12.0));
             }
+            // The default menu bar, minus Close Window. ⌘W belongs to the tab strip,
+            // and a menu accelerator is a native key equivalent — macOS closed the
+            // window before the page was ever asked, so the handler in boot.js never
+            // ran and the whole app went with the tab. Spelled out rather than filtered
+            // out of `Menu::default`, because a predefined item's id is a counter and
+            // there is nothing but its English label to recognise it by. Edit is here
+            // for its own sake: without it ⌘C and ⌘V stop working in the webview.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{MenuBuilder, SubmenuBuilder};
+                let h = app.handle();
+                let about = SubmenuBuilder::new(h, "patchbay")
+                    .about(None)
+                    .separator()
+                    .services()
+                    .separator()
+                    .hide()
+                    .hide_others()
+                    .show_all()
+                    .separator()
+                    .quit()
+                    .build()?;
+                let edit = SubmenuBuilder::new(h, "Edit")
+                    .undo()
+                    .redo()
+                    .separator()
+                    .cut()
+                    .copy()
+                    .paste()
+                    .select_all()
+                    .build()?;
+                let window = SubmenuBuilder::new(h, "Window")
+                    .minimize()
+                    .maximize()
+                    .separator()
+                    .fullscreen()
+                    .build()?;
+                app.set_menu(MenuBuilder::new(h).items(&[&about, &edit, &window]).build()?)?;
+            }
             #[cfg(not(target_os = "macos"))]
             let _ = app;
             Ok(())
@@ -1042,13 +1400,15 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             jacks, connect, probe, config_path, open_config,
             save_jack, delete_jack, rename_group, delete_group, open_url,
-            vpns, vpn_toggle, vpn_def, save_vpn, delete_vpn, vpn_providers,
+            spaces, create_space, delete_space, move_jack,
+            vpns, vpn_toggle, vpn_def, vpn_pending, vpn_approve, save_vpn, delete_vpn, vpn_providers,
             settings, save_settings, colors, save_color, defaults, save_defaults, ssh_keys,
             ssh_hosts,
             team_sync, team_join, team_create, team_resolve, team_leave,
-            open_web_view, place_web_view, close_web_view, web_check, web_trust, web_trust_cert,
-            open_rdp, open_rdp_session, close_rdp_session, rdp_input, tunnels, close_tunnel,
-            open_session, open_task, write_session, resize_session, close_session
+            open_web_view, place_web_view, close_web_view, web_check, web_trust, web_cert, web_trust_cert,
+            open_rdp, open_vnc, open_rdp_session, close_rdp_session, rdp_input, tunnels, close_tunnel,
+            open_session, open_task, write_session, resize_session, close_session,
+            sftp_ls, sftp_get, sftp_put, sftp_ready, open_master, open_full_disk_access
         ])
         .build(tauri::generate_context!())
         .expect("error while building patchbay")
@@ -1161,6 +1521,40 @@ host = "x; id"
         super::web_trust_at(&store, url).unwrap();
         assert_eq!(std::fs::read_to_string(&store).unwrap().lines().count(), 1);
         assert!(!super::web_trusted_at(&store, "https://10.0.0.9:5001/"));
+    }
+
+    /// The webview can load cleartext at all only because `Info.plist` turns ATS off
+    /// for web content, which is broader than we want. This is the narrowing: a page
+    /// on the LAN, never one on the public internet.
+    #[test]
+    fn cleartext_is_for_your_own_network_only() {
+        for ours in [
+            "10.0.0.251", "10.0.0.4", "172.16.3.9", "172.31.255.1",
+            "127.0.0.1", "localhost", "169.254.1.1", "nas", "nas.local", "::1", "fe80::1", "fd00::1",
+        ] {
+            assert!(super::is_private_host(ours), "{ours:?} is on your own network");
+        }
+        for theirs in [
+            "example.com", "8.8.8.8", "172.32.0.1", "172.15.0.1", "1.1.1.1",
+            "evil.example.co.uk", "2606:4700::1111",
+        ] {
+            assert!(!super::is_private_host(theirs), "{theirs:?} is not");
+        }
+    }
+
+    /// A username reaches the desktop opener inside the url, where an `@` would end
+    /// the userinfo and everything after it would be read as the host.
+    #[test]
+    fn a_vnc_url_carries_only_a_name_it_can_carry() {
+        assert_eq!(super::vnc_url("10.0.0.9:5900", Some("leon")).unwrap(), "vnc://leon@10.0.0.9:5900");
+        assert_eq!(super::vnc_url("10.0.0.9:5900", Some("  ")).unwrap(), "vnc://10.0.0.9:5900");
+        // Dropped, not refused: the viewer will ask for the name itself.
+        assert_eq!(
+            super::vnc_url("127.0.0.1:5901", Some("me@evil.example")).unwrap(),
+            "vnc://127.0.0.1:5901"
+        );
+        assert!(super::vnc_url("10.0.0.9:5900/../x", None).is_err());
+        assert!(super::vnc_url("bad host\u{7}", None).is_err());
     }
 
     /// reqwest's own Display is "error sending request for url (…)" and stops there,

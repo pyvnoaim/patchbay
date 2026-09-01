@@ -12,6 +12,7 @@
       <div class="drag" data-tauri-drag-region></div>
       <nav id="tree"></nav>
       <div class="side-foot">
+        <button class="flat" id="newspace"></button>
         <button class="flat" id="newgroup"></button>
         <button class="flat" id="settings"></button>
         <button class="flat" id="editcfg"></button>
@@ -48,27 +49,32 @@
       <div class="sheet-body">
         <div class="how">
           <span class="how-q">How do you reach it?</span>
-          <label class="how-opt"><input type="checkbox" name="use_ssh"><span>Terminal</span></label>
-          <label class="how-opt"><input type="checkbox" name="use_rdp"><span>Remote desktop</span></label>
-          <label class="how-opt"><input type="checkbox" name="use_web"><span>Web UI</span></label>
+          <div class="how-row">
+            <label class="how-opt"><input type="radio" name="reach" value="ssh" checked><span>Terminal</span></label>
+            <label class="how-opt"><input type="radio" name="reach" value="rdp"><span>Remote desktop</span></label>
+            <label class="how-opt"><input type="radio" name="reach" value="vnc"><span>Screen sharing</span></label>
+            <label class="how-opt"><input type="radio" name="reach" value="web"><span>Web UI</span></label>
+            <label class="how-opt"><input type="radio" name="reach" value="sftp"><span>SFTP</span></label>
+          </div>
         </div>
         <label class="f wide req"><span>Name</span><input name="name" spellcheck="false" placeholder="prod-web"></label>
         <label class="f wide req"><span>Host</span><input name="host" spellcheck="false" placeholder="10.0.0.4"></label>
-        <label class="f" data-need="ssh rdp"><span>User</span><input name="user" spellcheck="false" placeholder="inherits [defaults]"></label>
-        <label class="f" data-need="ssh"><span>SSH port</span><input name="port" inputmode="numeric" placeholder="22"></label>
-        <label class="f wide" data-need="ssh"><span>Private key file</span><input name="key" spellcheck="false" list="sshkeys" placeholder="only if it isn't your default"></label>
-        <label class="f wide" data-need="ssh"><span>Jump host</span><input name="jump" spellcheck="false" list="jacknames" placeholder="another device, or user@host"></label>
+        <label class="f" data-need="ssh sftp rdp vnc"><span>User</span><input name="user" spellcheck="false" placeholder="inherits [defaults]"></label>
+        <label class="f" data-need="ssh sftp"><span>SSH port</span><input name="port" inputmode="numeric" placeholder="22"></label>
+        <label class="f wide" data-need="ssh sftp"><span>Private key file</span><input name="key" spellcheck="false" list="sshkeys" placeholder="only if it isn't your default"></label>
+        <label class="f wide" data-need="ssh sftp"><span>Jump host</span><input name="jump" spellcheck="false" list="jacknames" placeholder="another device, or user@host"></label>
         <label class="f wide" data-need="ssh"><span>Port forwards</span><input name="forward" spellcheck="false" placeholder="8080:localhost:80 — reach a remote port locally"></label>
         <label class="f req" data-need="rdp"><span>RDP port</span><input name="rdp" inputmode="numeric" placeholder="3389"></label>
+        <label class="f req" data-need="vnc"><span>VNC port</span><input name="vnc" inputmode="numeric" placeholder="5900"></label>
         <label class="f wide" data-need="web"><span>URL</span>
           <span class="withprefix">
             <button type="button" class="prefix" id="url-scheme" data-tip="Switch to http://">https://</button>
             <input name="url" spellcheck="false" placeholder="10.0.0.20:5001">
           </span></label>
-        <label class="f wide" id="primary-row"><span>Opens on double-click</span>
-          <select name="primary"></select></label>
         <label class="f wide"><span>OS / kind</span><input name="os" spellcheck="false" list="oschoices" placeholder="ubuntu, synology, proxmox…"></label>
         <datalist id="oschoices"></datalist>
+        <label class="f wide" id="jf-space" hidden><span>Space</span>
+          <select name="space"></select></label>
         <label class="f wide"><span>Folders</span>
           <input name="folders" spellcheck="false" list="folderlist" placeholder="prod/eu/web, customer-facing">
           <datalist id="folderlist"></datalist></label>
@@ -96,7 +102,7 @@
           <button type="button" data-pane="devices" data-icon="server">Devices</button>
           <button type="button" data-pane="defaults" data-icon="layers">Defaults</button>
           <button type="button" data-pane="appearance" data-icon="monitor">Appearance</button>
-          <button type="button" data-pane="team" data-icon="network">Team</button>
+          <button type="button" data-pane="team" data-icon="network">Spaces</button>
           <button type="button" data-pane="config" data-icon="file-pen-line">Config file</button>
         </nav>
         <div class="setpanes">
@@ -146,28 +152,22 @@
         </section>
 
         <section class="pane" data-pane="team" hidden>
-          <div class="d-sec">Team</div>
-          <p class="page-note">One shared list on a server you run. Devices, folders, VPNs and colours
-          are the team's; the preferences in the other sections stay on this machine. The code is the
-          only credential — anyone who has it has the list.</p>
-          <div id="team-off">
-            <div class="grid2">
-              <label class="f wide"><span>Team server</span><input id="team-url" spellcheck="false" placeholder="https://patchbay.example"></label>
-              <label class="f wide"><span>Team code</span><input id="team-code" spellcheck="false" placeholder="from whoever made the team"></label>
-            </div>
-            <div class="btns">
-              <button type="button" class="primary" id="team-join">Join</button>
-              <button type="button" class="ghost" id="team-create">Create a team</button>
-            </div>
+          <div class="d-sec">Spaces</div>
+          <p class="page-note">A space is a config file of its own. Your own list never leaves this
+          machine. A team space is the same kind of file, mirrored through a server you run — the
+          code is the only credential, so anyone who has it has that list.</p>
+          <div id="spaces-list"></div>
+
+          <div class="d-sec">Join a team</div>
+          <div class="grid2">
+            <label class="f wide"><span>Team server</span><input id="team-url" spellcheck="false" placeholder="https://patchbay.example"></label>
+            <label class="f wide"><span>Team code</span><input id="team-code" spellcheck="false" placeholder="from whoever made the team"></label>
+            <label class="f wide"><span>Call the space</span><input id="team-name" spellcheck="false" placeholder="acme"></label>
           </div>
-          <div id="team-on" hidden>
-            <div class="mono" id="team-where"></div>
-            <p class="page-note" id="team-state"></p>
-            <div class="btns" id="team-fix" hidden>
-              <button type="button" class="ghost" id="team-theirs">Take the team's list</button>
-              <button type="button" class="ghost" id="team-mine">Push mine instead</button>
-            </div>
-            <div class="btns"><button type="button" class="ghost" id="team-leave"></button></div>
+          <p class="page-note">No code? Point the address straight at a TOML file someone
+          publishes — a raw git URL will do — and you get a read-only copy of it.</p>
+          <div class="btns">
+            <button type="button" class="primary" id="team-join">Join</button>
           </div>
           <p class="sheet-err" id="team-err" hidden></p>
         </section>
