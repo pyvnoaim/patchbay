@@ -113,8 +113,11 @@ aren't obvious from reading:
 
 - The config file *is* the shared document, so the team code and device id live in `team.toml` beside it, never in it — a code in the config is a credential in a file the whole team reads.
 - `[settings]` is stripped on the way out and re-inserted on the way in. Everything else — jacks, folders, `[vpn]`, `[colors]`, `[defaults]` — is the team's. The hash that decides "did we change anything" is taken over the *stripped* document, or toggling a local preference asks for a push.
-- There is no merge. Both sides moved is a `conflict` the user resolves by picking a side, and whichever side loses is kept as `patchbay.toml.bak`. Don't invent a three-way merge for a file people hand-edit.
-- Everything routes through `team_sync`, which is idempotent — new callers just call it. It is never awaited by `load()`: a dead server must not hold the device list up for the timeout.
+- There is no merge. Both sides moved is a `conflict` the user resolves by picking a side. Don't invent a three-way merge for a file people hand-edit.
+- **Every overwrite of the local config keeps a `patchbay.toml.bak`**, which is why they all go through `adopt`. Not just the conflict paths: the server keeps one revision and no history, so on an ordinary pull the document being replaced exists nowhere else, and one teammate truncating their config would otherwise take the list off every machine.
+- **Never push a config we couldn't read or can't parse.** A read error is not an empty list — `read_local` returns an error rather than `""`, or an I/O blip uploads a deletion of everything. And `to_push` parses before sending, because `replace_at` refuses a broken document on the way in: pushing one strands the whole team on our syntax error.
+- `state` splits the blame: `offline` is the server's fault and clears itself, `error` is this machine's config and needs the user. Don't collapse them — the UI apologises for the server in one case and points at your file in the other.
+- Everything routes through `team_sync`, which is idempotent and serialized on `RUNNING` — new callers just call it. Two overlapping syncs would race their own puts and report the loser's 409 as a conflict nobody had. It is never awaited by `load()`: a dead server must not hold the device list up for the timeout.
 
 **Writing the config**
 

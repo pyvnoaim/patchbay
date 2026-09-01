@@ -14,12 +14,19 @@ use crate::{config, patchbay};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::Duration;
 use toml_edit::DocumentMut;
 
 /// Long enough for a laptop on hotel wifi, short enough that a dead server doesn't
 /// hold the window's focus handler.
 const TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Two syncs overlapping — the window regaining focus while an edit finishes — would
+/// race their own puts, and the loser's 409 reads as a conflict the user never had.
+/// They are cheap and idempotent, so the second one just waits and then sees the
+/// first one's answer.
+static RUNNING: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Team {
@@ -95,8 +102,16 @@ fn new_device() -> String {
 
 // ── the shared document ─────────────────────────────────────────────────────
 
-fn read_local(cfg: &Path) -> String {
-    std::fs::read_to_string(cfg).unwrap_or_default()
+/// A config we can't read is not an empty list. Handing back `""` here would look
+/// exactly like the user deleting every jack, and the push branch would upload that
+/// over the team's — one unreadable file on one machine wiping everyone's list.
+fn read_local(cfg: &Path) -> Result<String, String> {
+    match std::fs::read_to_string(cfg) {
+        Ok(s) => Ok(s),
+        // No config at all is the honest empty case: a fresh machine making a team.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(format!("{}: {e}", cfg.display())),
+    }
 }
 
 fn table_of(src: &str, key: &str) -> Option<toml_edit::Item> {
@@ -114,10 +129,20 @@ fn shared(src: &str) -> String {
             config::rehome_comments(&mut doc, orphan);
             doc.to_string()
         }
-        // Unparseable is the local file's problem, not something to silently drop
-        // half of — send it as it stands and let the round trip stay honest.
+        // Only `hash` gets here now — `to_push` refuses to send an unparseable file,
+        // so this just means a broken config hashes as the broken thing it is.
         Err(_) => src.to_string(),
     }
+}
+
+/// What we are willing to put. `replace_at` refuses a document that doesn't parse on
+/// the way in, so pushing one leaves every teammate stuck on *our* syntax error until
+/// we fix it — a broken file is this machine's problem and stays here.
+fn to_push(local: &str) -> Result<String, String> {
+    local
+        .parse::<DocumentMut>()
+        .map_err(|e| format!("your config doesn't parse, so it hasn't gone up: {e}"))?;
+    Ok(shared(local))
 }
 
 /// The team's document with our own `[settings]` put back, ready to be written here.
@@ -142,8 +167,8 @@ fn hash(src: &str) -> String {
     hex(shared(src).as_bytes())
 }
 
-/// A copy of what was here before the team's list replaced it. Only on the two paths
-/// that deliberately overwrite local work — an ordinary pull has nothing to lose.
+/// A copy of what was here before the team's list replaced it. Every path that
+/// overwrites the local file goes through `adopt`, so this is called from there.
 fn backup(cfg: &Path) {
     if cfg.exists() {
         let _ = std::fs::copy(cfg, cfg.with_extension("toml.bak"));
@@ -241,7 +266,9 @@ fn put(t: &Team, doc: &str, version: i64) -> Result<Doc, Fail> {
 
 #[derive(Serialize)]
 pub struct Status {
-    /// off · synced · conflict · blocked · offline
+    /// off · synced · conflict · blocked · offline · error, where `offline` is the
+    /// server's fault and `error` is this machine's — a config that won't read or
+    /// parse. Telling them apart matters: one clears itself, the other needs you.
     pub state: &'static str,
     pub url: String,
     pub code: String,
@@ -295,37 +322,47 @@ pub fn sync() -> Status {
 /// Fetch, then whichever of push or adopt applies. Idempotent, so every caller — the
 /// window regaining focus, the end of an edit, the settings sheet — is this one call.
 pub fn sync_at(cfg: &Path) -> Status {
+    // Held before the load, so a second sync reads the state the first one stored
+    // rather than the state it started from.
+    let _one_at_a_time = RUNNING.lock().unwrap_or_else(|e| e.into_inner());
+
     let Some(mut t) = load(cfg) else { return off() };
+    let local = match read_local(cfg) {
+        Ok(s) => s,
+        Err(e) => return stuck(&t, "error", e),
+    };
     let remote = match fetch(&t) {
         Ok(d) => d,
         Err(f) => return stuck(&t, "offline", f.msg),
     };
 
-    let local = read_local(cfg);
     let we_moved = hash(&local) != t.synced;
     let they_moved = remote.version != t.version;
 
     match (we_moved, they_moved) {
         // Both sides moved, and only a person knows which one is right.
         (true, true) => stuck(&t, "conflict", "your list and the team's have both changed".into()),
-        (true, false) => match put(&t, &shared(&local), t.version) {
-            Ok(d) => {
-                t.version = d.version;
-                t.synced = hash(&local);
-                match store(cfg, &t) {
-                    Ok(()) => ok(&t, &d, "synced"),
-                    Err(e) => stuck(&t, "offline", e),
+        (true, false) => match to_push(&local) {
+            Err(e) => stuck(&t, "error", e),
+            Ok(doc) => match put(&t, &doc, t.version) {
+                Ok(d) => {
+                    t.version = d.version;
+                    t.synced = hash(&local);
+                    match store(cfg, &t) {
+                        Ok(()) => ok(&t, &d, "synced"),
+                        Err(e) => stuck(&t, "error", e),
+                    }
                 }
-            }
-            // Someone wrote between our fetch and our put — the next sync sees it as
-            // the conflict it is, but say so now rather than reporting success.
-            Err(f) if f.conflict => stuck(&t, "conflict", f.msg),
-            Err(f) if f.blocked => stuck(&t, "blocked", f.msg),
-            Err(f) => stuck(&t, "offline", f.msg),
+                // Someone wrote between our fetch and our put — the next sync sees it
+                // as the conflict it is, but say so now rather than reporting success.
+                Err(f) if f.conflict => stuck(&t, "conflict", f.msg),
+                Err(f) if f.blocked => stuck(&t, "blocked", f.msg),
+                Err(f) => stuck(&t, "offline", f.msg),
+            },
         },
         (false, true) => match adopt(cfg, &mut t, &remote, &local) {
             Ok(()) => Status { changed: true, ..ok(&t, &remote, "synced") },
-            Err(e) => stuck(&t, "offline", e),
+            Err(e) => stuck(&t, "error", e),
         },
         (false, false) => ok(&t, &remote, "synced"),
     }
@@ -333,12 +370,19 @@ pub fn sync_at(cfg: &Path) -> Status {
 
 /// Take the team's document as ours, keeping this machine's `[settings]`.
 fn adopt(cfg: &Path, t: &mut Team, remote: &Doc, local: &str) -> Result<(), String> {
+    // Even an ordinary pull is worth a copy: the document it replaces exists nowhere
+    // else — the server keeps one revision and no history, and every other device is
+    // adopting this same replacement. One teammate truncating their config would
+    // otherwise take the list off every machine with nothing left to put back.
+    if hash(local) != hash(&remote.doc) {
+        backup(cfg);
+    }
     config::replace_at(cfg, &with_local_settings(&remote.doc, local))?;
     t.version = remote.version;
     // Hashed from the file as it now stands, not from what arrived: putting our
     // `[settings]` back and writing it out moves whitespace, and a hash of the wrong
     // one reads as a local edit and pushes the team's own list back at them.
-    t.synced = hash(&read_local(cfg));
+    t.synced = hash(&read_local(cfg)?);
     store(cfg, t)
 }
 
@@ -362,20 +406,17 @@ pub fn join_at(cfg: &Path, url: &str, code: &str) -> Result<Status, String> {
         return Err("a team code, from whoever made the team".into());
     }
     let remote = fetch(&t).map_err(|f| f.msg)?;
-    let local = read_local(cfg);
+    let local = read_local(cfg)?;
 
     // An empty team is one you just made, so your list becomes its list. Otherwise
-    // the team's wins and yours is kept beside it: a merge is not ours to invent, and
-    // losing a colleague's hosts is worse than either.
+    // the team's wins and yours is kept beside it by `adopt`: a merge is not ours to
+    // invent, and losing a colleague's hosts is worse than either.
     if remote.doc.trim().is_empty() {
-        let d = put(&t, &shared(&local), remote.version).map_err(|f| f.msg)?;
+        let d = put(&t, &to_push(&local)?, remote.version).map_err(|f| f.msg)?;
         t.version = d.version;
         t.synced = hash(&local);
         store(cfg, &t)?;
         return Ok(ok(&t, &d, "synced"));
-    }
-    if hash(&local) != hash(&remote.doc) {
-        backup(cfg);
     }
     adopt(cfg, &mut t, &remote, &local)?;
     Ok(Status { changed: true, ..ok(&t, &remote, "synced") })
@@ -403,16 +444,15 @@ pub fn resolve(keep: &str) -> Result<Status, String> {
 pub fn resolve_at(cfg: &Path, keep: &str) -> Result<Status, String> {
     let mut t = load(cfg).ok_or("not in a team")?;
     let remote = fetch(&t).map_err(|f| f.msg)?;
-    let local = read_local(cfg);
+    let local = read_local(cfg)?;
 
     if keep == "mine" {
-        let d = put(&t, &shared(&local), remote.version).map_err(|f| f.msg)?;
+        let d = put(&t, &to_push(&local)?, remote.version).map_err(|f| f.msg)?;
         t.version = d.version;
         t.synced = hash(&local);
         store(cfg, &t)?;
         return Ok(ok(&t, &d, "synced"));
     }
-    backup(cfg);
     adopt(cfg, &mut t, &remote, &local)?;
     Ok(Status { changed: true, ..ok(&t, &remote, "synced") })
 }
@@ -666,6 +706,73 @@ host = "10.0.0.4"
         leave_at(&cfg).unwrap();
         assert_eq!(sync_at(&cfg).state, "off");
         assert_eq!(read(&cfg), LOCAL, "leaving took the list with it");
+    }
+
+    #[test]
+    fn a_config_we_cannot_read_is_not_an_empty_list() {
+        let (url, server) = stub("");
+        let cfg = scratch("unreadable", LOCAL);
+        join_at(&cfg, &url, "abcd-efgh").unwrap();
+
+        // A path that exists but doesn't read as a file. The old code turned every
+        // read error into "", which is indistinguishable from deleting every jack.
+        std::fs::remove_file(&cfg).unwrap();
+        std::fs::create_dir(&cfg).unwrap();
+
+        let s = sync_at(&cfg);
+        assert_eq!(s.state, "error", "{:?}", s.error);
+        assert!(server.lock().unwrap().0.contains("[jack.web]"), "the team's list was wiped");
+    }
+
+    #[test]
+    fn a_config_that_does_not_parse_stays_on_this_machine() {
+        let (url, server) = stub("");
+        let cfg = scratch("broken", LOCAL);
+        join_at(&cfg, &url, "abcd-efgh").unwrap();
+
+        std::fs::write(&cfg, "[jack.web\nhost = ").unwrap();
+        let s = sync_at(&cfg);
+        assert_eq!(s.state, "error", "{:?}", s.error);
+        assert!(
+            server.lock().unwrap().0.contains("[jack.web]"),
+            "a file that doesn't parse went up, and every teammate chokes on it"
+        );
+    }
+
+    #[test]
+    fn an_ordinary_pull_keeps_what_it_replaced() {
+        let (url, server) = stub("");
+        let cfg = scratch("pullbak", LOCAL);
+        join_at(&cfg, &url, "abcd-efgh").unwrap();
+
+        // A teammate whose list lost everything but one host. We haven't touched
+        // ours, so this is the quiet path — and the one with the most to lose.
+        {
+            let mut st = server.lock().unwrap();
+            st.0 = "[jack.only]\nhost = \"10.0.0.9\"\n".into();
+            st.1 += 1;
+        }
+        assert_eq!(sync_at(&cfg).state, "synced");
+        assert!(
+            read(&cfg.with_extension("toml.bak")).contains("[jack.web]"),
+            "the list the pull replaced wasn't kept anywhere"
+        );
+    }
+
+    #[test]
+    fn two_syncs_at_once_do_not_invent_a_conflict() {
+        let (url, _server) = stub("");
+        let cfg = scratch("race", LOCAL);
+        join_at(&cfg, &url, "abcd-efgh").unwrap();
+        std::fs::write(&cfg, format!("{LOCAL}\n[jack.db]\nhost = \"10.0.0.9\"\n")).unwrap();
+
+        // The window regaining focus while an edit finishes. Both must land on the
+        // same answer; one racing the other into a 409 is not a conflict.
+        let (a, b) = (cfg.clone(), cfg.clone());
+        let one = std::thread::spawn(move || sync_at(&a).state);
+        let two = std::thread::spawn(move || sync_at(&b).state);
+        assert_eq!(one.join().unwrap(), "synced");
+        assert_eq!(two.join().unwrap(), "synced");
     }
 
     #[cfg(unix)]

@@ -484,15 +484,16 @@ function renderTeam() {
   $("team-where").textContent = `${team.code}   ${team.url}`;
   $("team-fix").hidden = team.state !== "conflict";
   const seats = `${team.seats} seat${team.seats === 1 ? "" : "s"}${team.paid ? "" : ", free up to three"}`;
-  $("team-state").textContent =
-    team.state === "conflict"
-      ? "Your list and the team's have both changed since they last agreed. Pick one — " +
-        "whichever you drop is kept beside your config as patchbay.toml.bak."
-      : team.state === "blocked"
-        ? `${team.error ?? ""} Your edits stay on this machine until the team has room for them.`
-        : team.state === "offline"
-          ? `Not reaching the server: ${team.error ?? ""} — your list still works, and changes go up when it answers.`
-          : `In sync · ${seats}`;
+  const say = {
+    conflict: "Your list and the team's have both changed since they last agreed. Pick one — " +
+      "whichever you drop is kept beside your config as patchbay.toml.bak.",
+    blocked: `${team.error ?? ""} Your edits stay on this machine until the team has room for them.`,
+    offline: `Not reaching the server: ${team.error ?? ""} — your list still works, and changes go up when it answers.`,
+    // Nothing to do with the server, so don't blame it: this machine's own config is
+    // in the way, and nothing syncs either direction until it's readable again.
+    error: `${team.error ?? "the sync stopped here"} — nothing is going up or coming down until that's sorted.`,
+  };
+  $("team-state").textContent = say[team.state] ?? `In sync · ${seats}`;
 }
 
 async function teamCall(fn) {
