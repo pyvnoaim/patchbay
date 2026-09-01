@@ -5,6 +5,9 @@
 //!
 //! There are no accounts. The team code *is* the credential, which matches the trust
 //! model — everyone on a team sees everything — and removes the entire login layer.
+//! Being the credential is also why it travels in `x-team` and never in the path: a
+//! URL ends up in access logs, proxy logs and shell history, and a logged path is a
+//! leaked password.
 //!
 //! Two limits worth knowing before this is anyone's billing model. Creating a team is
 //! unauthenticated, so an open instance can be filled with empty teams. And a seat is
@@ -13,7 +16,7 @@
 //! fixable here — both need an account or a signed build to mean anything.
 
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::post,
@@ -94,15 +97,16 @@ fn new_code() -> String {
         .join("-")
 }
 
-/// Which machine is asking. Seats are counted from this, so it's required — an
-/// unattributable write is a write that never counts against the limit.
-fn device(headers: &HeaderMap) -> Result<String, Fail> {
+/// `x-team` is the code, `x-device` is which machine is asking. Both are required and
+/// neither is guessed at: seats are counted from the device, and an unattributable
+/// write is a write that never counts against the limit.
+fn header(headers: &HeaderMap, name: &str) -> Result<String, Fail> {
     headers
-        .get("x-device")
+        .get(name)
         .and_then(|v| v.to_str().ok())
         .filter(|v| !v.is_empty() && v.len() <= 64)
         .map(str::to_owned)
-        .ok_or_else(|| Fail(StatusCode::BAD_REQUEST, "missing x-device header".into()))
+        .ok_or_else(|| Fail(StatusCode::BAD_REQUEST, format!("missing {name} header")))
 }
 
 fn touch(db: &Connection, code: &str, dev: &str) -> Result<(), Fail> {
@@ -153,18 +157,17 @@ fn team(db: &Connection, code: &str) -> Result<(String, i64, bool), Fail> {
         |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)),
     )
     .optional()?
-    .ok_or_else(|| Fail(StatusCode::NOT_FOUND, format!("no team \"{code}\"")))
+    // The code is not quoted back, unlike every other error here: it is the
+    // credential, and an error body is exactly what a client writes to a log.
+    .ok_or_else(|| Fail(StatusCode::NOT_FOUND, "no team with that code".into()))
 }
 
 /// Reading stays open past the seat limit on purpose. Locking a team out of its own
 /// device list is exactly the wrong thing to do during an outage; writes are where
 /// the value is, so that's where the paywall goes.
-async fn get_doc(
-    State(db): State<Db>,
-    Path(code): Path<String>,
-    headers: HeaderMap,
-) -> Result<Json<Doc>, Fail> {
-    let dev = device(&headers)?;
+async fn get_doc(State(db): State<Db>, headers: HeaderMap) -> Result<Json<Doc>, Fail> {
+    let code = header(&headers, "x-team")?;
+    let dev = header(&headers, "x-device")?;
     let db = db.lock().unwrap();
     let (doc, version, paid) = team(&db, &code)?;
     touch(&db, &code, &dev)?;
@@ -179,11 +182,11 @@ struct Put {
 
 async fn put_doc(
     State(db): State<Db>,
-    Path(code): Path<String>,
     headers: HeaderMap,
     Json(body): Json<Put>,
 ) -> Result<Json<Doc>, Fail> {
-    let dev = device(&headers)?;
+    let code = header(&headers, "x-team")?;
+    let dev = header(&headers, "x-device")?;
     let db = db.lock().unwrap();
     let (_, version, paid) = team(&db, &code)?;
     touch(&db, &code, &dev)?;
@@ -216,7 +219,7 @@ async fn put_doc(
 fn app(db: Db) -> Router {
     Router::new()
         .route("/teams", post(create_team))
-        .route("/teams/{code}", axum::routing::get(get_doc).put(put_doc))
+        .route("/team", axum::routing::get(get_doc).put(put_doc))
         .with_state(db)
 }
 
@@ -251,8 +254,19 @@ mod tests {
         (status, serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null))
     }
 
-    fn req(method: &str, uri: &str, dev: &str, body: Option<serde_json::Value>) -> Request<Body> {
-        let b = Request::builder().method(method).uri(uri).header("x-device", dev);
+    /// An empty `team` sends no `x-team` header — creating a team is the one call
+    /// that has no code yet.
+    fn req(
+        method: &str,
+        uri: &str,
+        dev: &str,
+        team: &str,
+        body: Option<serde_json::Value>,
+    ) -> Request<Body> {
+        let mut b = Request::builder().method(method).uri(uri).header("x-device", dev);
+        if !team.is_empty() {
+            b = b.header("x-team", team);
+        }
         match body {
             Some(v) => b
                 .header("content-type", "application/json")
@@ -263,7 +277,7 @@ mod tests {
     }
 
     async fn a_team(db: &Db) -> String {
-        let (status, v) = call(db, req("POST", "/teams", "d1", None)).await;
+        let (status, v) = call(db, req("POST", "/teams", "d1", "", None)).await;
         assert_eq!(status, StatusCode::OK);
         v["code"].as_str().unwrap().to_string()
     }
@@ -273,34 +287,36 @@ mod tests {
         let db = db();
         let code = a_team(&db).await;
 
-        let (status, v) = call(&db, req("GET", &format!("/teams/{code}"), "d1", None)).await;
+        let (status, v) = call(&db, req("GET", "/team", "d1", &code, None)).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(v["doc"], "");
         assert_eq!(v["version"], 1);
 
-        let (status, v) = call(&db, req("GET", "/teams/nope", "d1", None)).await;
+        let (status, v) = call(&db, req("GET", "/team", "d1", "nope", None)).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
-        assert!(v["error"].as_str().unwrap().contains("nope"), "got {v}");
+        // The code is a credential, so the error names the failure without repeating it.
+        let err = v["error"].as_str().unwrap();
+        assert!(err.contains("no team"), "got {v}");
+        assert!(!err.contains("nope"), "the code came back in the error: {v}");
     }
 
     #[tokio::test]
     async fn a_write_lands_and_a_stale_one_is_told_to_refetch() {
         let db = db();
         let code = a_team(&db).await;
-        let uri = format!("/teams/{code}");
         let doc = "[jack.web]\nhost = \"10.0.0.4\"\n";
 
         let body = serde_json::json!({ "doc": doc, "version": 1 });
-        let (status, v) = call(&db, req("PUT", &uri, "d1", Some(body.clone()))).await;
+        let (status, v) = call(&db, req("PUT", "/team", "d1", &code, Some(body.clone()))).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(v["version"], 2);
 
         // The teammate who still thinks it's version 1 gets refused, not silently
         // overwritten — and the document on the server is untouched.
-        let (status, _) = call(&db, req("PUT", &uri, "d2", Some(body))).await;
+        let (status, _) = call(&db, req("PUT", "/team", "d2", &code, Some(body))).await;
         assert_eq!(status, StatusCode::CONFLICT);
 
-        let (_, v) = call(&db, req("GET", &uri, "d2", None)).await;
+        let (_, v) = call(&db, req("GET", "/team", "d2", &code, None)).await;
         assert_eq!(v["doc"], doc);
         assert_eq!(v["version"], 2);
     }
@@ -309,21 +325,19 @@ mod tests {
     async fn a_fourth_seat_stops_writing_but_everyone_can_still_read() {
         let db = db();
         let code = a_team(&db).await;
-        let uri = format!("/teams/{code}");
-
         for d in ["d1", "d2", "d3"] {
-            let (status, _) = call(&db, req("GET", &uri, d, None)).await;
+            let (status, _) = call(&db, req("GET", "/team", d, &code, None)).await;
             assert_eq!(status, StatusCode::OK);
         }
         let body = serde_json::json!({ "doc": "host = \"x\"", "version": 1 });
-        let (status, _) = call(&db, req("PUT", &uri, "d3", Some(body))).await;
+        let (status, _) = call(&db, req("PUT", "/team", "d3", &code, Some(body))).await;
         assert_eq!(status, StatusCode::OK, "three seats are free");
 
-        let (status, v) = call(&db, req("PUT", &uri, "d4", Some(serde_json::json!({ "doc": "", "version": 2 })))).await;
+        let (status, v) = call(&db, req("PUT", "/team", "d4", &code, Some(serde_json::json!({ "doc": "", "version": 2 })))).await;
         assert_eq!(status, StatusCode::PAYMENT_REQUIRED);
         assert!(v["error"].as_str().unwrap().contains("still read"), "got {v}");
 
-        let (status, v) = call(&db, req("GET", &uri, "d4", None)).await;
+        let (status, v) = call(&db, req("GET", "/team", "d4", &code, None)).await;
         assert_eq!(status, StatusCode::OK, "a paywall must not lock a team out of its own list");
         assert_eq!(v["seats"], 4);
     }
@@ -332,9 +346,8 @@ mod tests {
     async fn a_paid_team_writes_past_the_free_limit() {
         let db = db();
         let code = a_team(&db).await;
-        let uri = format!("/teams/{code}");
         for d in ["d1", "d2", "d3", "d4"] {
-            call(&db, req("GET", &uri, d, None)).await;
+            call(&db, req("GET", "/team", d, &code, None)).await;
         }
         db.lock()
             .unwrap()
@@ -342,7 +355,7 @@ mod tests {
             .unwrap();
 
         let body = serde_json::json!({ "doc": "host = \"x\"", "version": 1 });
-        let (status, _) = call(&db, req("PUT", &uri, "d4", Some(body))).await;
+        let (status, _) = call(&db, req("PUT", "/team", "d4", &code, Some(body))).await;
         assert_eq!(status, StatusCode::OK);
     }
 
@@ -352,11 +365,25 @@ mod tests {
         let code = a_team(&db).await;
         let r = Request::builder()
             .method("GET")
-            .uri(format!("/teams/{code}"))
+            .uri("/team")
+            .header("x-team", &code)
             .body(Body::empty())
             .unwrap();
         let (status, _) = call(&db, r).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    /// The code only ever arrives in a header now, so a request that leaves it out is
+    /// refused rather than falling back to anything in the path.
+    #[tokio::test]
+    async fn a_request_without_a_team_header_is_refused() {
+        let db = db();
+        let code = a_team(&db).await;
+        let (status, _) = call(&db, req("GET", "/team", "d1", "", None)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        let (status, _) = call(&db, req("GET", &format!("/team/{code}"), "d1", "", None)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "no route carries the code any more");
     }
 
     #[test]
