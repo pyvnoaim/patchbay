@@ -77,11 +77,19 @@ pub struct Sessions(Mutex<HashMap<u32, Session>>);
 
 impl Sessions {
     /// Output is emitted as `pty:<id>`; on exit, `pty-exit:<id>` carries the status.
-    pub fn open(&self, app: &AppHandle, id: u32, args: &[String], cols: u16, rows: u16) -> Result<(), String> {
+    pub fn open(
+        &self,
+        app: &AppHandle,
+        id: u32,
+        program: &str,
+        args: &[String],
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), String> {
         let data_handle = app.clone();
         let exit_handle = app.clone();
         let session = spawn(
-            "ssh",
+            program,
             args,
             cols,
             rows,

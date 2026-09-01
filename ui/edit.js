@@ -47,6 +47,9 @@ document.addEventListener("contextmenu", (e) => {
       ] : []),
       { icon: "copy", label: "Copy ssh command", run: () => navigator.clipboard.writeText(j.command).catch(() => {}) },
       "-",
+      { icon: "plug", label: "Ping", run: () => openSession(j.name, "ping") },
+      { icon: "waypoints", label: "Trace route", run: () => openSession(j.name, "trace") },
+      "-",
       { icon: "pencil", label: "Edit…", run: () => openJack(j) },
       { icon: "trash-2", label: "Delete", danger: true, run: () => removeJack(j.name) },
     ]);

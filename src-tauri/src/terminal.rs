@@ -30,7 +30,11 @@ fn quote(s: &str) -> String {
 /// The command as a user would type it — shown in the UI and used by the
 /// AppleScript/`sh -c` handoff, so it follows the host platform's quoting.
 pub fn command_line(args: &[String]) -> String {
-    std::iter::once("ssh".to_string())
+    command_line_of("ssh", args)
+}
+
+pub fn command_line_of(program: &str, args: &[String]) -> String {
+    std::iter::once(program.to_string())
         .chain(args.iter().map(|a| quote(a)))
         .collect::<Vec<_>>()
         .join(" ")

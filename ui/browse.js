@@ -246,6 +246,10 @@ function renderJack(j, live) {
 
     <div class="d-sec">${icon("plug")}Reachable</div>
     <div style="font-size:12.5px">${reach}</div>
+    <div class="btns">
+      <button class="ghost" data-act="ping" data-tip="${j.hops.length ? `Ping from ${esc(j.hops.at(-1))}` : "Ping this host"}">${icon("plug")}Ping</button>
+      <button class="ghost" data-act="trace" data-tip="${j.hops.length ? `Trace from ${esc(j.hops.at(-1))}` : "Trace the route there"}">${icon("waypoints")}Trace</button>
+    </div>
 
     ${j.ssh ? `<div class="d-sec">${icon("square-terminal")}Command</div>
     <div class="mono ${j.command.startsWith("ssh ") ? "" : "err"}">${esc(j.command)}</div>` : ""}

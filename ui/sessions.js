@@ -20,7 +20,10 @@ const theme = () => {
   };
 };
 
-async function openSession(name) {
+/// `task` is "ping" or "trace": the same pty and the same tab, running a one-shot
+/// check instead of a shell. It runs on the jump host when there is one, because a
+/// device behind a bastion isn't reachable from here to begin with.
+async function openSession(name, task = null) {
   const id = nextId++;
   const host = document.createElement("div");
   host.className = "termhost";
@@ -39,7 +42,7 @@ async function openSession(name) {
   term.loadAddon(fit);
   term.open(host);
 
-  const s = { id, name, kind: "term", term, fit, host, dead: false, unlisten: [] };
+  const s = { id, name, task, kind: "term", term, fit, host, dead: false, unlisten: [] };
   sessions.set(id, s);
   activeId = id;
   showTab();
@@ -54,7 +57,7 @@ async function openSession(name) {
     s.unlisten.push(await listen(`pty:${id}`, (e) => term.write(e.payload)));
     s.unlisten.push(await listen(`pty-exit:${id}`, (e) => {
       s.dead = true;
-      term.write(`\r\n\x1b[2m── ssh exited (${e.payload}) · ⌘W to close ──\x1b[0m\r\n`);
+      term.write(`\r\n\x1b[2m── ${task ?? "ssh"} exited (${e.payload}) · ⌘W to close ──\x1b[0m\r\n`);
       renderTabs();
       renderTree();
     }));
@@ -81,7 +84,9 @@ async function openSession(name) {
   }
 
   try {
-    const line = await invoke("open_session", { id, name, cols: term.cols, rows: term.rows });
+    const line = task
+      ? await invoke("open_task", { id, name, task, cols: term.cols, rows: term.rows })
+      : await invoke("open_session", { id, name, cols: term.cols, rows: term.rows });
     // Written locally, so seeing it proves the terminal renders even when the
     // remote end is slow or silent.
     term.write(`\x1b[2m${line}\x1b[0m\r\n`);
@@ -136,7 +141,8 @@ function renderTabs() {
       <div class="tab ${s.dead ? "dead" : ""}" data-id="${s.id}" aria-selected="${s.id === activeId}">
         <span class="dot ${s.dead ? "down" : "up"}"></span>
         ${s.kind === "rdp" ? `<span class="tabkind">${icon("monitor")}</span>` : ""}
-        <span class="lbl">${esc(s.name)}</span>
+        ${s.task ? `<span class="tabkind">${icon(s.task === "trace" ? "waypoints" : "plug")}</span>` : ""}
+        <span class="lbl">${esc(s.task ? `${s.task} ${s.name}` : s.name)}</span>
         <span class="x" data-close="${s.id}" data-tip="Close  ⌘W">${icon("x")}</span>
       </div>`).join("");
 }

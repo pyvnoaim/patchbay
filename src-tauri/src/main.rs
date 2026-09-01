@@ -140,6 +140,106 @@ fn connect(name: String) -> Result<String, String> {
     Ok(terminal::command_line(&args))
 }
 
+/// `ping -c 5` / `traceroute`, the spelling the far side will have. Also the local
+/// spelling everywhere except Windows.
+fn posix_task(task: &str, host: &str) -> Vec<String> {
+    match task {
+        "trace" => vec!["traceroute".into(), host.into()],
+        _ => vec!["ping".into(), "-c".into(), "5".into(), host.into()],
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn local_task(task: &str, host: &str) -> (String, Vec<String>) {
+    let mut v = posix_task(task, host);
+    (v.remove(0), v)
+}
+
+#[cfg(target_os = "windows")]
+fn local_task(task: &str, host: &str) -> (String, Vec<String>) {
+    match task {
+        "trace" => ("tracert".into(), vec![host.into()]),
+        _ => ("ping".into(), vec!["-n".into(), "5".into(), host.into()]),
+    }
+}
+
+/// The far-side form hands the host to the hop's shell, so a space or a semicolon in
+/// it would run there as a command — the same hole as a newline in a `.rdp`, closed
+/// the same way: reject rather than quote. A leading `-` would be an option, locally
+/// too.
+fn plain_host(host: &str) -> Result<&str, String> {
+    let ok = !host.is_empty()
+        && !host.starts_with('-')
+        && host.chars().all(|c| c.is_ascii_alphanumeric() || ".:-_".contains(c));
+    ok.then_some(host)
+        .ok_or_else(|| format!("\"{host}\" isn't a plain host name to check"))
+}
+
+/// A one-shot check has no use for the hop's tunnels, and re-binding a port a live
+/// session already holds only prints an error into the tab.
+fn without_forwards(args: Vec<String>) -> Vec<String> {
+    let mut out = Vec::with_capacity(args.len());
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        if a == "-L" {
+            it.next();
+        } else {
+            out.push(a);
+        }
+    }
+    out
+}
+
+/// Where a reachability check has to run to mean anything. A device behind a jump is
+/// not reachable from here at all — pinging a name only its bastion can resolve
+/// proves nothing — so the check runs *on the hop*, which is also the only machine
+/// the status dot can probe toward.
+fn task_argv(
+    task: &str,
+    name: &str,
+    jacks: &patchbay::Jacks,
+) -> Result<(String, Vec<String>), String> {
+    if task != "ping" && task != "trace" {
+        return Err(format!("no task named \"{task}\""));
+    }
+    let j = jacks
+        .get(name)
+        .ok_or_else(|| format!("no jack named \"{name}\""))?;
+    let host = plain_host(&j.host)?;
+
+    let Some(hop) = &j.jump else {
+        return Ok(local_task(task, host));
+    };
+    // ponytail: the far side is assumed POSIX — it answers ssh, so it isn't cmd.exe.
+    // A Windows bastion would need the local spelling pushed through instead.
+    let mut args = match jacks.contains_key(hop) {
+        true => without_forwards(patchbay::ssh_args(hop, jacks)?),
+        // A jump that isn't a jack is a raw ssh spec, and has no chain of its own.
+        false => vec![hop.clone()],
+    };
+    args.extend(posix_task(task, host));
+    Ok(("ssh".into(), args))
+}
+
+/// Ping or traceroute in a tab. The same pty a session uses, so output streams and
+/// ^C works; the tab goes dead when the command exits.
+#[tauri::command]
+fn open_task(
+    app: tauri::AppHandle,
+    sessions: tauri::State<'_, pty::Shared>,
+    id: u32,
+    name: String,
+    task: String,
+    cols: u16,
+    rows: u16,
+) -> Result<String, String> {
+    let jacks = read()?;
+    let resolved = patchbay::resolve(&name, &jacks)?;
+    let (program, args) = task_argv(&task, &resolved, &jacks)?;
+    sessions.open(&app, id, &program, &args, cols.max(2), rows.max(2))?;
+    Ok(terminal::command_line_of(&program, &args))
+}
+
 /// Opens a session in the window. `connect` is still there for "open in my real
 /// terminal" — this is the in-app one.
 #[tauri::command]
@@ -154,7 +254,7 @@ fn open_session(
     let jacks = read()?;
     let resolved = patchbay::resolve(&name, &jacks)?;
     let args = patchbay::ssh_args(&resolved, &jacks)?;
-    sessions.open(&app, id, &args, cols.max(2), rows.max(2))?;
+    sessions.open(&app, id, "ssh", &args, cols.max(2), rows.max(2))?;
     Ok(terminal::command_line(&args))
 }
 
@@ -564,7 +664,7 @@ fn main() {
             vpns, vpn_toggle, vpn_def, save_vpn, delete_vpn, vpn_providers,
             settings, save_settings, colors, save_color, defaults, save_defaults, ssh_keys,
             open_rdp, open_rdp_session, close_rdp_session, rdp_input, tunnels, close_tunnel,
-            open_session, write_session, resize_session, close_session
+            open_session, open_task, write_session, resize_session, close_session
         ])
         .build(tauri::generate_context!())
         .expect("error while building patchbay")
@@ -579,7 +679,60 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_web_url, keys_in, split_domain};
+    use super::{is_web_url, keys_in, split_domain, task_argv};
+
+    const CHAIN: &str = r#"
+[jack.bastion]
+host = "bastion.example"
+user = "ops"
+port = 2222
+forward = ["9000:localhost:9000"]
+
+[jack.db]
+host = "db.internal"
+jump = "bastion"
+
+[jack.plain]
+host = "10.0.0.4"
+
+[jack.raw]
+host = "10.0.0.9"
+jump = "ops@edge.example"
+
+[jack.sneaky]
+host = "x; id"
+"#;
+
+    #[test]
+    fn a_check_runs_here_when_it_can_and_on_the_hop_when_it_cannot() {
+        let j = super::patchbay::parse(CHAIN).unwrap();
+
+        // Nothing in the way: straight at the host.
+        let (p, a) = task_argv("ping", "plain", &j).unwrap();
+        assert_eq!(p, "ping");
+        assert!(a.contains(&"10.0.0.4".to_string()), "got {a:?}");
+
+        // Behind a bastion, so it runs there — and the hop's own tunnel is left out,
+        // or it fights the live session for the port.
+        let (p, a) = task_argv("ping", "db", &j).unwrap();
+        assert_eq!(p, "ssh");
+        assert_eq!(a, ["-p", "2222", "ops@bastion.example", "ping", "-c", "5", "db.internal"]);
+
+        let (_, a) = task_argv("trace", "db", &j).unwrap();
+        assert_eq!(a.last().unwrap(), "db.internal");
+        assert!(a.contains(&"traceroute".to_string()), "got {a:?}");
+
+        // A jump that isn't a jack is a raw spec with no chain of its own.
+        let (_, a) = task_argv("ping", "raw", &j).unwrap();
+        assert_eq!(a[0], "ops@edge.example");
+    }
+
+    #[test]
+    fn a_host_that_could_be_a_command_on_the_hop_is_refused() {
+        let j = super::patchbay::parse(CHAIN).unwrap();
+        assert!(task_argv("ping", "sneaky", &j).is_err(), "a space reaches the hop's shell");
+        assert!(task_argv("nope", "plain", &j).is_err(), "only the two tasks exist");
+    }
 
     #[test]
     fn only_private_keys_with_a_public_half_are_suggested() {

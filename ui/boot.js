@@ -54,6 +54,7 @@ detailPane.addEventListener("click", async (e) => {
   const j = live ? all.find((x) => x.name === live.name) : shown[sel];
   if (!j) return;
   if (act === "connect") connect(j.name);
+  if (act === "ping" || act === "trace") openSession(j.name, act);
   if (act === "disconnect") closeSession(activeId);
   if (act === "web") openWeb(j.name);
   if (act === "rdp") openRdp(j.name);
