@@ -251,6 +251,16 @@ Match host *.internal
     }
 
     #[test]
+    fn a_port_outside_a_u16_or_not_plainly_decimal_is_dropped() {
+        let port = |v: &str| from_ssh_config(&format!("Host t\n  Port {v}\n")).hosts[0].port;
+        assert_eq!(port("22"), Some(22));
+        assert_eq!(port("70000"), None, "would write a config nothing can load back");
+        assert_eq!(port("0x16"), None, "Number() reads hex; ssh does not");
+        assert_eq!(port("1e3"), None);
+        assert_eq!(port("0"), None);
+    }
+
+    #[test]
     fn keywords_are_case_insensitive_and_eq_separates_as_well_as_a_space() {
         let f = from_ssh_config("HOST one\n  hostname=10.0.0.7\n  USER  bob\n");
         assert_eq!(f.hosts[0].host, "10.0.0.7");

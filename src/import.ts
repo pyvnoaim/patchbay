@@ -50,12 +50,15 @@ export function fromSshConfig(src: string): { hosts: Imported[]; warnings: strin
       taken.add(name);
       byAlias.set(alias, name);
 
-      const port = Number(block.port);
+      // Decimal only, and inside a u16: `Number()` would take "0x16" as 22 and
+      // "70000" as itself, and a port the config format can't hold writes a file
+      // neither front end can load again.
+      const port = /^\d+$/.test(block.port ?? "") ? Number(block.port) : NaN;
       out.push({
         name,
         host: block.hostname ?? alias,
         user: block.user,
-        port: Number.isInteger(port) && port > 0 ? port : undefined,
+        port: port >= 1 && port <= 65535 ? port : undefined,
         key: block.identityfile,
         jump,
       });

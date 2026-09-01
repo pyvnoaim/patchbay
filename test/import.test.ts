@@ -78,6 +78,15 @@ test("keywords are case-insensitive and = separates as well as a space", () => {
   assert.equal(j.user, "bob");
 });
 
+test("a port outside a u16, or not plainly decimal, is dropped", () => {
+  const port = (v: string) => fromSshConfig(`Host t\n  Port ${v}\n`).hosts[0].port;
+  assert.equal(port("22"), 22);
+  assert.equal(port("70000"), undefined, "would write a config nothing can load back");
+  assert.equal(port("0x16"), undefined, "Number() reads hex; ssh does not");
+  assert.equal(port("1e3"), undefined);
+  assert.equal(port("0"), undefined);
+});
+
 test("the toml round-trips and leaves out what wasn't set", () => {
   const out = toToml(fromSshConfig("Host one\n  HostName 10.0.0.7\n").hosts);
   assert.match(out, /\[jack\.one\]/);
