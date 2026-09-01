@@ -105,19 +105,22 @@ document.addEventListener("keydown", (e) => {
   if (mod && e.key === "[") { e.preventDefault(); return cycleSession(-1); }
   if (mod && e.key === "]") { e.preventDefault(); return cycleSession(1); }
 
-  // A live session owns the keyboard - every keystroke belongs to ssh, not to us.
-  // Only the window-level shortcuts above and these get intercepted.
-  if (activeId !== null) {
-    if (mod && e.key === "w") { e.preventDefault(); closeSession(activeId); }
-    return;
-  }
-
+  // Above the session guard on purpose: the palette is modal and holds the focus,
+  // so those keys were never ssh's to begin with. Below it, Escape could not close
+  // the palette at all while a tab was open.
   if (palOpen()) {
     const rows = palMatches();
     if (e.key === "Escape") { e.preventDefault(); closePalette(); }
     else if (e.key === "ArrowDown") { e.preventDefault(); palSel = (palSel + 1) % Math.max(1, rows.length); renderPalette(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); palSel = (palSel - 1 + rows.length) % Math.max(1, rows.length); renderPalette(); }
     else if (e.key === "Enter" && rows[palSel]) { e.preventDefault(); const n = rows[palSel].name; closePalette(); primary(n); }
+    return;
+  }
+
+  // A live session owns the keyboard - every keystroke belongs to ssh, not to us.
+  // Only the window-level shortcuts above and these get intercepted.
+  if (activeId !== null) {
+    if (mod && e.key === "w") { e.preventDefault(); closeSession(activeId); }
     return;
   }
 

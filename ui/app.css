@@ -244,7 +244,7 @@ button.ghost { flex: none; }
 }
 #palette {
   position: fixed; inset: 0; z-index: 10;
-  display: flex; justify-content: center; padding-top: 14vh;
+  display: flex; justify-content: center; align-items: center; padding: 5vh 16px;
 }
 /* An id selector outranks the UA's [hidden] rule, so hidden needs saying again here. */
 #palette[hidden] { display: none; }
