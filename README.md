@@ -22,9 +22,8 @@ The CLI prints the TOML for you to check and paste. In the app it's the same lis
 tick boxes — right-click the device list, or the button on the empty state.
 
 The window adds what a terminal can't: sessions, remote desktop, a device's web UI and
-its files, all as tabs; a folder tree with per-folder VPNs; and an optional shared list
-for a team. Everything it knows is still those TOML files, so `bay` and the window
-never disagree.
+its files, all as tabs; a folder tree; and an optional shared list for a team. Everything
+it knows is still those TOML files, so `bay` and the window never disagree.
 
 
 ## Install
@@ -101,19 +100,14 @@ same argv the CLI builds, streamed to xterm.js. Your agent, `~/.ssh/config` and
 host-key prompts all still work, because it *is* your ssh. "Open in Terminal" is on
 the context menu when you'd rather have your own terminal.
 
-## Folders, VPNs and web UIs
+## Folders and web UIs
 
 A folder with slashes (`prod/eu/web`) nests in the sidebar, and `folders` is a list,
 so a device can sit in several branches at once. A device says how it is reached — `ssh`
 (on by default), `rdp = <port>`, `vnc = <port>` or `url`, one of them — and that is what
-Enter and a double-click open. A folder can carry a VPN, which is how one-customer-per-folder
-works — flip the switch, or let it come up on its own when you connect.
+Enter and a double-click open.
 
 ```toml
-[vpn.acme]
-provider = "tailscale"          # or tunnelblick / wireguard / custom
-profile  = "acme"
-
 [jack.acme-nas]
 host = "10.80.0.20"
 os   = "synology"               # picks the icon, and its colour
@@ -126,11 +120,6 @@ rdp  = 3389                     # remote desktop, in a tab
 ssh  = false
 folders = ["acme/prod"]
 ```
-
-A `custom` VPN runs whatever `up`/`down`/`check` you give it — so nothing in a `[vpn]`
-block runs until you've been shown it and said yes, and changing a command asks again.
-That matters most on a team, where those commands arrive from colleagues rather than
-from you.
 
 A device's web UI opens in a tab, beside your terminals. Appliances are usually reached
 by IP, so their certificate names something else and the page would be blank with no
@@ -171,10 +160,8 @@ file someone publishes, a raw git URL included, and you get a read-only copy of 
 Three seats are free; past that everyone can still read the list, and writing asks you
 to pay. Nothing is stored anywhere unless you point patchbay at a server yourself.
 
-Worth knowing before you join one: a `[vpn]` block runs the commands written in it, and
-joining a team means those arrive from your colleagues rather than from you. Nothing in
-one runs until you have been shown it and said yes — on first sight and again whenever it
-changes — but the rule still holds: join teams you'd trust with a shell script.
+Nothing in a config is ever executed: whatever a colleague puts in a space, the most it
+can do here is produce an `ssh` command line. That is what makes joining one safe.
 
 ## What it deliberately isn't
 

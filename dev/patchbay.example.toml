@@ -82,32 +82,7 @@ host = "1.1.1.1"
 os = "windows"
 
 # ── customers ──────────────────────────────────────────────────────────────
-# One folder per customer; the VPN switch appears on the folder that a
-# [vpn."<folder>"] section names. `check` is optional — without it the switch
-# shows what patchbay last did, not what is actually up.
-# The commands must RETURN — patchbay waits for them, then reads the exit code.
-# A bare `openvpn --config x.ovpn` stays in the foreground and is killed after 45s;
-# drive a VPN app or a service manager instead. Examples that work:
-#
-#   Tailscale — no root needed, the daemon already has it
-#     up    = "tailscale up"
-#     down  = "tailscale down"
-#     check = "tailscale status --peer=false"
-#
-#   OpenVPN via Tunnelblick (macOS) — it exposes connect/disconnect/state
-#     up    = "osascript -e 'tell app \"Tunnelblick\" to connect \"acme\"'"
-#     down  = "osascript -e 'tell app \"Tunnelblick\" to disconnect \"acme\"'"
-#     check = "osascript -e 'tell app \"Tunnelblick\" to get state of first configuration whose name is \"acme\"' | grep -q CONNECTED"
-#
-#   WireGuard — needs root, so let macOS raise its own auth dialog
-#     up    = "osascript -e 'do shell script \"wg-quick up acme\" with administrator privileges'"
-#     check = "wg show acme"
-#
-#   WiFiman / UniFi Teleport is GUI-only — no CLI to drive, so no switch for it.
-[vpn.acme]
-up    = "echo bringing acme up"
-down  = "echo taking acme down"
-check = "false"
+# One folder per customer, so a whole engagement is one row in the sidebar.
 
 [jack.acme-app]
 host = "10.80.0.10"

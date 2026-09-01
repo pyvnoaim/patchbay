@@ -98,7 +98,6 @@
       <div class="sheet-head">Settings</div>
       <div class="sheet-body">
         <nav class="setnav" id="setnav">
-          <button type="button" data-pane="vpn" data-icon="router">VPN</button>
           <button type="button" data-pane="devices" data-icon="server">Devices</button>
           <button type="button" data-pane="defaults" data-icon="layers">Defaults</button>
           <button type="button" data-pane="appearance" data-icon="monitor">Appearance</button>
@@ -106,19 +105,7 @@
           <button type="button" data-pane="config" data-icon="file-pen-line">Config file</button>
         </nav>
         <div class="setpanes">
-        <section class="pane" data-pane="vpn">
-          <div class="d-sec">VPN</div>
-          <label class="opt"><input type="checkbox" name="vpn_auto_connect">
-            <span><b>Connect a folder's VPN automatically</b>
-            Opening a session brings its VPN up first, so connecting is one action rather than two.</span></label>
-          <label class="opt"><input type="checkbox" name="vpn_auto_disconnect">
-            <span><b>Disconnect when a folder's last session closes</b>
-            Tidy, but it will cut a tunnel you were still using elsewhere — a browser tab, a mounted share.</span></label>
-          <div class="d-sec">Providers on this machine</div>
-          <div class="provider-list" id="provider-list"></div>
-        </section>
-
-        <section class="pane" data-pane="devices" hidden>
+        <section class="pane" data-pane="devices">
           <div class="d-sec">Devices</div>
           <label class="opt"><input type="checkbox" name="probe">
             <span><b>Check reachability</b>
@@ -190,28 +177,6 @@
     </form>
   </div>
 
-  <div id="vpnwrap" hidden>
-    <form class="sheet small" id="vpnform" autocomplete="off">
-      <div class="sheet-head" id="vpn-title"></div>
-      <div class="sheet-body">
-        <label class="f wide"><span>Provider</span><select name="provider"></select></label>
-        <label class="f wide req" id="vpn-profile-row"><span>Profile</span>
-          <input name="profile" spellcheck="false" list="vpn-profiles" placeholder="acme"><datalist id="vpn-profiles"></datalist></label>
-        <label class="f wide req"><span>Connect</span><input name="up" spellcheck="false" placeholder="wg-quick up acme"></label>
-        <label class="f wide"><span>Disconnect</span><input name="down" spellcheck="false" placeholder="wg-quick down acme"></label>
-        <label class="f wide"><span>Check (optional)</span><input name="check" spellcheck="false" placeholder="wg show acme — exit 0 means up"></label>
-        <p class="hint">These run as written, like a shell alias. Without a check command the
-        switch shows what patchbay last did, not what is actually up.</p>
-      </div>
-      <p class="sheet-err" id="vpn-err" hidden></p>
-      <div class="sheet-foot">
-        <button type="button" class="danger" id="vpn-delete" hidden></button>
-        <span style="flex:1"></span>
-        <button type="button" id="vpn-cancel">Cancel</button>
-        <button type="submit" class="primary">Save</button>
-      </div>
-    </form>
-  </div>
 
   <div id="askwrap" hidden>
     <form class="sheet small" id="askform" autocomplete="off">

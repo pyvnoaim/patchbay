@@ -61,8 +61,8 @@ async function openSession(name, task = null) {
   // Said before anything is spawned, so a slow or silent host still shows that the
   // terminal is alive. It is ours to take back: a login that draws with cursor moves —
   // fastfetch from a .zshrc — puts its box over whatever is already on screen, so the
-  // first byte from the far end gets a clean one. Anything else we wrote (a VPN coming
-  // up, an error) stays, because that is not ours to throw away.
+  // first byte from the far end gets a clean one. Anything else we wrote — an error
+  // on the way in — stays, because that is not ours to throw away.
   let ours = true;
   term.write(`\x1b[2m── ${task ? `${task} ` : ""}${name}… ──\x1b[0m\r\n`);
 
@@ -89,20 +89,6 @@ async function openSession(name, task = null) {
     return;
   }
 
-  // Bring the folder's VPN up first, so connecting is one action, not two.
-  const vpath = prefs.vpn_auto_connect !== false ? vpnFor(name) : null;
-  if (vpath && !vpns.get(gkey(vpath))?.up) {
-    ours = false;
-    term.write(`\x1b[2m── ${vpath.path} VPN is down, connecting… ──\x1b[0m\r\n`);
-    try {
-      await invoke("vpn_toggle", { ...vpath, on: true });
-      await refreshVpns();
-      term.write(`\x1b[2m── VPN up ──\x1b[0m\r\n`);
-    } catch (err) {
-      term.write(`\x1b[31m── VPN failed: ${String(err)} ──\x1b[0m\r\n`);
-    }
-  }
-
   try {
     // The argv it returns is already on screen, in the detail pane's COMMAND box.
     await (task
@@ -120,15 +106,9 @@ async function openSession(name, task = null) {
 function closeSession(id) {
   const s = sessions.get(id);
   if (!s) return;
-  const vpath = prefs.vpn_auto_disconnect === true ? vpnFor(s.name) : null;
   const closer = { rdp: "close_rdp_session", web: "close_web_view" }[s.kind] ?? "close_session";
   invoke(closer, { id }).catch(() => {});
   dropTab(id);
-
-  // Only once nothing else in that folder is still connected.
-  if (vpath && ![...sessions.values()].some((o) => sameGroup(vpnFor(o.name), vpath))) {
-    invoke("vpn_toggle", { ...vpath, on: false }).then(refreshVpns).catch(() => {});
-  }
 }
 
 // Take the tab away without telling the far end anything — either it has already

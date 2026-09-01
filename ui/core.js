@@ -12,7 +12,6 @@ const sheetWrap = $("sheetwrap"), jackForm = $("jackform"), jfErr = $("jf-err"),
 const askWrap = $("askwrap"), askForm = $("askform"), askInput = $("ask-input"), askErr = $("ask-err");
 const askUserField = $("ask-user-field"), askUser = $("ask-user"), askLabel = $("ask-label");
 const askBody = askForm.querySelector(".sheet-body");
-const vpnWrap = $("vpnwrap"), vpnForm = $("vpnform"), vpnErr = $("vpn-err"), vpnDelete = $("vpn-delete");
 const setWrap = $("setwrap"), setForm = $("setform"), setErr = $("set-err");
 const impWrap = $("importwrap"), impForm = $("importform"), impList = $("imp-list");
 const impNote = $("imp-note"), impErr = $("imp-err"), impOk = $("imp-ok");
@@ -44,11 +43,8 @@ let editingSpace = null;      // which space's file that save lands in
 let pending = new Map();      // gkey -> { space, path }
 let seeded = false;           // the tree's initial expansion is a one-off
 let lastProbe = 0;            // epoch ms of the last sweep, for the throttle below
-let vpns = new Map();         // gkey -> { space, path, up, known }
-let vpnBusy = new Set();      // gkeys with an up/down command in flight
 let detailMode = "jack";      // what the right pane describes: "jack" or "group"
 let prefs = {};               // [settings] from the config
-let providers = [];           // VPN presets this machine can drive
 let colors = {};              // [colors] overrides, os key -> hex
 let cfgPath = "";             // where the config lives, shown on first run
 let spaces = [];              // the extra config files beside it, by name
@@ -71,12 +67,12 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 // A sheet is modal to the keyboard; the palette is not, it does its own. Kept apart
 // because folding them together would let a ⌘K opened over a sheet change which one
 // Escape closes.
-const sheetOpen = () => [sheetWrap, askWrap, vpnWrap, setWrap, impWrap].some((el) => !el.hidden);
+const sheetOpen = () => [sheetWrap, askWrap, setWrap, impWrap].some((el) => !el.hidden);
 // Anything painting over the window at all — palette and context menu included. A web
 // tab is an OS view stacked above the page, so it has to shrink away for every one of
 // these. The sidebar stays live while a session tab is open, so a right-click menu
 // lands over the webview and is otherwise half-covered by it.
-const OVERLAYS = () => [sheetWrap, askWrap, vpnWrap, setWrap, impWrap, paletteEl, ctxEl];
+const OVERLAYS = () => [sheetWrap, askWrap, setWrap, impWrap, paletteEl, ctxEl];
 const modalOpen = () => OVERLAYS().some((el) => !el.hidden);
 
 // Lucide, inlined at generate time by scripts/icons.mjs — see ui/icons.js.

@@ -15,7 +15,6 @@ treeEl.addEventListener("click", (e) => {
   if (!el) return;
   // "All jacks" carries no group of its own; every other row does.
   const id = el.dataset.group ? { space: el.dataset.space || null, path: el.dataset.path || null } : null;
-  if (e.target.closest("[data-vpn]")) { e.stopPropagation(); return toggleVpn(id); }
   // Clicking the triangle folds; clicking the row selects.
   const foldable = el.dataset.hasKids === "true";
   if (e.target.closest(".twist") && foldable) {
@@ -46,8 +45,6 @@ detailPane.addEventListener("click", async (e) => {
   const gact = e.target.closest("[data-gact]")?.dataset.gact;
   if (gact) {
     if (gact === "new") openJack(null, group);
-    if (gact === "vpn") toggleVpn(group);
-    if (gact === "vpnedit") openVpn(group);
     if (gact === "rename") renameGroup(group);
     if (gact === "del") removeGroup(group);
     return;
@@ -94,7 +91,6 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       e.preventDefault();
       if (!askWrap.hidden) closeAsk(null);
-      else if (!vpnWrap.hidden) closeVpn();
       else if (!setWrap.hidden) closeSettings();
       else if (!impWrap.hidden) closeImport();
       else closeJack();
@@ -139,9 +135,8 @@ document.addEventListener("keydown", (e) => {
 // ── load ───────────────────────────────────────────────────────────────────
 async function load() {
   try {
-    // Preferences and provider detection first: the rest of the UI reads them.
+    // Preferences first: the rest of the UI reads them.
     prefs = await invoke("settings").catch(() => ({}));
-    if (!providers.length) providers = await invoke("vpn_providers").catch(() => []);
     if (!sshKeys.length) sshKeys = await invoke("ssh_keys").catch(() => []);
     colors = await invoke("colors").catch(() => ({}));
     cfgPath = await invoke("config_path").catch(() => "");
@@ -160,7 +155,6 @@ async function load() {
     }
     render();
     refreshProbes();
-    refreshVpns();
     syncTeam();
   } catch (e) {
     treeEl.innerHTML = "";
@@ -181,44 +175,6 @@ async function syncTeam() {
 }
 
 const PROBE_EVERY = 30_000;
-async function toggleVpn(id) {
-  const key = gkey(id);
-  const v = vpns.get(key);
-  if (!v || vpnBusy.has(key)) return;
-
-  // A [vpn] block runs shell commands, and since teams they arrive from colleagues
-  // on their own. Nothing runs until someone here has read it — asked on first sight
-  // and again whenever the command changes, never trusted just because it is present.
-  try {
-    const unread = await invoke("vpn_pending", { ...id });
-    if (unread) {
-      const ok = await ask(`${id.path} would run:\n\n${unread}\n\nRun it?`, null, "Run");
-      if (!ok) return;
-      await invoke("vpn_approve", { ...id });
-    }
-  } catch (e) { return alertish(e); }
-
-  vpnBusy.add(key);
-  renderTree();
-  try {
-    await invoke("vpn_toggle", { ...id, on: !v.up });
-    vpns.set(key, { ...v, up: !v.up });
-  } catch (e) {
-    alertish(e);
-  } finally {
-    vpnBusy.delete(key);
-    renderTree();
-    refreshVpns();
-  }
-}
-
-async function refreshVpns() {
-  try {
-    vpns = new Map((await invoke("vpns")).map((v) => [gkey({ space: v.space ?? null, path: v.path }), v]));
-    renderTree();
-  } catch { /* no [vpn] section is the normal case */ }
-}
-
 async function refreshProbes() {
   // Throttled because load() runs on every window focus, and a sweep opens a
   // socket to every jack. Alt-tabbing shouldn't hammer the whole estate.
@@ -233,7 +189,6 @@ async function refreshProbes() {
 
 load();
 setInterval(refreshProbes, PROBE_EVERY);
-setInterval(refreshVpns, PROBE_EVERY);
 // The config is a file you edit by hand, so pick up changes when the window comes back.
 window.addEventListener("focus", load);
 

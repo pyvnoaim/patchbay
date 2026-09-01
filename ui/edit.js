@@ -87,7 +87,6 @@ document.addEventListener("contextmenu", (e) => {
       { icon: "folder-plus", label: "New subfolder…", run: () => newGroup(id) },
       "-",
       { icon: "pencil", label: "Rename…", run: () => renameGroup(id) },
-      { icon: "plug", label: vpns.has(gkey(id)) ? "VPN settings…" : "Add a VPN…", run: () => openVpn(id) },
       { icon: "trash-2", label: "Delete folder", danger: true, run: () => removeGroup(id) },
     ]);
   }
@@ -425,107 +424,12 @@ impForm.addEventListener("submit", async (e) => {
   showErr(impErr, `${picked.length - failed.length} imported, ${failed.length} refused: ${failed.join(", ")}`);
 });
 
-// ── vpn sheet ──────────────────────────────────────────────────────────────
-let vpnEditing = null;
-
-/// Show only the fields the chosen protocols actually need.
-/// One way in per device. There is no separate "opens on double-click" any more —
-/// with a single choice the answer is the choice, and `primary` in the config is
-/// whatever Rust resolves from the one field that's set.
-const reachOf = (f) => f.reach.value || "ssh";
-
-function jackFields() {
-  const f = jackForm.elements;
-  const reach = reachOf(f);
-  for (const el of jackForm.querySelectorAll("[data-need]")) {
-    el.hidden = !el.dataset.need.split(" ").includes(reach);
-  }
-  // Sensible starting point rather than an empty box you have to know to fill.
-  if (reach === "rdp" && !f.rdp.value.trim()) f.rdp.value = "3389";
-  if (reach === "vnc" && !f.vnc.value.trim()) f.vnc.value = "5900";
-}
-
-function vpnFields() {
-  const f = vpnForm.elements;
-  const p = providers.find((x) => x.id === f.provider.value);
-  const custom = !p || p.id === "custom";
-  // Presets derive the commands, so only Custom shows the raw three.
-  for (const name of ["up", "down", "check"]) f[name].closest(".f").hidden = !custom;
-  $("vpn-profile-row").hidden = custom || !p.needs_profile;
-  $("vpn-profiles").innerHTML = (p?.profiles ?? []).map((n) => `<option value="${esc(n)}">`).join("");
-}
-
-async function openVpn(id) {
-  vpnEditing = id;
-  $("vpn-title").textContent = `VPN for ${id.path}`;
-  vpnErr.hidden = true;
-  vpnDelete.hidden = !vpns.has(gkey(id));
-  vpnDelete.innerHTML = `${icon("trash-2")}Remove`;
-  const f = vpnForm.elements;
-  f.provider.innerHTML = providers
-    .map((p) => `<option value="${esc(p.id)}"${p.installed ? "" : " disabled"}>${esc(p.label)}${p.installed ? "" : " — not installed"}</option>`)
-    .join("");
-  f.provider.value = "custom";
-  f.profile.value = f.up.value = f.down.value = f.check.value = "";
-  vpnFields();
-  vpnWrap.hidden = false;
-  try {
-    const def = await invoke("vpn_def", { ...id });
-    if (def && sameGroup(vpnEditing, id)) {
-      f.provider.value = def.provider ?? "custom";
-      f.profile.value = def.profile ?? "";
-      f.up.value = def.up ?? "";
-      f.down.value = def.down ?? "";
-      f.check.value = def.check ?? "";
-      vpnFields();
-    }
-  } catch (e) { showErr(vpnErr, String(e)); }
-}
-vpnForm.elements.provider.addEventListener("change", vpnFields);
-const closeVpn = () => { vpnWrap.hidden = true; };
-
-vpnForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const f = vpnForm.elements;
-  try {
-    await invoke("save_vpn", {
-      space: vpnEditing.space,
-      path: vpnEditing.path,
-      def: {
-        provider: f.provider.value,
-        profile: f.profile.value.trim() || null,
-        up: f.up.value.trim() || null,
-        down: f.down.value.trim() || null,
-        check: f.check.value.trim() || null,
-      },
-    });
-    closeVpn();
-    await refreshVpns();
-    syncTeam();
-  } catch (err) { showErr(vpnErr, String(err)); }
-});
-$("vpn-cancel").addEventListener("click", closeVpn);
-vpnWrap.addEventListener("mousedown", (e) => { if (e.target === vpnWrap) closeVpn(); });
-vpnDelete.addEventListener("click", async () => {
-  const id = vpnEditing;
-  if (!(await ask(`Remove the VPN on "${id.path}"? The folder and its devices stay.`, null, "Remove"))) return;
-  closeVpn();
-  try { await invoke("delete_vpn", { ...id }); await refreshVpns(); syncTeam(); }
-  catch (e) { alertish(e); }
-});
-
 // ── settings ───────────────────────────────────────────────────────────────
 async function openSettings() {
   setErr.hidden = true;
   for (const [k, v] of Object.entries(prefs)) {
     if (setForm.elements[k]) setForm.elements[k].checked = !!v;
   }
-  // Show what this machine can actually drive, so "why is Tunnelblick greyed out?"
-  // has an answer without leaving the sheet.
-  $("provider-list").innerHTML = providers
-    .filter((p) => p.id !== "custom")
-    .map((p) => `<span class="prov ${p.installed ? "on" : ""}">${icon(p.installed ? "check" : "x")}${esc(p.label)}</span>`)
-    .join("");
   // Read fresh rather than from state: nothing else in the app needs [defaults],
   // and a hand-edit between openings should show up here.
   const defs = await invoke("defaults").catch(() => ({}));
@@ -534,8 +438,8 @@ async function openSettings() {
   teamErr.hidden = true;
   renderTeam();
   // Land on the thing that needs answering. The sidebar button was already warning
-  // about it, so opening on VPN would make you hunt for what you clicked it for.
-  showPane(teams.some((t) => TEAM_STUCK[t.state]) ? "team" : "vpn");
+  // about it, so opening elsewhere would make you hunt for what you clicked it for.
+  showPane(teams.some((t) => TEAM_STUCK[t.state]) ? "team" : "devices");
   syncTeam();   // seats and state, fresh, while the sheet is already up
   $("page-openconfig").innerHTML = `${icon("file-pen-line")}Open config file`;
   setWrap.hidden = false;

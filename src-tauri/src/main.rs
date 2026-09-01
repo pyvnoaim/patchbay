@@ -10,7 +10,6 @@ mod rdp_session;
 mod sftp;
 mod team;
 mod terminal;
-mod vpn;
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -829,86 +828,6 @@ fn web_trust_at(store: &Path, url: &str) -> Result<(), String> {
     writeln!(f, "{url}").map_err(|e| format!("{}: {e}", store.display()))
 }
 
-/// Remembered state for VPNs with no `check` command — best effort, and the UI
-/// says so rather than pretending it measured anything.
-#[derive(Default)]
-struct VpnState(std::sync::Mutex<std::collections::HashMap<String, bool>>);
-
-/// Two spaces can each have a `prod` folder with its own VPN, so the remembered
-/// state is keyed by both. The approval store is not — its fingerprint covers the
-/// command itself, so an identical command in two spaces is the same agreement.
-fn remember_key(space: Option<&str>, path: &str) -> String {
-    format!("{}\u{0}{path}", space.unwrap_or_default())
-}
-
-#[tauri::command]
-async fn vpns(state: tauri::State<'_, std::sync::Arc<VpnState>>) -> Result<Vec<vpn::VpnView>, String> {
-    let remembered = state.0.lock().unwrap().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let mut out = Vec::new();
-        for (space, file) in patchbay::space_paths(&patchbay::config_path()) {
-            for (path, v) in vpn::load(&file)? {
-                // A `check` runs on every sweep with nobody clicking anything, so an
-                // unapproved one must not run at all. Unknown is the honest answer, and
-                // the same one a VPN with no check at all gets.
-                let measured = vpn::approval::approved(&path, &v.resolve())
-                    .then(|| vpn::is_up(&v))
-                    .flatten();
-                out.push(match measured {
-                    Some(up) => vpn::VpnView { space: space.clone(), path, up, known: true },
-                    None => vpn::VpnView {
-                        up: *remembered.get(&remember_key(space.as_deref(), &path)).unwrap_or(&false),
-                        space: space.clone(),
-                        path,
-                        known: false,
-                    },
-                });
-            }
-        }
-        Ok(out)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// Runs the folder's `up` or `down`. Whatever you put there is what runs — see the
-/// warning in the README; this is the one place the config is more than an ssh argv.
-#[tauri::command]
-async fn vpn_toggle(
-    state: tauri::State<'_, std::sync::Arc<VpnState>>,
-    space: Option<String>,
-    path: String,
-    on: bool,
-) -> Result<(), String> {
-    let handle = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let defs = vpn::load(&space_file(space.as_deref()))?;
-        let v = defs
-            .get(&path)
-            .ok_or_else(|| format!("no [vpn.\"{path}\"] in the config"))?;
-        let r = v.resolve();
-        // The window asks first — this is the backstop, so a caller that forgets to
-        // can't run a command nobody on this machine has read.
-        if !vpn::approval::approved(&path, &r) {
-            return Err(format!("[vpn.\"{path}\"] hasn't been approved on this machine"));
-        }
-        let cmd = if on { r.up } else { r.down };
-        let cmd = cmd.ok_or_else(|| {
-            format!("[vpn.\"{path}\"] has no `{}` command", if on { "up" } else { "down" })
-        })?;
-        vpn::run(&cmd)?;
-        handle.0.lock().unwrap().insert(remember_key(space.as_deref(), &path), on);
-        Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-fn save_vpn(space: Option<String>, path: String, def: vpn::Vpn) -> Result<(), String> {
-    config::save_vpn_at(&space_file(space.as_deref()), &path, &def)
-}
-
 #[derive(Serialize)]
 struct TunnelView {
     id: u32,
@@ -1169,47 +1088,6 @@ fn save_settings(next: config::Settings) -> Result<(), String> {
     config::save_settings(&next)
 }
 
-/// Which VPN presets this machine can actually drive, and the profiles they know
-/// about — so the sheet offers a pick list instead of asking you to type.
-#[tauri::command]
-async fn vpn_providers() -> Vec<vpn::Provider> {
-    tauri::async_runtime::spawn_blocking(vpn::providers)
-        .await
-        .unwrap_or_default()
-}
-
-#[tauri::command]
-fn delete_vpn(space: Option<String>, path: String) -> Result<(), String> {
-    config::delete_vpn_at(&space_file(space.as_deref()), &path)
-}
-
-/// The raw definition, for the edit sheet — `vpns` returns live state instead.
-/// The commands this folder's VPN would run, if they still need someone's eyes on
-/// them. `None` means approved already and the toggle can just go.
-#[tauri::command]
-fn vpn_pending(space: Option<String>, path: String) -> Result<Option<String>, String> {
-    let defs = vpn::load(&space_file(space.as_deref()))?;
-    let Some(v) = defs.get(&path) else { return Ok(None) };
-    let r = v.resolve();
-    Ok((!vpn::approval::approved(&path, &r)).then(|| vpn::approval::describe(&r)))
-}
-
-/// Approve exactly what `vpn_pending` returned. Re-resolved here rather than taking
-/// the text from the window, so what gets recorded is what will actually run.
-#[tauri::command]
-fn vpn_approve(space: Option<String>, path: String) -> Result<(), String> {
-    let defs = vpn::load(&space_file(space.as_deref()))?;
-    let v = defs
-        .get(&path)
-        .ok_or_else(|| format!("no [vpn.\"{path}\"] in the config"))?;
-    vpn::approval::approve(&path, &v.resolve())
-}
-
-#[tauri::command]
-fn vpn_def(space: Option<String>, path: String) -> Result<Option<vpn::Vpn>, String> {
-    Ok(vpn::load(&space_file(space.as_deref()))?.get(&path).cloned())
-}
-
 /// One call for the whole loop — every team space fetched, then pushed or adopted,
 /// whichever applies. The window runs it on focus and after every edit; with no team
 /// spaces it returns an empty list and touches nothing.
@@ -1341,7 +1219,6 @@ fn open_config() -> Result<(), String> {
 fn main() {
     tauri::Builder::default()
         .manage(pty::Shared::default())
-        .manage(std::sync::Arc::<VpnState>::default())
         .manage(rdp::SharedTunnels::default())
         .manage(rdp_session::Shared::default())
         .setup(|app| {
@@ -1401,7 +1278,6 @@ fn main() {
             jacks, connect, probe, config_path, open_config,
             save_jack, delete_jack, rename_group, delete_group, open_url,
             spaces, create_space, delete_space, move_jack,
-            vpns, vpn_toggle, vpn_def, vpn_pending, vpn_approve, save_vpn, delete_vpn, vpn_providers,
             settings, save_settings, colors, save_color, defaults, save_defaults, ssh_keys,
             ssh_hosts,
             team_sync, team_join, team_create, team_resolve, team_leave,

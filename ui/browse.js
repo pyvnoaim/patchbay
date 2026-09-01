@@ -92,22 +92,8 @@ function row(node, depth, glyph, live, id) {
     <span class="gi">${icon(g)}</span>
     <span class="label">${esc(node.name)}</span>
     <span class="live ${on ? "on" : ""}"${on ? ' data-tip="A session is open in here"' : ""}></span>
-    ${vpnSwitch(id)}
     <span class="n">${node.members.size}</span>
   </div>`;
-}
-
-// Only folders named by a [vpn."..."] section get one.
-function vpnSwitch(id) {
-  const v = id?.path && vpns.get(gkey(id));
-  if (!v) return "";
-  const busy = vpnBusy.has(gkey(id));
-  const title = busy ? "working…"
-    : v.up ? `VPN up${v.known ? "" : " (remembered, no check command)"} — click to disconnect`
-    : "VPN down — click to connect";
-  return `<span class="vpn ${v.up ? "on" : ""} ${busy ? "busy" : ""}"
-     data-vpn="1" role="switch" aria-checked="${!!v.up}"
-     data-tip="${esc(title)}" data-tip-at="right"><i></i></span>`;
 }
 
 // Something nested under it makes it a folder; a flat one is just a label. Same
@@ -208,10 +194,8 @@ function renderGroup() {
   const down = members.filter((j) => state(j) === "down").length;
   const unknown = members.length - up - down;
   const open = [...sessions.values()].filter((s) => !s.dead && members.some((j) => j.name === s.name));
-  // A space row has no folder to rename, delete, or hang a VPN on.
+  // A space row has no folder to rename or delete.
   const real = group !== null && group.path !== null;
-  const v = real && vpns.get(gkey(group));
-  const busy = real && vpnBusy.has(gkey(group));
 
   detailEl.innerHTML = `
     <div class="d-name"><span class="d-os">${icon(
@@ -229,21 +213,12 @@ function renderGroup() {
     ${open.length ? `<div class="d-sec">${icon("square-terminal")}Sessions</div>
       <div class="route">${open.map((s) => `<span class="last"><i class="pip"></i>${esc(s.name)}</span>`).join("")}</div>` : ""}
 
-    ${v ? `<div class="d-sec">${icon("plug")}VPN</div>
-      <div style="font-size:12.5px">${
-        v.up ? `<span style="color:var(--up)">connected</span>` : `<span style="color:var(--fg-dim)">disconnected</span>`
-      }${v.known ? "" : ` <span style="color:var(--fg-faint)">· remembered, no check command</span>`}</div>
-      <div class="btns">
-        <button class="${v.up ? "" : "primary"}" data-gact="vpn" ${busy ? "disabled" : ""}>
-          ${icon("plug")}${busy ? "working…" : v.up ? "Disconnect" : "Connect VPN"}</button>
-      </div>` : ""}
 
 `;
 
   dActions.innerHTML = `
     <button class="primary" data-gact="new">${icon("plus")}Device</button>
-    ${real ? `<button class="ghost" data-gact="vpnedit" data-tip="${v ? "VPN settings" : "Add a VPN"}">${icon("plug")}</button>
-    <button class="ghost" data-gact="rename" data-tip="Rename folder">${icon("pencil")}</button>
+    ${real ? `<button class="ghost" data-gact="rename" data-tip="Rename folder">${icon("pencil")}</button>
     <button class="ghost danger" data-gact="del" data-tip="Delete folder" data-tip-at="right">${icon("trash-2")}</button>` : ""}`;
 }
 
@@ -373,19 +348,6 @@ function primary(name) {
   if (j.primary === "web") return openWeb(name);
   if (j.primary === "sftp") return openFilesSession(name);
   return connect(name);
-}
-
-/// The most specific folder VPN covering this device, or null.
-function vpnFor(name) {
-  const j = all.find((x) => x.name === name);
-  if (!j) return null;
-  let best = null;
-  for (const v of vpns.values()) {
-    if ((v.space ?? null) !== (j.space ?? null)) continue;
-    const covers = j.folders.some((f) => f === v.path || f.startsWith(v.path + "/"));
-    if (covers && (!best || v.path.length > best.path.length)) best = { space: v.space ?? null, path: v.path };
-  }
-  return best;
 }
 
 // In-app unless the preference says otherwise; `inTerminal` forces the handoff.
