@@ -62,9 +62,12 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 // because folding them together would let a ⌘K opened over a sheet change which one
 // Escape closes.
 const sheetOpen = () => [sheetWrap, askWrap, vpnWrap, setWrap, impWrap].some((el) => !el.hidden);
-// Anything painting over the window at all, palette included — a web tab is an OS
-// view stacked above the page and has to shrink away for every one of these.
-const modalOpen = () => sheetOpen() || !paletteEl.hidden;
+// Anything painting over the window at all — palette and context menu included. A web
+// tab is an OS view stacked above the page, so it has to shrink away for every one of
+// these. The sidebar stays live while a session tab is open, so a right-click menu
+// lands over the webview and is otherwise half-covered by it.
+const OVERLAYS = () => [sheetWrap, askWrap, vpnWrap, setWrap, impWrap, paletteEl, ctxEl];
+const modalOpen = () => OVERLAYS().some((el) => !el.hidden);
 
 // Lucide, inlined at generate time by scripts/icons.mjs — see ui/icons.js.
 const icon = (name) =>

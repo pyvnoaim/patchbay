@@ -137,6 +137,9 @@ function showTab() {
 // A child webview is an OS view stacked above the page: `hidden` does nothing to it
 // and it covers every sheet. So each one is either exactly over its own host div or
 // sized to nothing, and anything that opens on top has to call this again.
+// ponytail: `#tip` is left out on purpose. Blanking the page on every hover would be
+// worse than a tooltip clipped at the pane edge; give it the same treatment as the
+// menu if tooltips ever land over the web area often enough to matter.
 function placeWebViews() {
   for (const s of sessions.values()) {
     if (s.kind !== "web") continue;
@@ -159,7 +162,7 @@ let overlayWatch = null;
 function watchOverlays() {
   if (overlayWatch) return;
   overlayWatch = new MutationObserver(placeWebViews);
-  for (const el of [sheetWrap, askWrap, vpnWrap, setWrap, impWrap, paletteEl]) {
+  for (const el of OVERLAYS()) {
     overlayWatch.observe(el, { attributes: true, attributeFilter: ["hidden"] });
   }
 }
