@@ -18,6 +18,7 @@ const impWrap = $("importwrap"), impForm = $("importform"), impList = $("imp-lis
 const impNote = $("imp-note"), impErr = $("imp-err"), impOk = $("imp-ok");
 const teamErr = $("team-err"), setNav = $("setnav");
 const upWrap = $("uptoast"), upText = $("up-text"), upInstall = $("up-install"), upClose = $("up-close");
+const upMore = $("up-more"), upNotes = $("up-notes");
 
 const isMac = navigator.userAgent.includes("Mac");
 if (isMac) document.body.dataset.os = "macos";

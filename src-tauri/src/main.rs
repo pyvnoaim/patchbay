@@ -1237,16 +1237,44 @@ fn eject_install_image() {
     }
 }
 
+#[tauri::command]
+fn app_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// What the pill offers: the version, and the release notes that came with it.
+#[derive(Serialize)]
+struct Offer {
+    version: String,
+    /// The CHANGELOG section for that version, as the release carries it. The update
+    /// *signature* covers the archive and not this, so it is text from outside like
+    /// any other and the window escapes it - and it is cut short here, because a pill
+    /// is not the place to render somebody's essay.
+    notes: Option<String>,
+}
+
 /// The version waiting on the update endpoint, or `None` when this is the latest.
 /// Signature-checked by the plugin against the public key in `tauri.conf.json`, so a
 /// tampered feed or archive fails here rather than installing.
+///
+/// An unreachable endpoint is an error here and swallowed by the launch check, which
+/// has nothing worth interrupting anyone about - but a check someone *asked* for has
+/// to be able to say why it found nothing.
 #[tauri::command]
-async fn update_check(app: tauri::AppHandle) -> Result<Option<String>, String> {
+async fn update_check(app: tauri::AppHandle) -> Result<Option<Offer>, String> {
     use tauri_plugin_updater::UpdaterExt;
-    let found = app.updater().map_err(|e| e.to_string())?.check().await;
-    // An unreachable endpoint is not something to interrupt anyone about - the check
-    // runs on every launch and the next one can say it.
-    Ok(found.ok().flatten().map(|u| u.version))
+    let found = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(found.map(|u| Offer {
+        version: u.version,
+        // Characters, not bytes: `truncate` panics mid-codepoint, and a changelog
+        // with a `▸` in it would be the thing that found that out.
+        notes: u.body.map(|b| b.chars().take(4000).collect()),
+    }))
 }
 
 /// Checked a second time rather than parked between the two commands: an `Update`
@@ -1325,10 +1353,17 @@ fn main() {
             // for its own sake: without it ⌘C and ⌘V stop working in the webview.
             #[cfg(target_os = "macos")]
             {
-                use tauri::menu::{MenuBuilder, SubmenuBuilder};
+                use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
                 let h = app.handle();
+                // Where a Mac user looks for it, and the only entry point on this
+                // platform that doesn't need the settings sheet open first. The id is
+                // matched in the handler below - a predefined item's id is a counter,
+                // but ours is ours.
+                let check = MenuItem::with_id(h, "check-update", "Check for Updates…", true, None::<&str>)?;
                 let about = SubmenuBuilder::new(h, "patchbay")
                     .about(None)
+                    .separator()
+                    .item(&check)
                     .separator()
                     .services()
                     .separator()
@@ -1354,6 +1389,14 @@ fn main() {
                     .fullscreen()
                     .build()?;
                 app.set_menu(MenuBuilder::new(h).items(&[&about, &edit, &window]).build()?)?;
+                // The window owns what a check looks like, so the menu only says it
+                // was asked for.
+                app.on_menu_event(|app, event| {
+                    if event.id() == "check-update" {
+                        use tauri::Emitter;
+                        let _ = app.emit("menu:check-update", ());
+                    }
+                });
             }
             #[cfg(not(target_os = "macos"))]
             let _ = app;
@@ -1370,7 +1413,7 @@ fn main() {
             open_rdp, open_vnc, open_rdp_session, close_rdp_session, rdp_input, tunnels, close_tunnel,
             open_session, open_task, write_session, resize_session, close_session,
             sftp_ls, sftp_get, sftp_put, sftp_ready, open_master, open_full_disk_access,
-            update_check, update_install, update_restart
+            app_version, update_check, update_install, update_restart
         ])
         .build(tauri::generate_context!())
         .expect("error while building patchbay")

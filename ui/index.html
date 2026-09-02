@@ -103,6 +103,7 @@
           <button type="button" data-pane="defaults" data-icon="layers">Defaults</button>
           <button type="button" data-pane="appearance" data-icon="monitor">Appearance</button>
           <button type="button" data-pane="team" data-icon="network">Spaces</button>
+          <button type="button" data-pane="updates" data-icon="rotate-cw">Updates</button>
           <button type="button" data-pane="config" data-icon="file-pen-line">Config file</button>
         </nav>
         <div class="setpanes">
@@ -168,6 +169,21 @@
           <p class="sheet-err" id="team-err" hidden></p>
         </section>
 
+        <section class="pane" data-pane="updates" hidden>
+          <div class="d-sec">Updates</div>
+          <p class="page-note">The one request patchbay makes on its own: does the release page
+          have a newer version. What comes back is verified against a key built into this app
+          before anything is replaced, and nothing is installed until you say so.</p>
+          <div class="btns">
+            <button type="button" class="ghost" id="page-checkupdate"></button>
+            <span class="page-said" id="update-said"></span>
+          </div>
+          <label class="opt"><input type="checkbox" name="check_updates">
+            <span><b>Check on launch</b>
+            Untick it and the button above becomes the only check.</span></label>
+          <div class="mono" id="appversion"></div>
+        </section>
+
         <section class="pane" data-pane="config" hidden>
           <div class="d-sec">Config file</div>
           <p class="page-note">Everything here is stored in this file. It's plain TOML - edit it by hand
@@ -230,9 +246,13 @@
   <!-- News, not a question: it floats over the list, takes no keyboard, and is
        deliberately not one of the OVERLAYS. -->
   <div id="uptoast" role="status" hidden>
-    <span id="up-text"></span>
-    <button id="up-install" class="primary">Install</button>
-    <button id="up-close" class="x" aria-label="Dismiss"></button>
+    <div class="up-row">
+      <span id="up-text"></span>
+      <button type="button" id="up-more" class="quiet" hidden>What's new</button>
+      <button id="up-install" class="primary">Install</button>
+      <button id="up-close" class="x" aria-label="Dismiss"></button>
+    </div>
+    <div id="up-notes" hidden></div>
   </div>
 
 <!-- Classic scripts sharing one global scope, so load order is load-bearing:

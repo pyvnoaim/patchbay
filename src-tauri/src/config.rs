@@ -319,6 +319,10 @@ pub struct Settings {
     /// overrides it.
     #[serde(default = "yes")]
     pub os_colors: bool,
+    /// Ask the update endpoint once per launch. On unless it is turned off here -
+    /// it is the only request the app makes on its own.
+    #[serde(default = "yes")]
+    pub check_updates: bool,
     /// "system" follows the machine; "light" and "dark" pin it. Anything else reads
     /// as "system", so a typo here is a working app rather than an unstyled one.
     #[serde(default = "system")]
@@ -347,6 +351,7 @@ impl Default for Settings {
             probe: true,
             connect_in_terminal: false,
             os_colors: true,
+            check_updates: true,
             theme: system(),
             font_size: font_size(),
         }
@@ -450,6 +455,7 @@ pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
     t["probe"] = value(s.probe);
     t["connect_in_terminal"] = value(s.connect_in_terminal);
     t["os_colors"] = value(s.os_colors);
+    t["check_updates"] = value(s.check_updates);
     // Both are read straight back out by the window - one onto the root element, one
     // into xterm - so they are narrowed here rather than wherever they land.
     t["theme"] = value(match s.theme.as_str() {
@@ -615,6 +621,17 @@ folders = ["prod/eu/web"]
         assert_eq!(back.theme, "light");
         assert_eq!(back.font_size, 14.0);
         assert!(read(&p).contains("keep this comment"));
+    }
+
+    #[test]
+    fn the_update_check_is_on_until_it_is_turned_off() {
+        let p = scratch("check_updates");
+        // A config written before the setting existed still checks - absent is on,
+        // and a machine that silently stopped looking would never say so.
+        assert!(load_settings_at(&p).check_updates);
+
+        save_settings_at(&p, &Settings { check_updates: false, ..Settings::default() }).unwrap();
+        assert!(!load_settings_at(&p).check_updates);
     }
 
     #[test]

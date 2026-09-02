@@ -187,13 +187,99 @@ let upVersion = "";
 /// into the restart. Nothing else about the app changes until you take it.
 let upReady = false;
 
-function showUpdate(version) {
-  upVersion = version;
-  upText.textContent = `patchbay ${version} is available`;
+let upFade = null;
+
+/// The release notes, as the changelog wrote them: bullets that wrap onto the next
+/// line, and the odd `word` in backticks. Escaped first and marked up after, so the
+/// code spans are ours and everything inside them is theirs.
+function notesHtml(md) {
+  const items = [];
+  for (const raw of md.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (/^[-*] /.test(line)) items.push(line.slice(2));
+    // A wrapped line belongs to the bullet above it, not to a bullet of its own.
+    else if (items.length) items[items.length - 1] += ` ${line}`;
+    else items.push(line);
+  }
+  const code = (t) => esc(t).replace(/`([^`]+)`/g, "<code>$1</code>");
+  return `<ul>${items.map((t) => `<li>${code(t)}</li>`).join("")}</ul>`;
+}
+
+function showUpdate(offer) {
+  upVersion = offer.version;
+  upText.textContent = `patchbay ${offer.version} is available`;
   upClose.innerHTML = icon("x");
+  upNotes.innerHTML = offer.notes ? notesHtml(offer.notes) : "";
+  // A release with no notes offers nothing to read, so it doesn't say there is.
+  upMore.hidden = !offer.notes;
+  closeNotes();
+  clearTimeout(upFade);
+  upWrap.classList.remove("leaving");
+  upInstall.hidden = false;
   upWrap.hidden = false;
 }
-upClose.addEventListener("click", () => (upWrap.hidden = true));
+
+function closeNotes() {
+  upNotes.hidden = true;
+  upWrap.classList.remove("open");
+  upMore.textContent = "What\u2019s new";
+}
+upMore.addEventListener("click", () => {
+  if (!upNotes.hidden) return closeNotes();
+  upNotes.hidden = false;
+  upWrap.classList.add("open");
+  upMore.textContent = "Hide";
+});
+
+/// The same pill as a passing remark - no button, gone in a few seconds. What a check
+/// you asked for says when there was nothing to find.
+function flashUpdate(msg) {
+  upText.textContent = msg;
+  upClose.innerHTML = icon("x");
+  upInstall.hidden = true;
+  upMore.hidden = true;
+  closeNotes();
+  upWrap.classList.remove("leaving");
+  upWrap.hidden = false;
+  clearTimeout(upFade);
+  upFade = setTimeout(() => {
+    upWrap.classList.add("leaving");
+    upFade = setTimeout(() => {
+      upWrap.hidden = true;
+      upWrap.classList.remove("leaving");
+      upInstall.hidden = false;
+    }, 280);
+  }, 4000);
+}
+
+/// A check someone asked for, so it answers either way - unlike the one at launch,
+/// which stays quiet unless there is something to install. `said` is the line beside
+/// the settings button: the pill is behind that sheet and invisible while it's open,
+/// so the sheet has to answer for itself.
+async function checkUpdates(said) {
+  const say = (m) => said && (said.textContent = m);
+  say("Checking…");
+  try {
+    const offer = await invoke("update_check");
+    if (offer) {
+      showUpdate(offer);
+      say(`${offer.version} is ready to install`);
+      return;
+    }
+    const now = await invoke("app_version").catch(() => "");
+    say("Up to date");
+    if (!said) flashUpdate(now ? `patchbay ${now} is the latest` : "patchbay is up to date");
+  } catch (e) {
+    say(`Couldn't check: ${e}`);
+    if (!said) flashUpdate("Couldn't check for updates");
+  }
+}
+upClose.addEventListener("click", () => {
+  // Or a flash dismissed early takes the *next* pill away with it when it fires.
+  clearTimeout(upFade);
+  upWrap.hidden = true;
+});
 upInstall.addEventListener("click", async () => {
   // A restart takes every live session with it, so it is never something that just
   // happens to you when a download finishes - it is this second click.
@@ -527,6 +613,12 @@ async function openSettings() {
   showPane(teams.some((t) => TEAM_STUCK[t.state]) ? "team" : "devices");
   syncTeam();   // seats and state, fresh, while the sheet is already up
   $("page-openconfig").innerHTML = `${icon("file-pen-line")}Open config file`;
+  $("page-checkupdate").innerHTML = `${icon("rotate-cw")}Check for updates`;
+  // Last time's answer is not this time's, and the sheet outlives one opening.
+  $("update-said").textContent = "";
+  invoke("app_version")
+    .then((v) => ($("appversion").textContent = `patchbay ${v}`))
+    .catch(() => {});
   setWrap.hidden = false;
   try { $("cfgpath").textContent = await invoke("config_path"); } catch { /* shown blank */ }
 }
@@ -581,6 +673,7 @@ setForm.addEventListener("submit", async (e) => {
 });
 $("set-cancel").addEventListener("click", closeSettings);
 $("page-openconfig").addEventListener("click", () => invoke("open_config"));
+$("page-checkupdate").addEventListener("click", () => checkUpdates($("update-said")));
 setWrap.addEventListener("mousedown", (e) => { if (e.target === setWrap) closeSettings(); });
 
 // ── spaces ─────────────────────────────────────────────────────────────────

@@ -176,6 +176,23 @@ a { color: inherit; }
   .band.split .full { margin-top: 28px; }
 }
 
+/* ═══ changelog ════════════════════════════════════════════════════════════
+   Filled from the releases API the first time it scrolls into view, so it is
+   never a copy of anything that can go stale. */
+.log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 26px; }
+.log li { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 0 22px; align-items: start; }
+.log .ver { font-weight: 700; letter-spacing: -.02em; }
+.log .when { display: block; margin-top: 3px; color: var(--ink-faint); font-size: 12.5px; }
+.log ul { margin: 0; padding-left: 17px; color: var(--ink-dim); display: flex; flex-direction: column; gap: 7px; }
+.log code {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .88em; color: var(--ink);
+}
+@media (max-width: 620px) {
+  .log li { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .log .when { display: inline; margin-left: 8px; }
+}
+
 .body { display: flex; flex-direction: column; gap: 30px; min-width: 0; }
 .full { min-width: 0; margin-top: 44px; }
 @media (max-width: 900px) { .full { margin-top: 30px; } }
@@ -639,6 +656,7 @@ footer .push { margin-left: auto; }
       <a class="sm" href="#config">Config</a>
       <a class="sm" href="#folders">Folders</a>
       <a class="sm" href="#spaces">Spaces</a>
+      <a class="sm" href="#changelog">Changelog</a>
       <a href="https://github.com/pyvnoaim/patchbay">GitHub</a>
       <div class="dl">
         <a class="btn solid" href="https://github.com/pyvnoaim/patchbay/releases">Download</a>
@@ -1110,6 +1128,25 @@ footer .push { margin-left: auto; }
 </section>
 
 
+<section class="band split" id="changelog">
+  <div class="wrap">
+    <div class="body">
+      <h2>What changed, and when.</h2>
+      <p class="lede">
+        Every release, in the words it was written in - the same notes the app shows you
+        before it installs anything. Nothing here is typed twice.
+      </p>
+      <a class="btn line" href="https://github.com/pyvnoaim/patchbay/releases">All releases</a>
+    </div>
+    <div class="full">
+      <ol class="log" id="log"></ol>
+      <p class="lede" id="log-off" hidden>
+        The releases live on <a href="https://github.com/pyvnoaim/patchbay/releases">GitHub</a>.
+      </p>
+    </div>
+  </div>
+</section>
+
 <section class="close">
   <div class="wrap">
     <div class="col">
@@ -1506,6 +1543,65 @@ footer .push { margin-left: auto; }
   navigator.userAgentData.getHighEntropyValues(["architecture"]).then(function (v) {
     mark(v && v.architecture === "x86" ? "mac-x64" : "mac-arm");
   }).catch(function () { mark(macArch()); });
+})();
+</script>
+
+<script>
+/* The changelog, fetched from the releases API the first time the section is
+   scrolled to. Drafts need a token to see, so a release appears here at the
+   moment it is published - which is the same moment the app starts offering it.
+   A failed fetch leaves the link to GitHub rather than an empty heading. */
+(function () {
+  var list = document.getElementById("log");
+  var off = document.getElementById("log-off");
+  if (!list) return;
+
+  function esc(t) {
+    return String(t).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  /* The same shape the app parses: bullets that wrap onto the next line, and the
+     odd `word` in backticks. Escaped first, marked up second. */
+  function bullets(body) {
+    var items = [];
+    (body || "").split("\n").forEach(function (raw) {
+      var line = raw.trim();
+      if (!line || line.charAt(0) === "#") return;
+      if (/^[-*] /.test(line)) items.push(line.slice(2));
+      else if (items.length) items[items.length - 1] += " " + line;
+      else items.push(line);
+    });
+    return items.map(function (t) {
+      return "<li>" + esc(t).replace(/`([^`]+)`/g, "<code>$1</code>") + "</li>";
+    }).join("");
+  }
+
+  var when = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "long", year: "numeric" });
+
+  function draw(releases) {
+    var rows = releases.filter(function (r) { return !r.draft; }).slice(0, 12);
+    if (!rows.length) throw new Error("nothing published yet");
+    list.innerHTML = rows.map(function (r) {
+      var notes = bullets(r.body);
+      return '<li><div><span class="ver">' + esc(r.tag_name) + "</span>" +
+        '<span class="when">' + esc(when.format(new Date(r.published_at))) + "</span></div>" +
+        (notes ? "<ul>" + notes + "</ul>" : "<ul><li>No notes for this one.</li></ul>") +
+        "</li>";
+    }).join("");
+  }
+
+  var asked = false;
+  new IntersectionObserver(function (entries, self) {
+    if (!entries[0].isIntersecting || asked) return;
+    asked = true;
+    self.disconnect();
+    fetch("https://api.github.com/repos/pyvnoaim/patchbay/releases?per_page=12")
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(draw)
+      .catch(function () { list.hidden = true; off.hidden = false; });
+  }, { rootMargin: "200px" }).observe(list);
 })();
 </script>
 </body>

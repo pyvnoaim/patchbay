@@ -233,9 +233,17 @@ async function refreshProbes() {
 /// can't be reached and an app that is already current both say nothing: the check
 /// runs on every launch, so the next one can raise it.
 async function offerUpdate() {
-  const version = await invoke("update_check").catch(() => null);
-  if (version) showUpdate(version);
+  if (prefs.check_updates === false) return;
+  const offer = await invoke("update_check").catch(() => null);
+  if (offer) showUpdate(offer);
 }
+
+// The macOS menu's "Check for Updates…" - it only says it was asked for; what a
+// check looks like belongs to the window.
+// The menu bar still works with a sheet open, and the pill is *behind* a sheet - so
+// when settings is up, the answer goes to the line beside its button instead.
+listen("menu:check-update", () => checkUpdates(setWrap.hidden ? null : $("update-said")))
+  .catch(() => { /* no capability, so the settings button is the only way in */ });
 
 // Behind the first paint: the window is for the device list, not for an errand.
 load().then(offerUpdate);
