@@ -243,16 +243,26 @@
     </div>
   </div>
 
-  <!-- News, not a question: it floats over the list, takes no keyboard, and is
-       deliberately not one of the OVERLAYS. -->
-  <div id="uptoast" role="status" hidden>
-    <div class="up-row">
+  <!-- News, not questions: these float over the list, take no keyboard, and are
+       deliberately not among the OVERLAYS. Two pills rather than one element doing
+       both jobs - an error arriving mid-download must not take the update's own
+       button off the screen. -->
+  <div id="notices">
+  <div id="msg" class="pill" role="alert" hidden>
+    <div class="pill-row">
+      <span id="msg-text"></span>
+      <button type="button" id="msg-close" class="x" aria-label="Dismiss"></button>
+    </div>
+  </div>
+  <div id="uptoast" class="pill" role="status" hidden>
+    <div class="pill-row">
       <span id="up-text"></span>
       <button type="button" id="up-more" class="quiet" hidden>What's new</button>
       <button id="up-install" class="primary">Install</button>
       <button id="up-close" class="x" aria-label="Dismiss"></button>
     </div>
     <div id="up-notes" hidden></div>
+  </div>
   </div>
 
 <!-- Classic scripts sharing one global scope, so load order is load-bearing:

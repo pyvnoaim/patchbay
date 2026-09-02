@@ -187,8 +187,6 @@ let upVersion = "";
 /// into the restart. Nothing else about the app changes until you take it.
 let upReady = false;
 
-let upFade = null;
-
 /// The release notes, as the changelog wrote them: bullets that wrap onto the next
 /// line, and the odd `word` in backticks. Escaped first and marked up after, so the
 /// code spans are ours and everything inside them is theirs.
@@ -214,7 +212,6 @@ function showUpdate(offer) {
   // A release with no notes offers nothing to read, so it doesn't say there is.
   upMore.hidden = !offer.notes;
   closeNotes();
-  clearTimeout(upFade);
   upWrap.classList.remove("leaving");
   upInstall.hidden = false;
   upWrap.hidden = false;
@@ -232,26 +229,30 @@ upMore.addEventListener("click", () => {
   upMore.textContent = "Hide";
 });
 
-/// The same pill as a passing remark - no button, gone in a few seconds. What a check
-/// you asked for says when there was nothing to find.
-function flashUpdate(msg) {
-  upText.textContent = msg;
-  upClose.innerHTML = icon("x");
-  upInstall.hidden = true;
-  upMore.hidden = true;
-  closeNotes();
-  upWrap.classList.remove("leaving");
-  upWrap.hidden = false;
-  clearTimeout(upFade);
-  upFade = setTimeout(() => {
-    upWrap.classList.add("leaving");
-    upFade = setTimeout(() => {
-      upWrap.hidden = true;
-      upWrap.classList.remove("leaving");
-      upInstall.hidden = false;
+let msgFade = null;
+/// A line at the foot of the window that takes itself away: what a check you asked
+/// for found, and anything that went wrong. Its own pill rather than the update's,
+/// so an error arriving mid-download can't take the Restart button off the screen.
+/// Something that failed is worth a longer look than something that worked.
+function flash(text, bad = false) {
+  msgText.textContent = text;
+  msgClose.innerHTML = icon("x");
+  msgWrap.classList.toggle("bad", bad);
+  msgWrap.classList.remove("leaving");
+  msgWrap.hidden = false;
+  clearTimeout(msgFade);
+  msgFade = setTimeout(() => {
+    msgWrap.classList.add("leaving");
+    msgFade = setTimeout(() => {
+      msgWrap.hidden = true;
+      msgWrap.classList.remove("leaving");
     }, 280);
-  }, 4000);
+  }, bad ? 8000 : 4000);
 }
+msgClose.addEventListener("click", () => {
+  clearTimeout(msgFade);
+  msgWrap.hidden = true;
+});
 
 /// A check someone asked for, so it answers either way - unlike the one at launch,
 /// which stays quiet unless there is something to install. `said` is the line beside
@@ -269,17 +270,13 @@ async function checkUpdates(said) {
     }
     const now = await invoke("app_version").catch(() => "");
     say("Up to date");
-    if (!said) flashUpdate(now ? `patchbay ${now} is the latest` : "patchbay is up to date");
+    if (!said) flash(now ? `patchbay ${now} is the latest` : "patchbay is up to date");
   } catch (e) {
     say(`Couldn't check: ${e}`);
-    if (!said) flashUpdate("Couldn't check for updates");
+    if (!said) flash("Couldn't check for updates", true);
   }
 }
-upClose.addEventListener("click", () => {
-  // Or a flash dismissed early takes the *next* pill away with it when it fires.
-  clearTimeout(upFade);
-  upWrap.hidden = true;
-});
+upClose.addEventListener("click", () => (upWrap.hidden = true));
 upInstall.addEventListener("click", async () => {
   // A restart takes every live session with it, so it is never something that just
   // happens to you when a download finishes - it is this second click.
@@ -507,9 +504,12 @@ async function removeGroup(id) {
   } catch (e) { alertish(e); }
 }
 
+/// Every failure the window can't put in a form: a VNC that wouldn't open, a folder
+/// that wouldn't delete. It used to write into the detail pane's command box, which
+/// is absent whenever a folder is selected and gone entirely under 720px - so half
+/// of these went nowhere at all.
 function alertish(e) {
-  const box = detailEl.querySelector(".mono");
-  if (box) { box.textContent = String(e); box.classList.add("err"); }
+  flash(String(e), true);
 }
 
 // ── import sheet ───────────────────────────────────────────────────────────

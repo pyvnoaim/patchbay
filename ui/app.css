@@ -641,25 +641,44 @@ button:disabled { opacity: .5; }
 .crumb .drop .i { width: 10px; height: 10px; }
 
 
-/* ── update pill ───────────────────────────────────────────────────────────
-   A new version is news, not a question, so it floats at the foot of the window
-   instead of standing in front of it. Deliberately *not* in OVERLAYS(): listing it
-   there makes modalOpen() true and hands every chord to a thing with one button.
-   Like a tooltip it can land under a web tab, which is an OS view above the page -
-   it is offered at launch, when there is no tab to be under, and again next time. */
-#uptoast {
-  /* Under every overlay, palette included: a pill floating on top of a dimmed
-     window is two things asking at once. */
-  position: fixed; z-index: 9; left: 50%; bottom: 20px;
+/* ── pills ─────────────────────────────────────────────────────────────────
+   News, not questions: a new version, and whatever just went wrong. They float at
+   the foot of the window instead of standing in front of it, and are deliberately
+   *not* in OVERLAYS() - listing them makes modalOpen() true and hands every chord
+   to a thing with one button. Like a tooltip they can land under a web tab, which
+   is an OS view above the page.
+   Under every overlay, palette included: a pill on top of a dimmed window is two
+   things asking at once. */
+#notices {
+  position: fixed; z-index: 9; left: 50%; bottom: 20px; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.pill {
   max-width: min(520px, calc(100vw - 40px));
   padding: 6px 6px 6px 14px; border-radius: 999px;
   background: var(--panel); backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
   border: 1px solid var(--line); box-shadow: 0 14px 38px rgba(0,0,0,.42);
   font-size: 12.5px; white-space: nowrap;
-  transform: translateX(-50%);
-  animation: up-in .3s .4s backwards cubic-bezier(.2,.8,.3,1);
+  animation: up-in .3s backwards cubic-bezier(.2,.8,.3,1);
 }
-.up-row { display: flex; align-items: center; gap: 8px; }
+/* Only while the window is still assembling itself: an offer that arrives from a
+   check *you* asked for should not sit invisible for 400ms first. */
+body.intro #uptoast { animation-delay: .4s; }
+/* What went wrong is not the same news as a new version. */
+#msg.bad #msg-text { color: var(--down); }
+/* A message is a sentence someone else's error wrote, so it wraps - and a 999px
+   radius around two lines of text bows in and clips them, the same reason the update
+   pill squares off when its notes are open. */
+#msg { border-radius: 16px; }
+#msg-text { white-space: normal; }
+.pill-row { display: flex; align-items: center; gap: 8px; }
+/* The text takes the slack so the buttons sit at the right edge. Collapsed, the pill
+   is only as wide as its contents and this changes nothing; open, the notes set the
+   width and without it the row's buttons bunch at the left of a wide pill.
+   Basis `auto`, not the `flex: 1` shorthand's 0%: the pill is sized by its content,
+   and a 0% basis offers it the *longest word* as the width to shrink to - which is
+   how a short message ended up spread over three lines. */
+#up-text, #msg-text { flex: 1 1 auto; }
 /* Open, it is no longer a pill: a 999px radius around a paragraph of text bows in
    at the corners and clips the first and last line. */
 #uptoast.open { border-radius: 16px; padding-bottom: 10px; }
@@ -682,7 +701,10 @@ button:disabled { opacity: .5; }
   text-underline-offset: 2px; text-decoration-color: var(--line);
 }
 #uptoast .quiet:hover { color: var(--fg); }
-#uptoast button { flex: none; }
+/* Every pill's buttons, not just the update's: `button` defaults to `flex: 1`, so
+   the message pill's close button stretched across the slack and its 50% radius
+   drew an ellipse. */
+.pill button { flex: none; }
 #uptoast .primary { padding: 5px 12px; border-radius: 999px; font-size: 12px; }
 /* Downloading: the button becomes its own progress bar, filling from the left as
    `--p` climbs. `background-size` rather than a child element, so the fill is
@@ -697,16 +719,17 @@ button:disabled { opacity: .5; }
   animation: up-wait 1.6s ease-in-out infinite;
 }
 /* A one-off message takes itself away again. */
-#uptoast.leaving { animation: up-out .28s forwards cubic-bezier(.4,0,1,1); }
-@keyframes up-out { to { opacity: 0; transform: translate(-50%, 10px); } }
+.pill.leaving { animation: up-out .28s forwards cubic-bezier(.4,0,1,1); }
+@keyframes up-out { to { opacity: 0; transform: translateY(10px); } }
 /* The pulse is the indeterminate state, so the first real percent ends it. */
 #uptoast.busy.determinate .primary { animation: none; }
 @keyframes up-wait { 50% { filter: brightness(1.25); } }
-#uptoast .x { padding: 5px; border-radius: 50%; background: transparent; opacity: .5; }
-#uptoast .x:hover { opacity: 1; background: var(--row-hover); }
-#uptoast .x .i { width: 13px; height: 13px; }
+/* Sized rather than padded, so the circle is a circle whatever sits inside it. */
+.pill .x { width: 23px; height: 23px; padding: 0; border-radius: 50%; background: transparent; opacity: .5; }
+.pill .x:hover { opacity: 1; background: var(--row-hover); }
+.pill .x .i { width: 13px; height: 13px; }
 /* Late enough to arrive after the window has finished assembling itself. */
-@keyframes up-in { from { opacity: 0; transform: translate(-50%, 12px); } }
+@keyframes up-in { from { opacity: 0; transform: translateY(12px); } }
 
 /* ── intro ─────────────────────────────────────────────────────────────────
    No splash: the app assembles itself. Sidebar in from the left, tab bar down,
@@ -738,4 +761,4 @@ body.intro .jack:nth-child(n+13) { animation-delay: .38s; }
 @keyframes intro-d { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 @keyframes intro-u { from { opacity: 0; transform: translateY(6px); }  to { opacity: 1; transform: none; } }
 
-@media (prefers-reduced-motion: reduce) { body.intro *, #uptoast, #uptoast * { animation: none; } }
+@media (prefers-reduced-motion: reduce) { body.intro *, .pill, .pill * { animation: none; } }
