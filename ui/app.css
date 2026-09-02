@@ -45,6 +45,13 @@ body {
 /* On macOS the vibrancy layer is the background, so let it through. */
 body[data-os="macos"] { background: transparent; }
 
+/* Keyboard focus has to be *visible* in an app people drive from the keyboard.
+   Only :focus-visible, so a click doesn't ring the thing it clicked. The two places
+   that clear the UA ring on purpose keep their own answer and outrank this by
+   specificity: the palette input is the only focusable thing in a modal box, and a
+   form field turns its border accent instead. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 #app { display: grid; grid-template-columns: 208px minmax(0,1fr) 272px; height: 100%; }
 /* An id selector outranks the UA's [hidden] rule, so hidden needs saying again here. */
 #app[hidden] { display: none; }
