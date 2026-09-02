@@ -4,16 +4,10 @@
   "description": "Every host, one jack away.",
   "license": "MIT",
   "type": "module",
-  "bin": {
-    "bay": "src/cli.ts"
-  },
+  "private": true,
   "engines": {
     "node": ">=22.6"
   },
-  "files": [
-    "src",
-    "README.md"
-  ],
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/dev.mjs build",

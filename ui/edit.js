@@ -459,6 +459,8 @@ async function openSettings() {
   showPane(teams.some((t) => TEAM_STUCK[t.state]) ? "team" : "devices");
   syncTeam();   // seats and state, fresh, while the sheet is already up
   $("page-openconfig").innerHTML = `${icon("file-pen-line")}Open config file`;
+  $("page-installcli").innerHTML = `${icon("square-terminal")}Install the bay command`;
+  $("clipath").textContent = "";
   setWrap.hidden = false;
   try { $("cfgpath").textContent = await invoke("config_path"); } catch { /* shown blank */ }
 }
@@ -507,6 +509,10 @@ setForm.addEventListener("submit", async (e) => {
 });
 $("set-cancel").addEventListener("click", closeSettings);
 $("page-openconfig").addEventListener("click", () => invoke("open_config"));
+$("page-installcli").addEventListener("click", async () => {
+  try { $("clipath").textContent = await invoke("install_cli"); }
+  catch (err) { showErr(setErr, String(err)); }
+});
 setWrap.addEventListener("mousedown", (e) => { if (e.target === setWrap) closeSettings(); });
 
 // ── spaces ─────────────────────────────────────────────────────────────────

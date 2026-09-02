@@ -5,6 +5,15 @@ edition = "2021"
 license = "MIT"
 rust-version = "1.89"   # ironrdp 0.17 (in-app RDP) needs it
 description = "Every host, one jack away."
+# Two bins now (the window and `bay`), so the bundler has to be told which is the app.
+default-run = "patchbay-app"
+
+# The CLI. `test = false` because its modules come in by path, and their tests
+# already run in the app's own target.
+[[bin]]
+name = "bay"
+path = "src/bin/bay.rs"
+test = false
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

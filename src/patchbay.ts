@@ -151,5 +151,21 @@ export function resolve(query: string, jacks: Jacks): string {
   throw new Error(`"${query}" matches ${hits.length} jacks: ${hits.join(", ")}`);
 }
 
+/**
+ * How a device is reached: "ssh", "rdp", "vnc" or "web". The sheet's radio, resolved in
+ * one place so the CLI refuses what the window wouldn't offer. `primary` is still read
+ * for configs that set several, and ignored when it names something the device lost.
+ */
+export function primary(j: Jack): string {
+  const has = (k: string) =>
+    // "sftp" is ssh with a different default action, so it needs ssh and nothing else.
+    k === "ssh" || k === "sftp" ? j.ssh !== false
+      : k === "rdp" ? j.rdp !== undefined
+        : k === "vnc" ? j.vnc !== undefined
+          : j.url !== undefined;
+  if (j.primary && has(j.primary)) return j.primary;
+  return ["ssh", "rdp", "vnc", "web"].find(has) ?? "ssh";
+}
+
 export const matches = (j: Jack, name: string, filter?: string) =>
   !filter || name.includes(filter) || (j.folders ?? []).some((f) => f.includes(filter));

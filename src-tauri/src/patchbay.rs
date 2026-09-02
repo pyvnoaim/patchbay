@@ -306,6 +306,39 @@ pub fn resolve(query: &str, jacks: &Jacks) -> Result<String, String> {
     }
 }
 
+/// How a device is reached: "ssh", "rdp", "vnc" or "web". The sheet's radio, resolved in
+/// one place so the CLI refuses what the window wouldn't offer. `primary` is still read
+/// for configs that set several, and ignored when it names something the device lost.
+pub fn primary(j: &Jack) -> String {
+    // "sftp" is ssh with a different default action, so it needs ssh and nothing else.
+    let has = |k: &str| match k {
+        "ssh" | "sftp" => j.ssh.unwrap_or(true),
+        "rdp" => j.rdp.is_some(),
+        "vnc" => j.vnc.is_some(),
+        _ => j.url.is_some(),
+    };
+    j.primary
+        .as_deref()
+        .filter(|p| has(p))
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            ["ssh", "rdp", "vnc", "web"]
+                .iter()
+                .find(|k| has(k))
+                .unwrap_or(&"ssh")
+                .to_string()
+        })
+}
+
+/// `bay ls <filter>` - a name or a folder, substring either way.
+#[allow(dead_code)]   // the `bay` bin's; the window filters in JS
+pub fn matches(j: &Jack, name: &str, filter: Option<&str>) -> bool {
+    match filter {
+        None => true,
+        Some(f) => name.contains(f) || j.folders.iter().flatten().any(|x| x.contains(f)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -530,5 +563,20 @@ mod tests {
         let cfg = dir.join("patchbay.toml");
         std::fs::write(&cfg, "[jack.a]\nhost = \"h1\"\n").unwrap();
         assert_eq!(load_all(&cfg).unwrap().keys().collect::<Vec<_>>(), ["a"]);
+    }
+
+    #[test]
+    fn primary_names_how_a_device_is_reached_and_falls_back_when_it_points_at_nothing() {
+        let how = |extra: &str| {
+            let j = parse(&format!("[jack.x]\nhost = \"h\"\n{extra}")).unwrap();
+            primary(&j["x"])
+        };
+        assert_eq!(how(""), "ssh");
+        assert_eq!(how("ssh = false\nurl = \"https://x\""), "web");
+        assert_eq!(how("ssh = false\nrdp = 3389"), "rdp");
+        assert_eq!(how("ssh = false\nvnc = 5900"), "vnc");
+        assert_eq!(how("url = \"https://x\""), "ssh", "ssh wins unless the device says otherwise");
+        assert_eq!(how("primary = \"web\"\nurl = \"https://x\""), "web");
+        assert_eq!(how("primary = \"rdp\""), "ssh", "a primary pointing at what's gone falls back");
     }
 }

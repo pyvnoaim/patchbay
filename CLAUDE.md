@@ -13,6 +13,10 @@ Two front ends over one config format:
 
 - `src/patchbay.ts` - config load, `[defaults]` inheritance, jump-chain walk, name resolve. All the logic worth testing lives here.
 - `src/cli.ts` - arg dispatch and process spawning. Keep it dumb.
+- `src-tauri/src/bin/bay.rs` - **the port of `src/cli.ts`**, and the `bay` people actually
+  install: a second bin of the app crate, so the CLI is the same download as the window and
+  needs no Node. `dev.mjs` stages it into the bundle as a sidecar and Settings → Config file
+  links it onto the PATH. Nothing ships to npm. Change one, change both.
 - `src/import.ts` - `bay import`: an ssh config in, TOML on stdout, never a write. **Ported to `src-tauri/src/import.rs`**, which the window uses to show the same list and save what you tick. A second mirrored pair; change one, change both.
 - `test/patchbay.test.ts`, `test/import.test.ts` - `node:test` + `assert`.
 - `src-tauri/src/patchbay.rs` - **a port of `src/patchbay.ts`**, because the app can't import TypeScript. Same behaviour, same errors, same argv; its tests mirror the TS ones. Change one, change both.
@@ -105,7 +109,7 @@ aren't obvious from reading:
 - Icons are Lucide via `icon("name")`. Add the name to `USED` in `scripts/icons.mjs` and run `npm run icons` - don't paste SVG into `app.js`, and don't add `lucide-react` (there is no React here, and it wraps the same artwork).
 - A jack's `os = "..."` renders through `osIcon()`: a simple-icons brand mark if one exists, else a Lucide shape from `BRAND_FALLBACKS`, else `server`. Both maps live in `scripts/brands.mjs`; run `npm run brands`. Matching is loose on purpose so `"Ubuntu 22.04"` and `"ubuntu"` land on the same glyph. Brand marks are *filled* paths, Lucide ones are *stroked* - `.i.brand` clears the stroke.
 - Don't fetch favicons from devices to use as icons. It needs an HTTP client and TLS in the app, nearly every appliance ships a self-signed cert, half of them sit behind a bastion where the app can't reach them anyway, and it turns opening the window into outbound requests to every host. The curated set covers the real cases.
-- **A device is reached one way.** The sheet's row is a radio, and saving clears the other two - so a device edited there keeps only what it was set to, including one written back when the row allowed several. `primary` is still *read* (old configs, and hand-edited ones can still set two), and Rust still resolves it so an option pointing at something the device no longer has falls back rather than doing nothing - but the window no longer writes it, because with one field set the answer is derivable.
+- **A device is reached one way.** The sheet's row is a radio, and saving clears the other two - so a device edited there keeps only what it was set to, including one written back when the row allowed several. `primary` is still *read* (old configs, and hand-edited ones can still set two), and Rust still resolves it so an option pointing at something the device no longer has falls back rather than doing nothing - but the window no longer writes it, because with one field set the answer is derivable. That resolution is `primary()` in `patchbay.ts`/`patchbay.rs` (mirrored, with tests), and `bay` uses it for the other half: `ssh = false` refuses a connect, and `primary` names what the device is instead. A device with a `url` *and* ssh still connects - `primary` only picks the default action.
 - **Anything spawned detached must be killed on exit.** A pty session dies when its master fd closes, but `ssh -N -L` does not - `RunEvent::Exit` calls `close_all()`, or tunnels outlive the window holding their ports.
 - `.rdp` is line-based, so a newline in a host or username injects directives - `alternate shell:s:` runs a program. Control characters are rejected before anything is written.
 - Brand colours are unusable raw - nine of the 29 fail contrast on one theme. `readable()` nudges lightness until a colour clears 3:1 against the current surface; never paint a brand hex directly.
@@ -155,13 +159,18 @@ aren't obvious from reading:
 
 ## Non-obvious
 
+- The `bay` sidecar is declared in `src-tauri/bundle.conf.json`, passed to `tauri build` with
+  `--config`, and never in `tauri.conf.json`: `tauri-build` checks an `externalBin` exists on
+  *every* cargo run, so declaring it there makes `cargo test` fail until something has staged
+  a binary. In dev nothing is staged - `target/debug/bay` is already a sibling of the app
+  binary, which is the one place `install_cli` looks.
 - **`$PATCHBAY_CONFIG`** overrides the config path - that's how you exercise either front end without touching `~/.config`. Everything local goes through `scripts/dev.mjs`, which sets it to an absolute `dev/patchbay.toml` (absolute because `tauri dev` runs the binary with `src-tauri/` as its cwd) and puts `~/.cargo/bin` on PATH so a terminal opened before rustup still works. That's why `test:app` shells through it too. Don't reintroduce an env-var prefix in an npm script - it doesn't work in cmd.exe.
 - Config lives at `%APPDATA%\patchbay\` on Windows, `$XDG_CONFIG_HOME` or `~/.config` elsewhere. Both implementations must agree.
 - **Spaces load first-wins**: the main config, then `spaces/*.toml` sorted, and a name already taken is skipped. The `.toml` test is load-bearing - `.toml.base` and `.toml.bak` sit in the same directory and are not spaces. `load_all` stamps each jack's `space`; `load` stays single-file so the tests and the writers can use it.
 - Jump chains resolve by walking `jump` until it hits a non-jack name (passed through raw) or runs out. The cycle guard is load-bearing; don't drop it.
 - **`-J` order is reversed relative to the walk.** Walking `jump` goes *outward* from the target, but `ssh -J a,b` dials `a` first. `db → web → bastion` must emit `-J bastion,web`. Both implementations reverse, and both have a test pinning it - that bug is invisible until a chain is three deep.
 - The status dot probes the chain's *entry point* (the outermost bastion), not the target. Anything past the first hop is only reachable through ssh, so there's nothing to TCP-probe.
-- Windows editors are usually `.cmd` shims, which `spawn` refuses without `shell: true` - see `edit()` in `cli.ts`.
+- Windows editors are usually `.cmd` shims, which `spawn` refuses without `shell: true` - see `edit()` in `cli.ts` and `bay.rs`.
 
 ## Scope
 

@@ -75,25 +75,7 @@ fn jacks() -> Result<Vec<JackView>, String> {
             rdp: j.rdp,
             vnc: j.vnc,
             ssh: j.ssh.unwrap_or(true),
-            // Resolved here so both the window and any future front end agree.
-            primary: {
-                // "sftp" is ssh with a different default action, so it needs ssh and
-                // nothing else. Without this arm it fell through to the url test and a
-                // files-first device quietly opened a terminal instead.
-                let has = |k: &str| match k {
-                    "ssh" | "sftp" => j.ssh.unwrap_or(true),
-                    "rdp" => j.rdp.is_some(),
-                    "vnc" => j.vnc.is_some(),
-                    _ => j.url.is_some(),
-                };
-                j.primary
-                    .as_deref()
-                    .filter(|p| has(p))
-                    .map(str::to_string)
-                    .unwrap_or_else(|| {
-                        ["ssh", "rdp", "vnc", "web"].iter().find(|k| has(k)).unwrap_or(&"ssh").to_string()
-                    })
-            },
+            primary: patchbay::primary(j),
             desc: j.desc.clone(),
             key: j.key.clone(),
             folders: j.folders.clone().unwrap_or_default(),
@@ -1216,6 +1198,59 @@ fn open_config() -> Result<(), String> {
     os_open(patchbay::config_path().as_os_str())
 }
 
+/// The `bay` beside us: a sidecar in the bundle, the sibling `target/` binary in dev.
+/// One lookup either way, because Tauri puts a sidecar next to the app binary.
+fn bay_binary() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let bay = exe.with_file_name(if cfg!(windows) { "bay.exe" } else { "bay" });
+    match bay.exists() {
+        true => Ok(bay),
+        false => Err("this build has no bay command beside it".into()),
+    }
+}
+
+/// A link rather than a copy, so `bay` is whatever the installed app is - an update
+/// that replaces the bundle updates the command with it.
+#[cfg(not(target_os = "windows"))]
+fn link_bay(src: &Path) -> Result<String, String> {
+    let home = dirs::home_dir().ok_or("no home directory")?;
+    let mut last = String::new();
+    // /usr/local/bin first because it's on everyone's PATH; ~/.local/bin needs no
+    // admin. Tried rather than tested for writability - the answer is the same.
+    for dir in [PathBuf::from("/usr/local/bin"), home.join(".local/bin")] {
+        let link = dir.join("bay");
+        if std::fs::create_dir_all(&dir).is_err() {
+            last = format!("can't write to {}", dir.display());
+            continue;
+        }
+        let _ = std::fs::remove_file(&link);
+        match std::os::unix::fs::symlink(src, &link) {
+            Ok(()) => return Ok(link.display().to_string()),
+            Err(e) => last = format!("{}: {e}", link.display()),
+        }
+    }
+    Err(last)
+}
+
+/// ponytail: a .cmd shim in the one user-writable folder Windows puts on PATH itself.
+/// Editing the PATH registry key is the upgrade, and not one to make from a button.
+#[cfg(target_os = "windows")]
+fn link_bay(src: &Path) -> Result<String, String> {
+    let dir = match dirs::data_local_dir().map(|d| d.join("Microsoft").join("WindowsApps")) {
+        Some(d) if d.is_dir() => d,
+        _ => src.parent().ok_or("no folder to install into")?.to_path_buf(),
+    };
+    let shim = dir.join("bay.cmd");
+    let body = format!("@echo off\r\n\"{}\" %*\r\n", src.display());
+    std::fs::write(&shim, body).map_err(|e| format!("{}: {e}", shim.display()))?;
+    Ok(shim.display().to_string())
+}
+
+/// Where `bay` landed, for the settings sheet to show.
+#[tauri::command]
+fn install_cli() -> Result<String, String> {
+    link_bay(&bay_binary()?)
+}
 
 fn main() {
     tauri::Builder::default()
@@ -1276,7 +1311,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            jacks, connect, probe, config_path, open_config,
+            jacks, connect, probe, config_path, open_config, install_cli,
             save_jack, delete_jack, rename_group, delete_group, open_url,
             spaces, create_space, delete_space, move_jack,
             settings, save_settings, colors, save_color, defaults, save_defaults, ssh_keys,

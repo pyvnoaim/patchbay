@@ -11,11 +11,14 @@ service, no license key, no crown.
 ```
 bay                   pick a jack (fzf) or list them
 bay prod-web          connect - a unique substring is enough
+bay prod-web -v       any flag that isn't ours goes to ssh
 bay prod-web -n       print the ssh command instead of running it
 bay prod-web -- uptime  run one command instead of a shell
 bay ls [filter]       list jacks, filtered by name or folder
+bay ls --names        names alone; --space <space> for one space
 bay edit              open the config
 bay import [file]     print TOML for the hosts in your ssh config
+bay completion zsh    a snippet for zsh, bash or fish
 ```
 
 The CLI prints the TOML for you to check and paste. In the app it's the same list with
@@ -28,16 +31,18 @@ it knows is still those TOML files, so `bay` and the window never disagree.
 
 ## Install
 
-Needs Node ≥ 22.6 (it runs the TypeScript directly - there is no build step) and an
-`ssh` on your PATH. macOS, Linux and Windows.
+Download it from [Releases](https://github.com/pyvnoaim/patchbay/releases) - macOS,
+Linux and Windows. `bay` is inside the app: Settings → Config file → **Install the bay
+command** links it onto your PATH, so the terminal and the window are the same build
+and updating one updates the other.
 
-```sh
-npm install -g patchbay
-```
+For tab completion, put `eval "$(bay completion zsh)"` in your `~/.zshrc` - `bash` and
+`fish` are there too, and the names come from your config every time, so a snippet never
+goes stale.
 
-On Windows that means the OpenSSH Client, which ships with Windows 10/11 - if it's
-missing, enable it under Settings → Apps → Optional Features. `fzf` is optional
-everywhere; without it, bare `bay` just lists.
+You need an `ssh` on your PATH. On Windows that means the OpenSSH Client, which ships
+with Windows 10/11 - if it's missing, enable it under Settings → Apps → Optional
+Features. `fzf` is optional everywhere; without it, bare `bay` just lists.
 
 ## Config
 
@@ -75,8 +80,8 @@ becomes one `ssh -J` list. Loops throw instead of hanging.
 
 ```sh
 npm run dev          # the app window, against dev/patchbay.toml
-npm run build        # patchbay.app / .exe / .deb
-npm test             # both suites
+npm run build        # patchbay.app / .exe / .deb, with `bay` inside it
+npm test             # all three suites
 ```
 
 `npm run dev` needs Rust (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`) -
@@ -92,8 +97,9 @@ npm run cli -- db -n         # print the ssh command, don't run it
 npm run cli -- local         # actually connect, if you have sshd running
 ```
 
-`-n` works on the installed `bay` too - it's the fastest way to see what a jump
-chain expands to. To try the real command, `npm link`, then `bay ls`.
+`-n` works on the installed `bay` too - it's the fastest way to see what a jump chain
+expands to. The shipped `bay` is `src-tauri/src/bin/bay.rs`, built by `npm run build`
+and by `cargo run --bin bay`; `npm run cli` runs the TypeScript it was ported from.
 
 The app opens sessions in its own window - the system `ssh` on a real pty, with the
 same argv the CLI builds, streamed to xterm.js. Your agent, `~/.ssh/config` and

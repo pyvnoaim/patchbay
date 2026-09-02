@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { configPath, load, loadAll, resolve, sshArgs, type Jacks } from "../src/patchbay.ts";
+import { configPath, load, loadAll, primary, resolve, sshArgs, type Jacks } from "../src/patchbay.ts";
 
 const jacks: Jacks = {
   bastion: { host: "bastion.example", user: "jump", port: 2222 },
@@ -136,4 +136,14 @@ test("no spaces directory is not an error", () => {
   const cfg = join(dir, "patchbay.toml");
   writeFileSync(cfg, `[jack.a]\nhost = "h1"\n`);
   assert.deepEqual(Object.keys(loadAll(cfg)), ["a"]);
+});
+
+test("`primary` names how a device is reached, and falls back when it points at nothing", () => {
+  assert.equal(primary({ host: "h" }), "ssh");
+  assert.equal(primary({ host: "h", ssh: false, url: "https://x" }), "web");
+  assert.equal(primary({ host: "h", ssh: false, rdp: 3389 }), "rdp");
+  assert.equal(primary({ host: "h", ssh: false, vnc: 5900 }), "vnc");
+  assert.equal(primary({ host: "h", url: "https://x" }), "ssh", "ssh wins unless the device says otherwise");
+  assert.equal(primary({ host: "h", primary: "web", url: "https://x" }), "web");
+  assert.equal(primary({ host: "h", primary: "rdp" }), "ssh", "a primary pointing at what's gone falls back");
 });
