@@ -368,6 +368,41 @@ mod tests {
         .unwrap()
     }
 
+    /// The website's hero panel lets you edit this config and shows the argv it
+    /// resolves to, which means `site/index.html` carries a JS mirror of `hops`
+    /// and `ssh_args`. This pins the two together: if the flag order or the `-J`
+    /// reversal changes here, this fails and names the page to update.
+    #[test]
+    fn the_config_on_the_website_still_resolves_to_the_argv_it_shows() {
+        let j = parse(
+            r#"
+[defaults]
+user = "root"
+
+[jack.bastion]
+host = "bastion.example"
+port = 2222
+
+[jack.web]
+host = "10.0.0.4"
+user = "deploy"
+jump = "bastion"
+
+[jack.db]
+host = "10.0.0.5"
+jump = "web"
+forward = ["5432:localhost:5432"]
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            ssh_args("db", &j).unwrap().join(" "),
+            "-J root@bastion.example:2222,deploy@10.0.0.4 -L 5432:localhost:5432 root@10.0.0.5",
+            "site/index.html shows this argv for this config; update both together"
+        );
+    }
+
     #[test]
     fn plain_jack_is_just_user_at_host() {
         assert_eq!(ssh_args("bastion", &fixture()).unwrap(), ["-p", "2222", "jump@bastion.example"]);
