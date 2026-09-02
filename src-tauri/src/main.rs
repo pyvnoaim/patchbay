@@ -1066,6 +1066,25 @@ fn save_defaults(next: config::Defaults) -> Result<(), String> {
     config::save_defaults(&next)
 }
 
+/// Pins the window and answers with what it is actually wearing. Two reasons the page
+/// can't work this out for itself: macOS vibrancy and the title bar follow the
+/// *window's* appearance rather than our CSS, and our own `color-scheme` makes
+/// `prefers-color-scheme` echo back whatever we last pinned - so "system" asked in the
+/// window stays on the last answer for ever.
+#[tauri::command]
+fn set_theme(window: tauri::WebviewWindow, theme: String) -> String {
+    let want = match theme.as_str() {
+        "light" => Some(tauri::Theme::Light),
+        "dark" => Some(tauri::Theme::Dark),
+        _ => None,
+    };
+    let _ = window.set_theme(want);
+    match want.or_else(|| window.theme().ok()) {
+        Some(tauri::Theme::Light) => "light".into(),
+        _ => "dark".into(),
+    }
+}
+
 #[tauri::command]
 fn save_settings(next: config::Settings) -> Result<(), String> {
     config::save_settings(&next)
@@ -1260,7 +1279,7 @@ fn main() {
             jacks, connect, probe, config_path, open_config,
             save_jack, delete_jack, rename_group, delete_group, open_url,
             spaces, create_space, delete_space, move_jack,
-            settings, save_settings, colors, save_color, defaults, save_defaults, ssh_keys,
+            settings, save_settings, set_theme, colors, save_color, defaults, save_defaults, ssh_keys,
             ssh_hosts,
             team_sync, team_join, team_create, team_resolve, team_leave,
             open_web_view, place_web_view, close_web_view, web_check, web_trust, web_cert, web_trust_cert,

@@ -17,6 +17,7 @@ const USED = [
   "plug",           // reachable
   "square-terminal", // connect
   "copy",
+  "copy-plus",     // duplicate a device
   "check",
   "file-pen-line",  // edit config
   "download",       // import from an ssh config

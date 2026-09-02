@@ -132,6 +132,33 @@ function readable(hex) {
   return out;
 }
 
+// Comes out of a file people hand-edit, and reaches xterm's layout, so it is clamped
+// again here rather than only on the way in.
+const termFont = () => Math.min(32, Math.max(8, +prefs.font_size || 12.5));
+
+let painted = "";   // the theme and font last drawn, so an alt-tab is not a repaint
+
+/// The theme is an attribute rather than a media query, so a pinned one survives the
+/// machine's own setting. `localStorage` is only how theme.js paints the right frame
+/// before [settings] has been read - `prefs` is what decides, and the window resolves
+/// "system", because the page's own `color-scheme` poisons `prefers-color-scheme`.
+async function applyTheme() {
+  const want = prefs.theme === "light" || prefs.theme === "dark" ? prefs.theme : "system";
+  const now = document.documentElement.dataset.theme;
+  const pick = await invoke("set_theme", { theme: want })
+    .catch(() => (want === "system" ? now || "dark" : want));
+  document.documentElement.dataset.theme = pick;
+  try { localStorage.theme = pick; } catch { /* nothing to remember with */ }
+  // load() runs on every window focus, and assigning xterm's theme repaints whether or
+  // not it changed. The render is the other half: `readable()` nudges a brand colour
+  // against the surface, so every mark on screen was computed for the old one.
+  const stamp = `${pick} ${termFont()}`;
+  if (stamp === painted) return;
+  painted = stamp;
+  restyleTerminals();
+  render();
+}
+
 /** A device's colour: your override first, then the brand's own hex. */
 function osColor(os) {
   if (prefs.os_colors === false) return null;

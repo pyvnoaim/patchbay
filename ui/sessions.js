@@ -20,10 +20,21 @@ const theme = () => {
   };
 };
 
+/// A live session keeps its pty and its scrollback - the theme and the size are only
+/// how it is drawn. The refit is what tells the far end the shape changed.
+function restyleTerminals() {
+  for (const s of sessions.values()) {
+    if (!s.term) continue;
+    s.term.options.theme = theme();
+    s.term.options.fontSize = termFont();
+    s.fit?.fit();
+  }
+}
+
 function makeTerm(host) {
   const term = new Terminal({
     fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace',
-    fontSize: 12.5,
+    fontSize: termFont(),
     lineHeight: 1.2,
     cursorBlink: true,
     allowTransparency: true,
@@ -55,7 +66,15 @@ async function openSession(name, task = null) {
   renderTree();
   fit.fit();
 
-  term.onData((d) => invoke("write_session", { id, data: d }).catch(() => {}));
+  term.onData((d) => {
+    // A dead tab keeps the keyboard and has nowhere to send it, so Enter dials the
+    // same device again instead of making you close it and find it in the list.
+    if (s.dead) {
+      if (d === "\r") { dropTab(id); openSession(name, task); }
+      return;
+    }
+    invoke("write_session", { id, data: d }).catch(() => {});
+  });
   term.onResize(({ cols, rows }) => invoke("resize_session", { id, cols, rows }).catch(() => {}));
 
   // Said before anything is spawned, so a slow or silent host still shows that the
@@ -76,7 +95,7 @@ async function openSession(name, task = null) {
     }));
     s.unlisten.push(await listen(`pty-exit:${id}`, (e) => {
       s.dead = true;
-      term.write(`\r\n\x1b[2m── ${task ?? "ssh"} exited (${e.payload}) · ${chord("w")} to close ──\x1b[0m\r\n`);
+      term.write(`\r\n\x1b[2m── ${task ?? "ssh"} exited (${e.payload}) · ⏎ to ${task ? "run it again" : "reconnect"} · ${chord("w")} to close ──\x1b[0m\r\n`);
       renderTabs();
       renderTree();
     }));

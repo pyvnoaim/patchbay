@@ -16,15 +16,17 @@
      of use, so unlike the colours above it needs no light-mode twin. */
   --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
-@media (prefers-color-scheme: light) {
-  :root {
-    --fg:#16161a; --fg-dim:#5f5f6a; --fg-faint:#8b8b95;
-    --up:#1e9e46; --down:#d63c3c;
-    --panel: rgba(255,255,255,.72);
-    --row:rgba(0,0,0,.05); --row-hover:rgba(0,0,0,.07); --line:rgba(0,0,0,.10);
-    --bg:#f4f4f6;
-    --tip:#2c2c33; --tip-fg:#f6f6f8;
-  }
+/* Set by theme.js before the first paint and by applyTheme() from [settings], so the
+   OS is the default rather than the rule - a pinned theme has to survive it. */
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] {
+  color-scheme: light;
+  --fg:#16161a; --fg-dim:#5f5f6a; --fg-faint:#8b8b95;
+  --up:#1e9e46; --down:#d63c3c;
+  --panel: rgba(255,255,255,.72);
+  --row:rgba(0,0,0,.05); --row-hover:rgba(0,0,0,.07); --line:rgba(0,0,0,.10);
+  --bg:#f4f4f6;
+  --tip:#2c2c33; --tip-fg:#f6f6f8;
 }
 
 * { box-sizing: border-box; margin: 0; }
@@ -290,14 +292,23 @@ button.flat:hover { background: var(--row-hover); color: var(--fg); }
   display: flex; align-items: center; gap: 9px;
   padding: 6px 9px; border-radius: 6px; font-size: 12.5px; white-space: nowrap;
 }
-.ctx-item:hover { background: var(--accent); color: #fff; }
+.ctx-item:hover, .ctx-item.on { background: var(--accent); color: #fff; }
 .ctx-item.danger { color: var(--down); }
-.ctx-item.danger:hover { background: var(--down); color: #fff; }
+.ctx-item.danger:hover, .ctx-item.danger.on { background: var(--down); color: #fff; }
+.ctx-item kbd {
+  margin-left: auto; padding-left: 16px;
+  background: transparent; color: var(--fg-faint); font: inherit; font-size: 11px;
+}
+.ctx-item:hover kbd, .ctx-item.on kbd { color: rgba(255,255,255,.75); }
 .ctx-sep { height: 1px; background: var(--line); margin: 5px 4px; }
 .ctx-head {
-  padding: 5px 9px 6px; font-size: 11px; color: var(--fg-faint);
-  overflow: hidden; text-overflow: ellipsis; max-width: 240px;
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 9px 6px; font-size: 11px; color: var(--fg-faint); max-width: 240px;
 }
+/* The name is its own item, or the ellipsis has no block to work on. */
+.ctx-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ctx-os { display: flex; flex: none; color: var(--fg-faint); }
+.ctx-os .i { width: 13px; height: 13px; }
 
 /* ── sheets (add/edit) ─────────────────────────────────────── */
 /* Every overlay belongs here. One left out sits in normal flow at the end of

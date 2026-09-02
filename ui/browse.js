@@ -124,7 +124,6 @@ function render() {
   $("editcfg").dataset.tip = `Open the config file  ${chord("e")}`;
   $("settings").innerHTML = icon("settings");
   $("settings").dataset.tip = `Settings  ${chord(",")}`;
-  $("settings").dataset.tipAt = "right";
   // A stuck sync means your edits are not reaching anyone and it needs an answer from
   // you - so it shows on the button that leads there, not only inside the sheet.
   const stuck = teams.map((t) => TEAM_STUCK[t.state]).find(Boolean);

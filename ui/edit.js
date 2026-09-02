@@ -5,14 +5,19 @@
 // ── context menu ───────────────────────────────────────────────────────────
 const actions = new Map();   // id -> fn, rebuilt each time the menu opens
 
-function showCtx(x, y, head, items) {
+/// `os` is the jack's, and only a jack passes one - the same mark the list row and the
+/// detail pane wear, so the menu says which machine it belongs to at a glance.
+function showCtx(x, y, head, items, os) {
   actions.clear();
+  const mark = os === undefined ? ""
+    : `<span class="ctx-os"${osColor(os) ? ` style="color:${esc(osColor(os))}"` : ""}>${osIcon(os)}</span>`;
   ctxEl.innerHTML =
-    (head ? `<div class="ctx-head">${esc(head)}</div><div class="ctx-sep"></div>` : "") +
+    (head ? `<div class="ctx-head">${mark}<span class="ctx-name">${esc(head)}</span></div><div class="ctx-sep"></div>` : "") +
     items.map((it, i) => {
       if (it === "-") return `<div class="ctx-sep"></div>`;
       actions.set(String(i), it.run);
-      return `<div class="ctx-item ${it.danger ? "danger" : ""}" data-a="${i}">${icon(it.icon)}${esc(it.label)}</div>`;
+      const key = it.key ? `<kbd>${esc(it.key)}</kbd>` : "";
+      return `<div class="ctx-item ${it.danger ? "danger" : ""}" data-a="${i}">${icon(it.icon)}${esc(it.label)}${key}</div>`;
     }).join("");
   ctxEl.hidden = false;
   // Flip back inside the window rather than overflowing it.
@@ -21,6 +26,12 @@ function showCtx(x, y, head, items) {
   ctxEl.style.top = `${Math.min(y, innerHeight - r.height - 8)}px`;
 }
 const hideCtx = () => { ctxEl.hidden = true; };
+
+// The pointer takes the selection back off the keyboard, or the menu shows two
+// highlighted rows and only one of them answers to Enter.
+ctxEl.addEventListener("mouseover", () => {
+  ctxEl.querySelector(".ctx-item.on")?.classList.remove("on");
+});
 
 ctxEl.addEventListener("click", (e) => {
   const a = e.target.closest("[data-a]")?.dataset.a;
@@ -37,34 +48,39 @@ document.addEventListener("contextmenu", (e) => {
   if (jackRow) {
     select(+jackRow.dataset.i);
     const j = shown[sel];
+    // Enter opens whichever one of these the device is reached by, so it is labelled
+    // on that row rather than on whatever happens to be first.
+    const ent = (k) => (j.primary === k ? "⏎" : null);
     return showCtx(e.clientX, e.clientY, j.name, [
       ...(j.ssh ? [
-        { icon: "square-terminal", label: "Connect", run: () => connect(j.name) },
+        { icon: "square-terminal", label: "Connect", key: ent("ssh"), run: () => connect(j.name) },
         { icon: "external-link", label: "Open in Terminal", run: () => connect(j.name, true) },
       ] : []),
       ...(j.url ? [
-        { icon: "globe", label: "Open web UI", run: () => openWeb(j.name) },
+        { icon: "globe", label: "Open web UI", key: ent("web"), run: () => openWeb(j.name) },
         // The handoff stays, the way Terminal and the system RDP client do - and it's
         // the only way to reach a page whose certificate needs clicking through.
         { icon: "external-link", label: "Open web UI in browser", run: () => invoke("open_url", { name: j.name }).catch(alertish) },
       ] : []),
       ...(j.rdp ? [
-        { icon: "monitor", label: "Remote desktop", run: () => openRdp(j.name) },
+        { icon: "monitor", label: "Remote desktop", key: ent("rdp"), run: () => openRdp(j.name) },
         { icon: "external-link", label: "Remote desktop in system client", run: () => handOffRdp(j.name) },
       ] : []),
       // A handoff like the system RDP client, for the same reason: the viewer is the
       // one already installed, and patchbay speaks no VNC.
-      ...(j.vnc ? [{ icon: "screen-share", label: "Screen sharing", run: () => openVnc(j.name) }] : []),
+      ...(j.vnc ? [{ icon: "screen-share", label: "Screen sharing", key: ent("vnc"), run: () => openVnc(j.name) }] : []),
       // sftp rides the ssh connection, so it is offered exactly where ssh is.
-      ...(j.ssh ? [{ icon: "folder", label: "Browse files", run: () => openFilesSession(j.name) }] : []),
+      ...(j.ssh ? [{ icon: "folder", label: "Browse files", key: ent("sftp"), run: () => openFilesSession(j.name) }] : []),
       { icon: "copy", label: "Copy ssh command", run: () => navigator.clipboard.writeText(j.command).catch(() => {}) },
       "-",
       { icon: "plug", label: "Ping", run: () => openSession(j.name, "ping") },
       { icon: "waypoints", label: "Trace route", run: () => openSession(j.name, "trace") },
       "-",
       { icon: "pencil", label: "Edit…", run: () => openJack(j) },
-      { icon: "trash-2", label: "Delete", danger: true, run: () => removeJack(j.name, j.space ?? null) },
-    ]);
+      // Everything but the name, which is the one field a copy has to differ in.
+      { icon: "copy-plus", label: "Duplicate…", run: () => openJack({ ...j, name: "" }) },
+      { icon: "trash-2", label: "Delete", key: "⌫", danger: true, run: () => removeJack(j.name, j.space ?? null) },
+    ], j.os ?? null);
   }
 
   if (groupRow && groupRow.dataset.group && !groupRow.dataset.path) {
@@ -182,12 +198,12 @@ function jackFields() {
 }
 
 function openJack(j, prefillGroup) {
-  editing = j?.name ?? null;
+  editing = j?.name || null;
   // Which file this write lands in. An existing device stays where it is; a new one
   // goes wherever you were standing.
   editingSpace = j ? j.space ?? null : prefillGroup?.space ?? null;
-  $("sheet-title").textContent = j ? `Edit ${j.name}` : "New device";
-  jfDelete.hidden = !j;
+  $("sheet-title").textContent = editing ? `Edit ${editing}` : "New device";
+  jfDelete.hidden = !editing;
   jfDelete.innerHTML = `${icon("trash-2")}Delete`;
   jfErr.hidden = true;
   const f = jackForm.elements;
@@ -444,9 +460,11 @@ impForm.addEventListener("submit", async (e) => {
 // ── settings ───────────────────────────────────────────────────────────────
 async function openSettings() {
   setErr.hidden = true;
-  for (const [k, v] of Object.entries(prefs)) {
-    if (setForm.elements[k]) setForm.elements[k].checked = !!v;
-  }
+  // The same selector the submit handler writes back through, so a setting that is
+  // not a checkbox - theme, font size - is read here rather than assigned `.checked`.
+  for (const el of setForm.querySelectorAll("input[type=checkbox]")) el.checked = !!prefs[el.name];
+  setForm.elements.theme.value = ["light", "dark"].includes(prefs.theme) ? prefs.theme : "system";
+  setForm.elements.font_size.value = termFont();
   // Read fresh rather than from state: nothing else in the app needs [defaults],
   // and a hand-edit between openings should show up here.
   const defs = await invoke("defaults").catch(() => ({}));
@@ -486,6 +504,12 @@ setForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const next = {};
   for (const el of setForm.querySelectorAll("input[type=checkbox]")) next[el.name] = el.checked;
+  next.theme = setForm.elements.theme.value;
+  next.font_size = parseFloat(setForm.elements.font_size.value);
+  // Rust clamps it too, but silently: this is the half that can say why.
+  if (!(next.font_size >= 8 && next.font_size <= 32)) {
+    return showErr(setErr, "terminal font size has to be between 8 and 32");
+  }
 
   const defs = {};
   for (const k of DEFAULT_KEYS) defs[k] = setForm.elements[`def_${k}`].value.trim() || null;
@@ -599,8 +623,11 @@ function renderSwatches() {
     ? keys.map((k) => {
         const shown = osColor(k) ?? "#8b8b95";
         const overridden = k in colors;
+        // The picker edits what is stored, not what is painted: `osColor` nudges a
+        // colour until it is readable here, and offering that back saves the nudge.
+        const raw = colors[k] ?? shown;
         return `<span class="sw" data-os="${esc(k)}">
-          <input type="color" value="${esc(/^#[0-9a-f]{6}$/i.test(shown) ? shown : "#8b8b95")}">
+          <input type="color" value="${esc(/^#[0-9a-f]{6}$/i.test(raw) ? raw : "#8b8b95")}">
           <span class="mark" style="color:${esc(shown)}">${osIcon(k)}</span>${esc(k)}
           ${overridden ? `<i class="reset" data-reset="${esc(k)}" data-tip="Back to the brand colour">${icon("x")}</i>` : ""}
         </span>`;
@@ -608,7 +635,9 @@ function renderSwatches() {
     : `<p class="page-note">No devices have an <code>os</code> set yet.</p>`;
 }
 
-$("swatches").addEventListener("input", async (e) => {
+// `change`, not `input`: the picker streams a value per frame while you drag it, and
+// each one is a config write and a team sync.
+$("swatches").addEventListener("change", async (e) => {
   const sw = e.target.closest("[data-os]");
   if (!sw || e.target.type !== "color") return;
   await setColor(sw.dataset.os, e.target.value);

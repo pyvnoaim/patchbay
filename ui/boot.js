@@ -97,7 +97,20 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
-  if (!ctxEl.hidden && e.key === "Escape") { e.preventDefault(); return hideCtx(); }
+  // An open menu is modal like a sheet: without this, typing behind it opens the
+  // palette on top of the menu you were still reading.
+  if (!ctxEl.hidden) {
+    const rows = [...ctxEl.querySelectorAll(".ctx-item")];
+    const at = rows.findIndex((r) => r.classList.contains("on"));
+    if (e.key === "Escape") { e.preventDefault(); hideCtx(); }
+    else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      const to = ((at < 0 ? (step > 0 ? -1 : 0) : at) + step + rows.length) % rows.length;
+      rows.forEach((r, i) => r.classList.toggle("on", i === to));
+    } else if (e.key === "Enter" && rows[at]) { e.preventDefault(); rows[at].click(); }
+    return;
+  }
 
   if (mod && e.key === "k") { e.preventDefault(); return palOpen() ? closePalette() : openPalette(); }
   if (mod && e.key === "n") { e.preventDefault(); return openJack(null, group); }
@@ -172,6 +185,7 @@ async function load() {
       }
       seeded = true;
     }
+    applyTheme();
     render();
     refreshProbes();
     syncTeam();
@@ -203,7 +217,9 @@ async function refreshProbes() {
   // outlives your attention, and a socket to every host every 30s is a cost the
   // machine pays for a pane no one is reading. Coming back calls load(), which
   // calls this - so the dots are current the moment they're looked at again.
-  if (!document.hasFocus()) return;
+  // The first sweep goes ahead either way: a window that opens behind something
+  // else, or on the other screen, would otherwise show no dots at all until clicked.
+  if (lastProbe && !document.hasFocus()) return;
   if (Date.now() - lastProbe < PROBE_EVERY) return;
   lastProbe = Date.now();
   try {
@@ -216,6 +232,11 @@ load();
 setInterval(refreshProbes, PROBE_EVERY);
 // The config is a file you edit by hand, so pick up changes when the window comes back.
 window.addEventListener("focus", load);
+// Not `matchMedia`: with a theme pinned, the page's own `color-scheme` fixes what
+// `prefers-color-scheme` reports, so the machine changing its mind fires nothing.
+listen("tauri://theme-changed", () => {
+  if (prefs.theme !== "light" && prefs.theme !== "dark") applyTheme();
+}).catch(() => { /* no capability, so the theme only follows on reload */ });
 
 // ── tooltips ───────────────────────────────────────────────────────────────
 // One element at body level so it escapes every overflow:hidden ancestor -

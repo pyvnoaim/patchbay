@@ -319,10 +319,26 @@ pub struct Settings {
     /// overrides it.
     #[serde(default = "yes")]
     pub os_colors: bool,
+    /// "system" follows the machine; "light" and "dark" pin it. Anything else reads
+    /// as "system", so a typo here is a working app rather than an unstyled one.
+    #[serde(default = "system")]
+    pub theme: String,
+    /// Terminal font size, in px. Clamped on the way in - it reaches xterm, which
+    /// will happily lay out a session at 400px.
+    #[serde(default = "font_size")]
+    pub font_size: f64,
 }
 
 fn yes() -> bool {
     true
+}
+
+fn system() -> String {
+    "system".into()
+}
+
+fn font_size() -> f64 {
+    12.5
 }
 
 impl Default for Settings {
@@ -331,6 +347,8 @@ impl Default for Settings {
             probe: true,
             connect_in_terminal: false,
             os_colors: true,
+            theme: system(),
+            font_size: font_size(),
         }
     }
 }
@@ -432,6 +450,14 @@ pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
     t["probe"] = value(s.probe);
     t["connect_in_terminal"] = value(s.connect_in_terminal);
     t["os_colors"] = value(s.os_colors);
+    // Both are read straight back out by the window - one onto the root element, one
+    // into xterm - so they are narrowed here rather than wherever they land.
+    t["theme"] = value(match s.theme.as_str() {
+        "light" => "light",
+        "dark" => "dark",
+        _ => "system",
+    });
+    t["font_size"] = value(s.font_size.clamp(8.0, 32.0));
     write_doc(file, &doc)
 }
 
@@ -573,6 +599,22 @@ folders = ["prod/eu/web"]
             user: None, port: None, key: None, jump: None, os: None, url: None, rdp: None, vnc: None, ssh: None, primary: None, desc: None,
             folders: vec![], forward: vec![],
         }
+    }
+
+    #[test]
+    fn a_theme_and_a_font_size_are_narrowed_on_the_way_in() {
+        let p = scratch("settings");
+        save_settings_at(&p, &Settings { theme: "neon".into(), font_size: 900.0, ..Settings::default() }).unwrap();
+        let back = load_settings_at(&p);
+        // One reaches the root element, the other reaches xterm's layout.
+        assert_eq!(back.theme, "system");
+        assert_eq!(back.font_size, 32.0);
+
+        save_settings_at(&p, &Settings { theme: "light".into(), font_size: 14.0, ..Settings::default() }).unwrap();
+        let back = load_settings_at(&p);
+        assert_eq!(back.theme, "light");
+        assert_eq!(back.font_size, 14.0);
+        assert!(read(&p).contains("keep this comment"));
     }
 
     #[test]

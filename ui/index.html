@@ -5,6 +5,7 @@
 <title>patchbay</title>
 <link rel="stylesheet" href="vendor/xterm.css">
 <link rel="stylesheet" href="app.css">
+<script src="theme.js"></script>
 </head>
 <body>
   <div id="app" hidden>
@@ -131,10 +132,18 @@
 
         <section class="pane" data-pane="appearance" hidden>
           <div class="d-sec">Appearance</div>
+          <div class="grid2">
+            <label class="f"><span>Theme</span><select name="theme">
+              <option value="system">Follow the system</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select></label>
+            <label class="f"><span>Terminal font size</span>
+              <input name="font_size" inputmode="decimal" placeholder="12.5"></label>
+          </div>
           <label class="opt"><input type="checkbox" name="os_colors">
             <span><b>Colour device icons by OS</b>
-            Uses each brand's own colour, adjusted so it stays readable on this theme.
-            Override any of them below - every device with that OS follows.</span></label>
+            Each brand's own colour, adjusted to stay readable here. Override any below.</span></label>
           <div class="swatches" id="swatches"></div>
         </section>
 
