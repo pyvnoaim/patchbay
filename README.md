@@ -8,49 +8,32 @@
 A connection manager that is a TOML file and a `ssh` exec. No Electron, no sync
 service, no license key, no crown.
 
-```
-bay                   pick a jack (fzf) or list them
-bay prod-web          connect - a unique substring is enough
-bay prod-web -v       any flag that isn't ours goes to ssh
-bay prod-web -n       print the ssh command instead of running it
-bay prod-web -- uptime  run one command instead of a shell
-bay ls [filter]       list jacks, filtered by name or folder
-bay ls --names        names alone; --space <space> for one space
-bay edit              open the config
-bay import [file]     print TOML for the hosts in your ssh config
-bay completion zsh    a snippet for zsh, bash or fish
-```
+Your machines live in one file you can read, hand-edit and keep in a repo. The window
+opens them: sessions, remote desktop, a device's web UI and its files, all as tabs; a
+folder tree; and an optional shared list for a team. It stores no credentials, because
+your ssh agent and `~/.ssh/config` already hold them.
 
-The CLI prints the TOML for you to check and paste. In the app it's the same list with
-tick boxes - right-click the device list, or the button on the empty state.
-
-The window adds what a terminal can't: sessions, remote desktop, a device's web UI and
-its files, all as tabs; a folder tree; and an optional shared list for a team. Everything
-it knows is still those TOML files, so `bay` and the window never disagree.
+Already have hosts in `~/.ssh/config`? Right-click the device list and import them -
+the same list with tick boxes, and nothing is written until you tick.
 
 
 ## Install
 
 Download it from [Releases](https://github.com/pyvnoaim/patchbay/releases) - macOS,
-Linux and Windows. `bay` is inside the app: Settings → Config file → **Install the bay
-command** links it onto your PATH, so the terminal and the window are the same build
-and updating one updates the other.
-
-For tab completion, put `eval "$(bay completion zsh)"` in your `~/.zshrc` - `bash` and
-`fish` are there too, and the names come from your config every time, so a snippet never
-goes stale.
+Linux and Windows.
 
 You need an `ssh` on your PATH. On Windows that means the OpenSSH Client, which ships
 with Windows 10/11 - if it's missing, enable it under Settings → Apps → Optional
-Features. `fzf` is optional everywhere; without it, bare `bay` just lists.
+Features.
 
 ## Config
 
 `~/.config/patchbay/patchbay.toml`, or `%APPDATA%\patchbay\patchbay.toml` on Windows -
-or wherever `$PATCHBAY_CONFIG` points. `bay edit` creates it.
+or wherever `$PATCHBAY_CONFIG` points. The window creates it on first run, and
+Settings → Config file opens it in your editor.
 
 That file is your own list. **A space is another one of these**, in `spaces/` beside it,
-same format, shown under its own heading in the sidebar - `bay edit <space>` opens one.
+same format, shown under its own heading in the sidebar.
 Keep a customer's machines apart from your own, or share one with a team without ever
 handing over the rest.
 
@@ -80,29 +63,19 @@ becomes one `ssh -J` list. Loops throw instead of hanging.
 
 ```sh
 npm run dev          # the app window, against dev/patchbay.toml
-npm run build        # patchbay.app / .exe / .deb, with `bay` inside it
-npm test             # all three suites
+npm run build        # patchbay.app / .exe / .deb
+npm test             # the app and the server
 ```
 
 `npm run dev` needs Rust (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`) -
 no need to restart your shell, the dev script finds `~/.cargo/bin` itself. The first
 build compiles a few hundred crates and takes minutes; after that it's seconds.
 
-`npm run cli -- <args>` runs the CLI against the same sample config, so you can poke
-at it without touching `~/.config`:
+Everything local runs against `dev/patchbay.toml`, a copy of the tracked sample, so you
+never touch your own `~/.config` while working on it.
 
-```sh
-npm run cli -- ls            # the sample jacks
-npm run cli -- db -n         # print the ssh command, don't run it
-npm run cli -- local         # actually connect, if you have sshd running
-```
-
-`-n` works on the installed `bay` too - it's the fastest way to see what a jump chain
-expands to. The shipped `bay` is `src-tauri/src/bin/bay.rs`, built by `npm run build`
-and by `cargo run --bin bay`; `npm run cli` runs the TypeScript it was ported from.
-
-The app opens sessions in its own window - the system `ssh` on a real pty, with the
-same argv the CLI builds, streamed to xterm.js. Your agent, `~/.ssh/config` and
+The app opens sessions in its own window - the system `ssh` on a real pty, with the argv
+`patchbay.rs` builds, streamed to xterm.js. Your agent, `~/.ssh/config` and
 host-key prompts all still work, because it *is* your ssh. "Open in Terminal" is on
 the context menu when you'd rather have your own terminal.
 
@@ -151,8 +124,8 @@ file and touches nothing you already had; your own list is never read, never upl
 and never replaced.
 
 Run the server yourself: `npm run server`, or the `patchbay-server` binary anywhere that
-has a disk. The window syncs when it gets focus and after every edit; `bay` reads
-whatever that left on disk, so the CLI never waits on a server.
+has a disk. The window syncs when it gets focus and after every edit, in the background,
+so a dead server never holds the device list up.
 
 Two people adding two devices is not a disagreement - those merge. Only the same field
 on both sides needs an answer, and then the window asks which one wins; whichever loses

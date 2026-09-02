@@ -1,5 +1,5 @@
-# The point of this file is one thing: patchbay.ts and patchbay.rs are the same
-# logic twice, and nothing but running both suites catches them drifting apart.
+# The app and the team server, both cargo test. Node is here for scripts/dev.mjs,
+# which is what puts cargo on PATH and points the tests at a scratch config.
 name: test
 
 on:

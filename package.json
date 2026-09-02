@@ -11,9 +11,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/dev.mjs build",
-    "cli": "node scripts/dev.mjs cli",
-    "test": "npm run test:cli && npm run test:app && npm run test:server",
-    "test:cli": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test",
+    "test": "npm run test:app && npm run test:server",
     "test:app": "node scripts/dev.mjs cargo test --manifest-path src-tauri/Cargo.toml",
     "test:server": "node scripts/dev.mjs cargo test --manifest-path server/Cargo.toml",
     "server": "node scripts/dev.mjs cargo run --manifest-path server/Cargo.toml",
@@ -21,9 +19,6 @@
     "icons": "node scripts/icons.mjs",
     "brands": "node scripts/brands.mjs",
     "vendor": "node scripts/vendor.mjs"
-  },
-  "dependencies": {
-    "smol-toml": "^1.3.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

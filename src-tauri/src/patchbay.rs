@@ -1,6 +1,5 @@
-//! Port of `src/patchbay.ts`. Same behaviour, same errors, same argv.
-//! The tests at the bottom mirror `test/patchbay.test.ts` one for one - if you
-//! change the TypeScript, change this, and both suites should still agree.
+//! Config load, `[defaults]` inheritance, the jump-chain walk and name resolve.
+//! Everything worth testing lives here; `main.rs` is the command surface over it.
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -328,15 +327,6 @@ pub fn primary(j: &Jack) -> String {
                 .unwrap_or(&"ssh")
                 .to_string()
         })
-}
-
-/// `bay ls <filter>` - a name or a folder, substring either way.
-#[allow(dead_code)]   // the `bay` bin's; the window filters in JS
-pub fn matches(j: &Jack, name: &str, filter: Option<&str>) -> bool {
-    match filter {
-        None => true,
-        Some(f) => name.contains(f) || j.folders.iter().flatten().any(|x| x.contains(f)),
-    }
 }
 
 #[cfg(test)]

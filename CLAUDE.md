@@ -9,21 +9,13 @@ space is one of those files with a server behind it. That is the whole model, an
 everything about teams follows from it: joining one writes a new file and cannot
 touch what you already had.
 
-Two front ends over one config format:
+One front end over one config format:
 
-- `src/patchbay.ts` - config load, `[defaults]` inheritance, jump-chain walk, name resolve. All the logic worth testing lives here.
-- `src/cli.ts` - arg dispatch and process spawning. Keep it dumb.
-- `src-tauri/src/bin/bay.rs` - **the port of `src/cli.ts`**, and the `bay` people actually
-  install: a second bin of the app crate, so the CLI is the same download as the window and
-  needs no Node. `dev.mjs` stages it into the bundle as a sidecar and Settings → Config file
-  links it onto the PATH. Nothing ships to npm. Change one, change both.
-- `src/import.ts` - `bay import`: an ssh config in, TOML on stdout, never a write. **Ported to `src-tauri/src/import.rs`**, which the window uses to show the same list and save what you tick. A second mirrored pair; change one, change both.
-- `test/patchbay.test.ts`, `test/import.test.ts` - `node:test` + `assert`.
-- `src-tauri/src/patchbay.rs` - **a port of `src/patchbay.ts`**, because the app can't import TypeScript. Same behaviour, same errors, same argv; its tests mirror the TS ones. Change one, change both.
-- `src-tauri/src/import.rs` - the port of `src/import.ts`. Parses only; the window writes what was ticked through `save_jack` like any other edit.
+- `src-tauri/src/patchbay.rs` - config load, `[defaults]` inheritance, jump-chain walk, name resolve, and how a device is reached. All the logic worth testing lives here, with its tests at the bottom of the file.
+- `src-tauri/src/import.rs` - an ssh config in, jacks out. Parses only; the window shows the list and writes what you tick through `save_jack` like any other edit.
 - `src-tauri/src/config.rs` - the only code that *writes* a config. Everything else reads. Also owns `[settings]`, `[colors]`, and making, deleting and moving devices between spaces. Every writer takes the space's file; `space_slug` is what stops a space name being a path.
 - `server/src/main.rs` - the team server. One shared config document per team, no accounts, seat limit enforced here. Never parses the TOML. `/team` is **plain HTTP** - `GET` returns the document with an `ETag`, `PUT` takes `If-Match` and answers 412 - so a space can point at a bucket or a static file instead, and the client keeps one code path. Seats and `paid` ride along as advisory `x-` headers nothing else sends.
-- `src-tauri/src/team.rs` - the client half: `team.toml` beside the config, and the fetch-then-push-or-adopt loop behind the single `team_sync` command, run once per team space. **The window syncs; `bay` doesn't** - the CLI reads whatever file the window last agreed on, because a round trip on every `bay web` is a launcher that waits on a server.
+- `src-tauri/src/team.rs` - the client half: `team.toml` beside the config, and the fetch-then-push-or-adopt loop behind the single `team_sync` command, run once per team space. Syncing is the window's, never `load()`'s: a dead server must not hold the device list up for the timeout.
 - `src-tauri/src/pty.rs` - in-app sessions: ssh on a real pty, streamed to xterm.js as `pty:<id>` events.
 - `src-tauri/src/sftp.rs` - files, by handing them to `/usr/bin/sftp`. Stateless commands sharing one ssh session through `ControlMaster`, because a fresh handshake per directory listing makes browsing feel broken. `sftp` takes `-P` for the port where ssh takes `-p`, and its batch language is line-based - so a path with a newline or a quote in it is refused, the same way a `.rdp` refuses one.
 - `src-tauri/src/rdp.rs` - remote desktop by handoff: writes a `.rdp`, and forwards a local port over the jump chain when there is one. Its `Tunnels` and `free_port` are what `vnc = <port>` uses too - VNC is a handoff and nothing else, `vnc://` to whatever viewer the machine has, so there is no `vnc_session.rs` and adding one needs the same argument `rdp_session.rs` had to win.
@@ -43,9 +35,8 @@ Two front ends over one config format:
 
 ```sh
 npm run dev      # the app window, against dev/patchbay.toml
-npm run cli --   # the CLI, same sample config
 npm run server   # the team server on 127.0.0.1:8787
-npm test         # test:cli (node:test) + test:app + test:server (cargo test)
+npm test         # test:app + test:server (cargo test)
 npm run build    # patchbay.app / .exe / .deb
 npm run icon     # regenerate the app icon from scripts/icon.mjs
 npm run icons    # regenerate ui/gen/icons.js after editing USED in scripts/icons.mjs
@@ -58,7 +49,7 @@ the *only* time anything is committed:
 
 1. **Take everything open.** Uncommitted changes, staged and unstaged, new files, and anything already committed but unpushed. The review covers the lot, not just the last thing worked on.
 2. **Review it all**, in these four passes:
-   - **Bugs and correctness** - including both implementations when the change touched shared logic; a fix in `patchbay.ts` that missed `patchbay.rs` is the standing risk here.
+   - **Bugs and correctness** - especially in `patchbay.rs`, where a wrong argv is a connection that fails somewhere else entirely.
    - **Security** - problems *and* improvements. Anything reaching a shell, the trust store, a `style` attribute, the desktop opener, or a file someone else wrote.
    - **Performance** - problems *and* improvements. Something that got slower, an extra round trip on a hot path, work done before the user sees anything.
    - **Simplification** - what can be deleted, reused, or replaced by something already here.
@@ -84,21 +75,13 @@ aren't obvious from reading:
 - Comments explain *why*, never *what*. If a line needs a comment to say what it does, rename something instead. The exceptions worth writing: a non-obvious ordering constraint, a platform quirk, a deliberate shortcut.
 - Mark deliberate simplifications `ponytail:` with the ceiling and the upgrade path - `// ponytail: one thread per jack, bounded pool if someone brings a thousand`.
 - Prefer deleting to adding. No interface with one implementation, no config for a value that never changes, no scaffolding for later.
-- Errors are lowercase sentence fragments naming the thing that failed, and quote the user's input: `no jack named "web"`, `jump loop through "loop2"`. They surface in both front ends, so don't phrase them for one.
-
-**TypeScript (`src/`, `test/`)**
-
-- No build step: Node runs the `.ts` directly, flags in the `src/cli.ts` shebang. So no enums, no namespaces, no parameter properties, and relative imports must end in `.ts`.
-- Exported functions are `export function`; small local helpers are `const x = () =>`.
-- Two-space indent, double quotes, semicolons, trailing commas. ~100 col.
-- Pure logic goes in `patchbay.ts` and gets a test. `cli.ts` stays side-effects-only.
+- Errors are lowercase sentence fragments naming the thing that failed, and quote the user's input: `no jack named "web"`, `jump loop through "loop2"`. They reach the user through the window, so phrase them for someone reading a sheet, not a stack trace.
 
 **Rust (`src-tauri/src/`)**
 
-- Mirror the TypeScript's names and control flow so the two stay diffable - `sshArgs`/`ssh_args`, `hops`/`hops`. A port that drifts structurally is a port that silently disagrees.
 - `Result<T, String>` at the command boundary; the string is shown to the user, so it follows the error style above.
 - Platform code is `#[cfg(target_os = ...)]` in `terminal.rs`, never an `if` on a runtime flag.
-- Every `patchbay.rs` test has a counterpart in `test/patchbay.test.ts`. Adding one without the other is how the two implementations diverge.
+- Pure logic goes in `patchbay.rs` and gets a test there. `main.rs` stays the command surface over it.
 
 **Frontend (`ui/`)**
 
@@ -109,7 +92,7 @@ aren't obvious from reading:
 - Icons are Lucide via `icon("name")`. Add the name to `USED` in `scripts/icons.mjs` and run `npm run icons` - don't paste SVG into `app.js`, and don't add `lucide-react` (there is no React here, and it wraps the same artwork).
 - A jack's `os = "..."` renders through `osIcon()`: a simple-icons brand mark if one exists, else a Lucide shape from `BRAND_FALLBACKS`, else `server`. Both maps live in `scripts/brands.mjs`; run `npm run brands`. Matching is loose on purpose so `"Ubuntu 22.04"` and `"ubuntu"` land on the same glyph. Brand marks are *filled* paths, Lucide ones are *stroked* - `.i.brand` clears the stroke.
 - Don't fetch favicons from devices to use as icons. It needs an HTTP client and TLS in the app, nearly every appliance ships a self-signed cert, half of them sit behind a bastion where the app can't reach them anyway, and it turns opening the window into outbound requests to every host. The curated set covers the real cases.
-- **A device is reached one way.** The sheet's row is a radio, and saving clears the other two - so a device edited there keeps only what it was set to, including one written back when the row allowed several. `primary` is still *read* (old configs, and hand-edited ones can still set two), and Rust still resolves it so an option pointing at something the device no longer has falls back rather than doing nothing - but the window no longer writes it, because with one field set the answer is derivable. That resolution is `primary()` in `patchbay.ts`/`patchbay.rs` (mirrored, with tests), and `bay` uses it for the other half: `ssh = false` refuses a connect, and `primary` names what the device is instead. A device with a `url` *and* ssh still connects - `primary` only picks the default action.
+- **A device is reached one way.** The sheet's row is a radio, and saving clears the other two - so a device edited there keeps only what it was set to, including one written back when the row allowed several. `primary` is still *read* (old configs, and hand-edited ones can still set two), and it is still resolved so an option pointing at something the device no longer has falls back rather than doing nothing - but the window no longer writes it, because with one field set the answer is derivable. That resolution is `primary()` in `patchbay.rs`, with tests: `primary` only picks the default action, so a device with a `url` *and* ssh still has both.
 - **Anything spawned detached must be killed on exit.** A pty session dies when its master fd closes, but `ssh -N -L` does not - `RunEvent::Exit` calls `close_all()`, or tunnels outlive the window holding their ports.
 - `.rdp` is line-based, so a newline in a host or username injects directives - `alternate shell:s:` runs a program. Control characters are rejected before anything is written.
 - Brand colours are unusable raw - nine of the 29 fail contrast on one theme. `readable()` nudges lightness until a colour clears 3:1 against the current surface; never paint a brand hex directly.
@@ -159,18 +142,12 @@ aren't obvious from reading:
 
 ## Non-obvious
 
-- The `bay` sidecar is declared in `src-tauri/bundle.conf.json`, passed to `tauri build` with
-  `--config`, and never in `tauri.conf.json`: `tauri-build` checks an `externalBin` exists on
-  *every* cargo run, so declaring it there makes `cargo test` fail until something has staged
-  a binary. In dev nothing is staged - `target/debug/bay` is already a sibling of the app
-  binary, which is the one place `install_cli` looks.
-- **`$PATCHBAY_CONFIG`** overrides the config path - that's how you exercise either front end without touching `~/.config`. Everything local goes through `scripts/dev.mjs`, which sets it to an absolute `dev/patchbay.toml` (absolute because `tauri dev` runs the binary with `src-tauri/` as its cwd) and puts `~/.cargo/bin` on PATH so a terminal opened before rustup still works. That's why `test:app` shells through it too. Don't reintroduce an env-var prefix in an npm script - it doesn't work in cmd.exe.
-- Config lives at `%APPDATA%\patchbay\` on Windows, `$XDG_CONFIG_HOME` or `~/.config` elsewhere. Both implementations must agree.
+- **`$PATCHBAY_CONFIG`** overrides the config path - that's how you run the app without touching `~/.config`. Everything local goes through `scripts/dev.mjs`, which sets it to an absolute `dev/patchbay.toml` (absolute because `tauri dev` runs the binary with `src-tauri/` as its cwd) and puts `~/.cargo/bin` on PATH so a terminal opened before rustup still works. That's why `test:app` shells through it too. Don't reintroduce an env-var prefix in an npm script - it doesn't work in cmd.exe.
+- Config lives at `%APPDATA%\patchbay\` on Windows, `$XDG_CONFIG_HOME` or `~/.config` elsewhere.
 - **Spaces load first-wins**: the main config, then `spaces/*.toml` sorted, and a name already taken is skipped. The `.toml` test is load-bearing - `.toml.base` and `.toml.bak` sit in the same directory and are not spaces. `load_all` stamps each jack's `space`; `load` stays single-file so the tests and the writers can use it.
 - Jump chains resolve by walking `jump` until it hits a non-jack name (passed through raw) or runs out. The cycle guard is load-bearing; don't drop it.
-- **`-J` order is reversed relative to the walk.** Walking `jump` goes *outward* from the target, but `ssh -J a,b` dials `a` first. `db → web → bastion` must emit `-J bastion,web`. Both implementations reverse, and both have a test pinning it - that bug is invisible until a chain is three deep.
+- **`-J` order is reversed relative to the walk.** Walking `jump` goes *outward* from the target, but `ssh -J a,b` dials `a` first. `db → web → bastion` must emit `-J bastion,web`. There's a test pinning it - that bug is invisible until a chain is three deep.
 - The status dot probes the chain's *entry point* (the outermost bastion), not the target. Anything past the first hop is only reachable through ssh, so there's nothing to TCP-probe.
-- Windows editors are usually `.cmd` shims, which `spawn` refuses without `shell: true` - see `edit()` in `cli.ts` and `bay.rs`.
 
 ## Scope
 
@@ -180,8 +157,8 @@ We shell out to `/usr/bin/ssh` on purpose - the agent, `~/.ssh/config` and
 There **is** a GUI now (Tauri, not Electron), and it **does** host sessions in-app:
 `pty.rs` spawns `/usr/bin/ssh` on a real pty and streams it to xterm.js. That is a
 deliberate reversal of the original "launcher, not a client" rule. What did *not*
-change is the part that matters: we still exec the system `ssh` with the same argv
-the CLI builds, so the agent, `~/.ssh/config` and `known_hosts` still do the work,
+change is the part that matters: we still exec the system `ssh` with the argv
+`patchbay.rs` builds, so the agent, `~/.ssh/config` and `known_hosts` still do the work,
 and a real tty means password and host-key prompts behave. "Open in Terminal" is
 still there on the context menu.
 

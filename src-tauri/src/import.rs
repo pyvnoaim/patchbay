@@ -1,6 +1,5 @@
-//! **A port of `src/import.ts`** - same rules, same names, same output. The CLI prints
-//! its result and you paste it; the window shows the same list and writes what you
-//! tick. Change one, change both.
+//! Turning an existing ssh config into jacks. Parses only: the window shows the list
+//! and writes what you tick through `save_jack`, like any other edit.
 
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -93,39 +92,6 @@ impl Walk {
         }
         self.block.clear();
     }
-}
-
-/// The TOML the CLI prints for you to check and paste. Mirrors `toToml`, down to
-/// the header and the trailing blank line.
-#[allow(dead_code)]   // the `bay` bin's half of this module; the window writes instead
-pub fn to_toml(hosts: &[Imported]) -> String {
-    let mut doc = toml_edit::DocumentMut::new();
-    doc["jack"] = toml_edit::Item::Table(toml_edit::Table::new());
-    doc["jack"].as_table_mut().unwrap().set_implicit(true);
-
-    for h in hosts {
-        let mut t = toml_edit::Table::new();
-        t["host"] = toml_edit::value(h.host.as_str());
-        if let Some(u) = &h.user {
-            t["user"] = toml_edit::value(u.as_str());
-        }
-        if let Some(p) = h.port {
-            t["port"] = toml_edit::value(p as i64);
-        }
-        if let Some(k) = &h.key {
-            t["key"] = toml_edit::value(k.as_str());
-        }
-        if let Some(j) = &h.jump {
-            t["jump"] = toml_edit::value(j.as_str());
-        }
-        doc["jack"][h.name.as_str()] = toml_edit::Item::Table(t);
-    }
-
-    let s = if hosts.len() == 1 { "" } else { "s" };
-    format!(
-        "# {} host{s} from your ssh config.\n# Check it, then paste it into your patchbay.toml.\n\n{doc}\n",
-        hosts.len()
-    )
 }
 
 pub fn from_ssh_config(src: &str) -> Found {
@@ -298,16 +264,5 @@ Match host *.internal
         let f = from_ssh_config("HOST one\n  hostname=10.0.0.7\n  USER  bob\n");
         assert_eq!(f.hosts[0].host, "10.0.0.7");
         assert_eq!(f.hosts[0].user.as_deref(), Some("bob"));
-    }
-
-    #[test]
-    fn the_toml_round_trips_and_leaves_out_what_wasnt_set() {
-        let out = to_toml(&from_ssh_config("Host one\n  HostName 10.0.0.7\n").hosts);
-        assert!(out.contains("[jack.one]"));
-        assert!(out.contains("host = \"10.0.0.7\""));
-        assert!(!out.contains("user"), "an unset key must not appear at all");
-        // A name TOML would otherwise read as two tables, or as no key at all.
-        let odd = to_toml(&from_ssh_config("Host \"a b\"\n  HostName h\n").hosts);
-        assert!(toml::from_str::<toml::Value>(&odd).is_ok(), "{odd}");
     }
 }
