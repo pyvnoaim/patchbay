@@ -15,6 +15,7 @@
     "test:app": "node scripts/dev.mjs cargo test --manifest-path src-tauri/Cargo.toml",
     "test:server": "node scripts/dev.mjs cargo test --manifest-path server/Cargo.toml",
     "server": "node scripts/dev.mjs cargo run --manifest-path server/Cargo.toml",
+    "bump": "node scripts/bump.mjs",
     "icon": "node scripts/icon.mjs && tauri icon assets/icon.png",
     "dmg": "node scripts/dmg.mjs",
     "icons": "node scripts/icons.mjs",
