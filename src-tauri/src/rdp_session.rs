@@ -352,6 +352,21 @@ fn drain(
                 }
             }
             ActiveStageOutput::Terminate(_) => return Ok(true),
+            // MS-RDPBCGR 1.3.1.3: the server tore the session down and expects the
+            // client to exchange capabilities again on the same socket. Windows
+            // sends it routinely, most often when the logon desktop hands over to
+            // the user's - which is why this arrived as a black canvas and a dead
+            // tab moments after a connection that had otherwise worked.
+            // ponytail: reported rather than followed. Re-running the sequence
+            // needs the share id from the new Demand Active, and
+            // ConnectionActivationState::Finalized doesn't expose it in
+            // ironrdp-session 0.11 - so this waits on that, not on a guess.
+            ActiveStageOutput::DeactivateAll => {
+                return Err(format!(
+                    "{host} rebuilt the session and patchbay can't follow it yet \
+                     - open it in the system client for now"
+                ))
+            }
             _ => {}
         }
     }
