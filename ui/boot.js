@@ -228,7 +228,17 @@ async function refreshProbes() {
   } catch { /* a failed sweep just leaves the dots hollow */ }
 }
 
-load();
+// ── update ─────────────────────────────────────────────────────────────────
+/// Once per launch, and never in the way - see the pill in edit.js. An endpoint that
+/// can't be reached and an app that is already current both say nothing: the check
+/// runs on every launch, so the next one can raise it.
+async function offerUpdate() {
+  const version = await invoke("update_check").catch(() => null);
+  if (version) showUpdate(version);
+}
+
+// Behind the first paint: the window is for the device list, not for an errand.
+load().then(offerUpdate);
 setInterval(refreshProbes, PROBE_EVERY);
 // The config is a file you edit by hand, so pick up changes when the window comes back.
 window.addEventListener("focus", load);

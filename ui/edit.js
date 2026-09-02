@@ -179,6 +179,56 @@ askForm.addEventListener("submit", (e) => {
 $("ask-cancel").addEventListener("click", () => closeAsk(null));
 askWrap.addEventListener("mousedown", (e) => { if (e.target === askWrap) closeAsk(null); });
 
+// ── update pill ────────────────────────────────────────────────────────────
+/// The offer to update, at the foot of the window. Closing it is an answer too:
+/// it stays gone for this run, and the check at the next launch asks again.
+let upVersion = "";
+/// Set once the new bundle is in place, which turns the one button from the offer
+/// into the restart. Nothing else about the app changes until you take it.
+let upReady = false;
+
+function showUpdate(version) {
+  upVersion = version;
+  upText.textContent = `patchbay ${version} is available`;
+  upClose.innerHTML = icon("x");
+  upWrap.hidden = false;
+}
+upClose.addEventListener("click", () => (upWrap.hidden = true));
+upInstall.addEventListener("click", async () => {
+  // A restart takes every live session with it, so it is never something that just
+  // happens to you when a download finishes - it is this second click.
+  if (upReady) return invoke("update_restart");
+
+  upInstall.disabled = true;
+  upInstall.textContent = "Downloading…";
+  // The button *is* the progress bar - it fills as the bytes land, and pulses until
+  // the first percent arrives, so a slow start doesn't read as a dead click.
+  upWrap.classList.add("busy");
+  const stop = await listen("update:progress", ({ payload: pct }) => {
+    upWrap.classList.add("determinate");
+    upWrap.style.setProperty("--p", `${pct}%`);
+    // The last stretch is unpacking and swapping the bundle, not downloading.
+    if (pct >= 100) upInstall.textContent = "Installing…";
+  }).catch(() => null);
+  try {
+    await invoke("update_install");
+    // Back if it was dismissed mid-download: the restart is the half that matters,
+    // and it can't be offered from behind a pill nobody can see.
+    upWrap.hidden = false;
+    upText.textContent = `patchbay ${upVersion} is ready`;
+    upInstall.textContent = "Restart";
+    upInstall.disabled = false;
+    upReady = true;
+  } catch (e) {
+    // Said here rather than in a sheet, for the same reason the offer wasn't one.
+    upText.textContent = `Couldn't install: ${e}`;
+    upInstall.hidden = true;
+  } finally {
+    stop?.();
+    upWrap.classList.remove("busy", "determinate");
+  }
+});
+
 // ── jack sheet ─────────────────────────────────────────────────────────────
 /// One way in per device. There is no separate "opens on double-click" any more -
 /// with a single choice the answer is the choice, and `primary` in the config is

@@ -26,6 +26,15 @@ if (!existsSync(DEV_CONFIG)) copyFileSync(resolve("dev/patchbay.example.toml"), 
 const cargoBin = join(homedir(), ".cargo", "bin");
 if (existsSync(cargoBin)) process.env.PATH = `${cargoBin}${delimiter}${process.env.PATH}`;
 
+// The updater signs its artifact or prints an error at the end of every build, which
+// reads like a failed one. The key never lives in the repo; CI passes the key itself
+// through TAURI_SIGNING_PRIVATE_KEY, and a machine that has neither just builds a
+// bundle nobody can update from, which is what a local build is anyway.
+const signingKey = join(homedir(), ".tauri", "patchbay.key");
+if (existsSync(signingKey) && !process.env.TAURI_SIGNING_PRIVATE_KEY) {
+  process.env.TAURI_SIGNING_PRIVATE_KEY_PATH = signingKey;
+}
+
 const run = (cmd, args, env) =>
   spawn(cmd, args, { stdio: "inherit", shell: true, env: { ...process.env, ...env } })
     .on("exit", (code) => process.exit(code ?? 1));

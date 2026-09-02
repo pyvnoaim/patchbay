@@ -227,6 +227,14 @@
     </div>
   </div>
 
+  <!-- News, not a question: it floats over the list, takes no keyboard, and is
+       deliberately not one of the OVERLAYS. -->
+  <div id="uptoast" role="status" hidden>
+    <span id="up-text"></span>
+    <button id="up-install" class="primary">Install</button>
+    <button id="up-close" class="x" aria-label="Dismiss"></button>
+  </div>
+
 <!-- Classic scripts sharing one global scope, so load order is load-bearing:
      third-party, then generated data, then core helpers, then features,
      then boot last (it runs, everything above only declares). -->

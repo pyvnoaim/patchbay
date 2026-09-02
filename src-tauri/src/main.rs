@@ -1217,14 +1217,98 @@ fn open_config() -> Result<(), String> {
     os_open(patchbay::config_path().as_os_str())
 }
 
+/// The disk image someone dragged us out of, still mounted. Nothing in macOS ejects
+/// it - Finder has no hook for "the drag is done" - so the copy that came out of it
+/// is the only thing that knows it is there and knows it is ours.
+///
+/// Never while running *from* the image: that is someone trying the app before
+/// installing it, and pulling the volume out from under a live process is worse than
+/// a stray icon. `spawn` and not `status`, because a volume Finder still has open
+/// simply stays mounted, and that is not a startup's problem to report.
+#[cfg(target_os = "macos")]
+fn eject_install_image() {
+    let volume = std::path::Path::new("/Volumes/patchbay");
+    let ours = volume.join("patchbay.app").is_dir();
+    let running_from_it = std::env::current_exe().map(|p| p.starts_with(volume)).unwrap_or(true);
+    if ours && !running_from_it {
+        let _ = std::process::Command::new("/usr/bin/hdiutil")
+            .args(["detach", "/Volumes/patchbay", "-quiet"])
+            .spawn();
+    }
+}
+
+/// The version waiting on the update endpoint, or `None` when this is the latest.
+/// Signature-checked by the plugin against the public key in `tauri.conf.json`, so a
+/// tampered feed or archive fails here rather than installing.
+#[tauri::command]
+async fn update_check(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let found = app.updater().map_err(|e| e.to_string())?.check().await;
+    // An unreachable endpoint is not something to interrupt anyone about - the check
+    // runs on every launch and the next one can say it.
+    Ok(found.ok().flatten().map(|u| u.version))
+}
+
+/// Checked a second time rather than parked between the two commands: an `Update`
+/// isn't `Send`, and a second round trip on the one path where the user is already
+/// waiting for a download costs nothing.
+#[tauri::command]
+async fn update_install(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Emitter;
+    use tauri_plugin_updater::UpdaterExt;
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("that update is no longer offered")?;
+    let feed = app.clone();
+    let (mut got, mut last) = (0u64, 0u8);
+    update
+        .download_and_install(
+            move |chunk, total| {
+                got += chunk as u64;
+                // A server that won't say how big it is leaves the pill on its
+                // indeterminate pulse rather than inventing a number.
+                let Some(total) = total.filter(|t| *t > 0) else { return };
+                let pct = (got * 100 / total).min(100) as u8;
+                // One event per whole percent: the download is hundreds of chunks
+                // and a bar 200px wide can only move a hundred times anyway.
+                if pct != last {
+                    last = pct;
+                    let _ = feed.emit("update:progress", pct);
+                }
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// The restart, once the new bundle is in place. Split from the install because it
+/// takes every live session with it, so it waits for a second click. (Windows is the
+/// exception nobody clicks: its installer takes the process down during the install
+/// above, so the pill never gets as far as offering this.)
+#[tauri::command]
+fn update_restart(app: tauri::AppHandle) {
+    // A restart is not `RunEvent::Exit`, so the tunnels have to be closed by hand -
+    // otherwise `ssh -N -L` outlives us and the new process can't have its ports back.
+    app.state::<rdp::SharedTunnels>().close_all();
+    app.restart();
+}
+
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(pty::Shared::default())
         .manage(rdp::SharedTunnels::default())
         .manage(rdp_session::Shared::default())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {
+                eject_install_image();
                 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
                 let w = app.get_webview_window("main").unwrap();
                 // Sidebar, not HudWindow: HUD material is built for floating panels
@@ -1285,7 +1369,8 @@ fn main() {
             open_web_view, place_web_view, close_web_view, web_check, web_trust, web_cert, web_trust_cert,
             open_rdp, open_vnc, open_rdp_session, close_rdp_session, rdp_input, tunnels, close_tunnel,
             open_session, open_task, write_session, resize_session, close_session,
-            sftp_ls, sftp_get, sftp_put, sftp_ready, open_master, open_full_disk_access
+            sftp_ls, sftp_get, sftp_put, sftp_ready, open_master, open_full_disk_access,
+            update_check, update_install, update_restart
         ])
         .build(tauri::generate_context!())
         .expect("error while building patchbay")

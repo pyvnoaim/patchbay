@@ -48,6 +48,10 @@ sha2 = "0.11.0"
 # to the browser for a page that would have opened fine.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls-native-roots"] }
 
+# Self-update, verified against the minisign public key in tauri.conf.json. Default
+# features only: they are rustls, so the build stays free of an openssl dependency.
+tauri-plugin-updater = "2"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.5"
 
