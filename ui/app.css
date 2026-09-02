@@ -3,6 +3,7 @@
   --fg-dim:    #9c9ca8;
   --fg-faint:  #6d6d78;
   --accent:    #4f9dfd;
+  --accent-deep: #3d7fe8;   /* the foot of the primary button's gradient */
   --up:        #43c463;
   --down:      #ff6b6b;
   --panel:     rgba(28,28,32,.72);
@@ -171,7 +172,13 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
   padding: 7px 9px; border-radius: 7px; white-space: nowrap;
 }
 .jack:hover { background: var(--row-hover); }
-.jack[aria-selected="true"] { background: var(--accent); color: #fff; }
+/* Same gradient and inner highlight as button.primary, so the selected row and
+   the Connect button it points at read as one object. */
+.jack[aria-selected="true"] {
+  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.18);
+}
 .jack[aria-selected="true"] .host, .jack[aria-selected="true"] .folder { color: rgba(255,255,255,.82); }
 .jack[aria-selected="true"] .folder { background: rgba(255,255,255,.2); }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--fg-faint); align-self: center; }
@@ -204,6 +211,11 @@ body:not([data-os="macos"]) #detail .drag { height: 40px; }
 }
 .d-sec .i { width: 12px; height: 12px; }
 button { display: flex; align-items: center; justify-content: center; gap: 6px; }
+/* The body is `cursor: default` because this is an app, not a page - but anything
+   you actually click should still say so. */
+button, .tab, .tab .x, .chip, .ctx-item, .how-opt, .crumb .drop,
+.group, .jack, .twist, .opt, .setnav button, [data-act], [data-a] { cursor: pointer; }
+button:disabled { cursor: default; }
 .d-row { display: flex; gap: 10px; padding: 2px 0; font-size: 12.5px; }
 .d-row dt { color: var(--fg-faint); width: 42px; flex: none; }
 .d-row dd { margin: 0; overflow: hidden; text-overflow: ellipsis; -webkit-user-select: text; user-select: text; }
@@ -234,8 +246,15 @@ button {
   background: var(--row); color: var(--fg); font: inherit; font-weight: 550;
 }
 button:hover { background: var(--row-hover); }
-button.primary { background: var(--accent); color: #fff; }
-button.primary:hover { filter: brightness(1.1); }
+/* A flat fill reads as a coloured rectangle; the gradient and the one-pixel
+   inner highlight are what make it read as a raised control. */
+button.primary {
+  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.22);
+}
+button.primary:hover { filter: brightness(1.08); }
+button.primary:active { filter: brightness(.94); }
 button.ghost { flex: none; }
 
 /* ── palette ───────────────────────────────────────────────── */
