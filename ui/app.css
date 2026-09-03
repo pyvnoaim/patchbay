@@ -212,8 +212,10 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
 /* The top pads to match #list, since both scrollers hang off a bar of the same
    height - that is what puts the first folder level with the first device. */
 #tree { flex: 1; overflow-y: auto; padding: 8px 8px 10px; scrollbar-width: thin; }
-/* Rows are rounded, so back to back they read as one long pill. */
-.group + .group, .jack + .jack { margin-top: 2px; }
+/* Rows are rounded, so back to back they read as one long pill. In the map, a
+   .jack can back onto a nested .hop (a leaf next to a further branch) as easily
+   as onto another .jack, so both sides of that pairing need the same gap. */
+.group + .group, :is(.jack, .hop) + :is(.jack, .hop) { margin-top: 2px; }
 .group {
   display: flex; align-items: center; gap: 6px;
   padding: 5px 8px; border-radius: 6px;
@@ -372,26 +374,44 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
 }
 .jack:hover { background: var(--row-hover); }
 /* The map. A branch is a hop and everything reached through it; the rail down the
-   left is the route, so a device four columns in is four hops away and looks it. */
-.hop { position: relative; padding-left: 0; }
+   left is the route, so a device four columns in is four hops away and looks it.
+   --rail is one colour shared by the trunk and every row's elbow off it, so a
+   blocked branch recolours both without the two ever drifting out of sync. */
+.hop {
+  position: relative; padding-left: 0;
+  --rail: color-mix(in oklab, var(--fg-faint) 65%, transparent);
+}
 .hop::before {
-  content: ""; position: absolute; left: 9px; top: 26px; bottom: 4px;
-  border-left: 1px solid var(--line);
+  content: ""; position: absolute; left: 9px; top: 34px; bottom: 4px;
+  border-left: 1.5px solid var(--rail);
 }
-.hopnote {
-  display: flex; align-items: center; gap: 5px;
-  padding: 2px 0 3px 30px; color: var(--fg-faint); font-size: 11px;
-}
-.hopnote .i { width: 11px; height: 11px; }
 /* Behind a hop that isn't answering, so the branch explains itself once rather than
-   leaving every row under it showing a dot that looks like its own problem. */
-.hop.blocked > .jack, .hop.blocked > .hopnote { opacity: .55; }
-.hop.blocked > .hopnote { color: var(--down); }
-.hoparm { display: flex; flex: none; align-self: center; color: var(--fg-faint); }
-.hoparm .i { width: 12px; height: 12px; }
+   leaving every row under it showing a dot that looks like its own problem - the
+   trunk and the chip it feeds both turn the same colour. */
+.hop.blocked { --rail: color-mix(in oklab, var(--down) 55%, transparent); }
+.hop.blocked > .jack { opacity: .55; }
+/* The elbow off the trunk into a nested row - `left` is fixed because a step is
+   always exactly one .hop's worth (18px in, rail at 9px), never a multiple of depth. */
+.jack.arm { position: relative; }
+.jack.arm::before {
+  content: ""; position: absolute; left: -9px; top: 50%;
+  width: 9px; height: 1.5px; background: var(--rail);
+}
+/* A row heading a branch is a junction, not an endpoint, so it keeps a fill even
+   at rest - the eye can tell which rows are hubs before reading a single label. */
+.jack.hub { background: var(--row); }
+.jack.hub:hover { background: var(--row-hover); }
+/* The count that used to be its own faint line now rides on the hub row itself. */
+.behind {
+  display: inline-flex; align-items: center; gap: 4px; flex: none; align-self: center; margin-left: auto;
+  padding: 1px 8px 1px 6px; border-radius: 20px; font-size: 11px;
+  background: var(--row-hover); color: var(--fg-dim);
+}
+.behind .i { width: 10px; height: 10px; }
+.behind.down { background: color-mix(in oklab, var(--down) 22%, transparent); color: var(--down); }
+.jack[aria-selected="true"] .behind { background: rgba(255,255,255,.2); color: rgba(255,255,255,.82); }
 /* A jump host that isn't one of your devices - a raw user@host in someone's config. */
 .jack.hopraw { cursor: default; }
-.jack.hopraw:hover { background: transparent; }
 
 /* Picked out with ⌘-click or a shift-drag, for an action about several devices at
    once. Not the same thing as the selected row, which is where the keyboard is - so

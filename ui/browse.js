@@ -172,24 +172,29 @@ function render() {
 /// One row, drawn the same whichever way the column is listing - so selection, the
 /// double-click and the whole context menu keep working in the map without knowing it
 /// exists. `i` indexes `shown`, which is what every handler reads.
-function jackRow(j, i, depth = 0) {
+/// `hub` and `behind` are the map's own: a row heading a branch gets a fill so it
+/// reads as a junction rather than another endpoint, and the count that used to be
+/// its own faint line underneath rides along as a chip instead - one row per device,
+/// not two.
+function jackRow(j, i, { nested = false, indent = nested, hub = false, behind = null } = {}) {
   const state = dotState(j.name);
   // `readable()` nudges a brand hex against the *panel*, but the selected row is a
   // solid block of accent - Synology's navy clears 3:1 there and vanishes here. So
   // the row's own white wins on that one row, the way .host and .folder already do.
   const tint = i === sel ? null : osColor(j.os);
-  return `<div class="jack" data-i="${i}" aria-selected="${i === sel}"${
-    depth ? ` style="margin-left:${depth * 18}px"` : ""}>
-    ${depth ? `<span class="hoparm">${icon("corner-down-right")}</span>` : ""}
+  return `<div class="jack${nested ? " arm" : ""}${hub ? " hub" : ""}" data-i="${i}" aria-selected="${i === sel}"${
+    indent ? ` style="margin-left:18px"` : ""}>
     <span class="dot ${state}"></span>
     <span class="os"${j.os ? ` data-tip="${esc(j.os)}"` : ""}${
       tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(j.os)}</span>
     <span class="name">${esc(j.name)}</span>
     <span class="host">${esc(j.user ? j.user + "@" + j.host : j.host)}${j.port ? ":" + j.port : ""}</span>
     ${j.url ? `<span class="web" data-tip="${esc(j.url)}" data-tip-at="right">${icon("globe")}</span>` : ""}
-    <span class="folders">${j.folders.map((f) => `<span class="folder">${esc(f.split("/").pop())}</span>`).join("")}</span>
+    ${behind ?? `<span class="folders">${j.folders.map((f) => `<span class="folder">${esc(f.split("/").pop())}</span>`).join("")}</span>`}
   </div>`;
 }
+
+const behindChip = (n, down) => `<span class="behind${down ? " down" : ""}">${icon("share-2")}${n} behind</span>`;
 
 // ── map ────────────────────────────────────────────────────────────────────
 // The same rows, grouped by the route to them instead of by the folder they were
@@ -221,7 +226,7 @@ function mapHtml() {
     const rows = node.leaves
       .filter((j) => !node.kids.has(j.name))
       .sort((a, b) => a.name.localeCompare(b.name))
-      .map((j) => jackRow(j, at(j), depth));
+      .map((j) => jackRow(j, at(j), { nested: depth > 0 }));
 
     for (const kid of [...node.kids.values()].sort((a, b) => a.name.localeCompare(b.name))) {
       const via = shown.find((j) => j.name === kid.name);
@@ -231,13 +236,18 @@ function mapHtml() {
       // underneath it showing its own unrelated-looking dot.
       const down = blocked || (p && p.ms == null);
       const behind = kid.leaves.length + kid.kids.size;
-      rows.push(`<div class="hop ${down ? "blocked" : ""}" style="margin-left:${depth * 18}px">
-        ${via ? jackRow(via, at(via)) : `<div class="jack hopraw">
+      const chip = behindChip(behind, down);
+      // Depth only ever earns this branch one more step off its *own* .hop - the
+      // nesting is what stacks the indent, so margin is never depth*18. A leaf two
+      // levels down would otherwise inherit both its ancestors' steps and drift
+      // further right than the branch it's actually one hop inside of.
+      rows.push(`<div class="hop ${down ? "blocked" : ""}"${depth ? ` style="margin-left:18px"` : ""}>
+        ${via ? jackRow(via, at(via), { nested: depth > 0, indent: false, hub: true, behind: chip })
+          : `<div class="jack hopraw hub${depth > 0 ? " arm" : ""}">
           <span class="dot unknown"></span><span class="os">${icon("waypoints")}</span>
           <span class="name">${esc(kid.name)}</span>
-          <span class="host">not in your list</span></div>`}
-        <div class="hopnote">${icon("share-2")}${behind} behind ${esc(kid.name)}${
-          down ? ` · not reachable while ${esc(kid.name)} is down` : ""}</div>
+          <span class="host">not in your list</span>
+          ${chip}</div>`}
         ${walk(kid, depth + 1, down)}
       </div>`);
     }
