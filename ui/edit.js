@@ -53,7 +53,19 @@ document.addEventListener("contextmenu", (e) => {
     select(at);
     const bulk = markedHere();
     if (bulk.length > 1) {
+      const ssh = bulk.filter((x) => x.ssh);
       return showCtx(e.clientX, e.clientY, `${bulk.length} devices`, [
+        // Only offered when at least two of the marks are reachable over ssh: a grid
+        // of one is a session, and a grid of a NAS web UI is nothing broadcast means
+        // anything for. Non-ssh marks are named in a pill rather than opened as their
+        // own tabs - a webview is an OS view stacked above the page, and mixing it
+        // into a grid layout is a much bigger change than this feature is.
+        ...(ssh.length > 1 ? [
+          { icon: "radio-tower",
+            label: `Broadcast to ${ssh.length} device${ssh.length === 1 ? "" : "s"}`,
+            run: () => openBroadcast(bulk) },
+          "-",
+        ] : []),
         // One row per space rather than a picker: a space is a file, there are rarely
         // more than a few, and the answer is worth reading before it's clicked. With no
         // second space there is nowhere to move them, so the rows aren't offered.
@@ -252,6 +264,55 @@ upMore.addEventListener("click", () => {
   upNotes.hidden = false;
   upWrap.classList.add("open");
   upMore.textContent = "Hide";
+});
+
+/// The ssh-config leftover pill. Same shape as the update pill so the two feel like
+/// one family. Shown once per launch: dismissing hides it, and next launch nothing
+/// more is done if there is nothing left to clean.
+const slWrap = $("ssh-leftover"), slText = $("sl-text"), slMore = $("sl-more");
+const slClean = $("sl-clean"), slClose = $("sl-close"), slList = $("sl-list");
+let slLeftover = null;
+
+function showSshLeftover(left) {
+  slLeftover = left;
+  const bits = [
+    left.conf_file && "the device list",
+    left.include_line && "an Include line in ~/.ssh/config",
+  ].filter(Boolean);
+  slText.textContent = `patchbay left ${bits.join(" and ")} behind`;
+  slClose.innerHTML = icon("x");
+  // The files, verbatim - trust and clarity both go up when the app names exactly what
+  // it will touch, and one of them ("~/.ssh/config") people are careful about.
+  slList.innerHTML = `<ul class="sl-paths">
+    ${left.conf_file ? `<li><b>Delete</b> <code>${esc(left.conf_path)}</code></li>` : ""}
+    ${left.include_line ? `<li><b>Remove one line</b> from <code>${esc(left.config_path)}</code>: <code>Include patchbay.conf</code></li>` : ""}
+  </ul>`;
+  slList.hidden = true;
+  slWrap.classList.remove("open", "leaving");
+  slMore.textContent = "Show";
+  slClean.hidden = false;
+  slWrap.hidden = false;
+}
+
+function hideSshLeftover() {
+  slWrap.classList.add("leaving");
+  setTimeout(() => { slWrap.hidden = true; slWrap.classList.remove("leaving", "open"); }, 220);
+}
+
+slMore.addEventListener("click", () => {
+  const open = slWrap.classList.toggle("open");
+  slList.hidden = !open;
+  slMore.textContent = open ? "Hide" : "Show";
+});
+slClose.addEventListener("click", hideSshLeftover);
+slClean.addEventListener("click", async () => {
+  try {
+    await invoke("clean_ssh_leftovers");
+    flash("Cleaned up. ~/.ssh/config is back the way it was.");
+    hideSshLeftover();
+  } catch (e) {
+    alertish(e);
+  }
 });
 
 let msgFade = null;

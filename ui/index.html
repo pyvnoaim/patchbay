@@ -34,6 +34,10 @@
       </div>
       <div class="pane" id="browse">
         <main id="list"></main>
+        <!-- Floats up when more than one device is marked. Every bulk action the
+             ⌘-right-click menu offers is here too, so the gesture is discoverable
+             without knowing the chord. Rendered by renderDock() in browse.js. -->
+        <div id="dock" hidden></div>
       </div>
       <div class="terms" id="terms" hidden>
         <!-- Over the session, not a sheet: a terminal keeps the keyboard, and this is
@@ -280,6 +284,18 @@
       <span id="msg-text"></span>
       <button type="button" id="msg-close" class="x" aria-label="Dismiss"></button>
     </div>
+  </div>
+  <!-- Shown once per launch when a previous install left `~/.ssh/patchbay.conf` and/or
+       the Include line behind. Dismissed for the session by the X, cleaned out by
+       "Remove". Same pill family as #uptoast so the two never fight for the bottom. -->
+  <div id="ssh-leftover" class="pill" role="status" hidden>
+    <div class="pill-row">
+      <span id="sl-text"></span>
+      <button type="button" id="sl-more" class="quiet">Show</button>
+      <button id="sl-clean" class="primary">Remove</button>
+      <button id="sl-close" class="x" aria-label="Dismiss"></button>
+    </div>
+    <div id="sl-list" hidden></div>
   </div>
   <div id="uptoast" class="pill" role="status" hidden>
     <div class="pill-row">

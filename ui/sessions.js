@@ -91,21 +91,69 @@ function showOpen(key) {
   return true;
 }
 
+/// A broadcast group: several `openSession()`s that share a tab and, when `on`, share
+/// their keystrokes. Kept as an object each session points at, so a pane closing
+/// removes itself from `live` without a scan and the tab can render the count without
+/// walking the sessions map.
+///
+/// The "loud indicator" is here: the tab chip and every pane border go accent when
+/// `on`, and one click on the chip flips it. Off means the focused pane still sends
+/// input (fanning would be surprising), but every pane still receives its own output.
+let nextGid = 1;
+function makeBroadcast(names) {
+  return { gid: nextGid++, on: true, names, live: new Set() };
+}
+const inActive = (s) => {
+  if (activeId === null) return false;
+  const a = sessions.get(activeId);
+  return s === a || (a?.bcast && s.bcast === a.bcast);
+};
+
+/// Open every marked device as its own session inside one broadcast tab. Marks that
+/// aren't reachable over ssh are named in a pill and skipped: the grid is a grid of
+/// terminals, and a webview or an RDP canvas mixed into it would be a bigger change
+/// than this feature is. See `openSession` for how a single pane works.
+async function openBroadcast(marks) {
+  const ssh = marks.filter((m) => m.ssh);
+  const skipped = marks.filter((m) => !m.ssh);
+  if (ssh.length < 2) return alertish("A broadcast needs two or more ssh devices.");
+  if (skipped.length) {
+    // A note rather than an error - the marks that could be broadcast are being
+    // broadcast, and the ones that couldn't are named so nothing goes silent.
+    flash(`Broadcasting to ${ssh.length} · left out: ${skipped.map((m) => m.name).join(", ")}`);
+  }
+  const b = makeBroadcast(ssh.map((m) => m.name));
+  // In parallel: each is a separate ssh dial, and awaiting them one at a time made a
+  // twelve-device broadcast pop in one pane every render frame instead of together.
+  await Promise.all(ssh.map((j) => openSession(j.name, null, b)));
+  // Focus the first one - showTab lays the whole group out either way.
+  const first = [...sessions.values()].find((s) => s.bcast === b);
+  if (first) { activeId = first.id; showTab(); renderTabs(); }
+}
+
 /// `task` is "ping" or "trace": the same pty and the same tab, running a one-shot
 /// check instead of a shell. It runs on the jump host when there is one, because a
-/// device behind a bastion isn't reachable from here to begin with.
-async function openSession(name, task = null) {
-  const key = `term:${task ?? ""}:${name}`;
-  if (showOpen(key)) return;
+/// device behind a bastion isn't reachable from here to begin with. `bcast`, if
+/// given, joins this session to a broadcast group - see `openBroadcast`.
+async function openSession(name, task = null, bcast = null) {
+  // A broadcast pane is never a "there is already one of these" hit: opening a grid
+  // of the same twelve devices twice is two grids, not one focus.
+  const key = bcast ? `bcast:${bcast.gid}:${name}` : `term:${task ?? ""}:${name}`;
+  if (!bcast && showOpen(key)) return;
   const id = nextId++;
   const host = document.createElement("div");
-  host.className = "termhost";
+  host.className = "termhost" + (bcast ? " bcasthost" : "");
+  if (bcast) {
+    host.dataset.name = name;
+    host.addEventListener("mousedown", () => { activeId = id; showTab(); renderTabs(); }, true);
+  }
   termsEl.append(host);
 
   const { term, fit, search } = makeTerm(host);
 
-  const s = { id, name, task, kind: "term", key, term, fit, search, host, dead: false, unlisten: [] };
+  const s = { id, name, task, kind: "term", key, term, fit, search, host, dead: false, unlisten: [], bcast };
   sessions.set(id, s);
+  if (bcast) bcast.live.add(id);
   activeId = id;
   showTab();
   renderTabs();
@@ -121,7 +169,18 @@ async function openSession(name, task = null) {
     // A dead tab keeps the keyboard and has nowhere to send it, so Enter dials the
     // same device again instead of making you close it and find it in the list.
     if (s.dead) {
-      if (d === "\r") { dropTab(id); openSession(name, task); }
+      if (d === "\r") { dropTab(id); openSession(name, task, s.bcast); }
+      return;
+    }
+    // Broadcast on: every live sibling gets the same keystroke. Off: only the focused
+    // pane gets it, so a stray Ctrl+C after unfocusing a runaway box doesn't reach
+    // the other eleven. A pane that died mid-broadcast is silently skipped rather
+    // than resurrecting itself with the next keypress - it takes an Enter for that,
+    // above.
+    if (s.bcast?.on) {
+      for (const other of s.bcast.live) {
+        invoke("write_session", { id: other, data: d }).catch(() => {});
+      }
       return;
     }
     invoke("write_session", { id, data: d }).catch(() => {});
@@ -146,6 +205,7 @@ async function openSession(name, task = null) {
     }));
     s.unlisten.push(await listen(`pty-exit:${id}`, (e) => {
       s.dead = true;
+      s.bcast?.live.delete(id);
       term.write(`\r\n\x1b[2m── ${task ?? "ssh"} exited (${e.payload}) · ⏎ to ${task ? "run it again" : "reconnect"} · ${chord("w")} to close ──\x1b[0m\r\n`);
       renderTabs();
       renderTree();
@@ -193,7 +253,13 @@ function dropTab(id) {
   s.term?.dispose();
   s.host.remove();
   sessions.delete(id);
-  if (activeId === id) activeId = [...sessions.keys()].pop() ?? null;
+  s.bcast?.live.delete(id);
+  if (activeId === id) {
+    // Focus stays inside the same broadcast group when a pane in it closes: a group
+    // of twelve losing one pane should not throw you back to the "All jacks" tab.
+    const sibling = s.bcast && [...sessions.values()].find((x) => x.bcast === s.bcast);
+    activeId = sibling ? sibling.id : ([...sessions.keys()].pop() ?? null);
+  }
   showTab();
   renderTabs();
   renderTree();
@@ -205,12 +271,35 @@ function showTab() {
   if (!findEl.hidden) closeFind();
   browseEl.hidden = activeId !== null;
   termsEl.hidden = activeId === null;
-  for (const s of sessions.values()) s.host.hidden = s.id !== activeId;
+  const grid = sessions.get(activeId)?.bcast ?? null;
+  termsEl.classList.toggle("grid", grid !== null);
+  termsEl.classList.toggle("bcast-on", !!grid?.on);
+  // Nearest-square grid, so 4 becomes 2×2 and 6 becomes 3×2 instead of auto-fit
+  // filling one row and leaving one dangling below. Rows are 1fr; the terms
+  // container's height is fixed by the pane layout above.
+  if (grid) {
+    const n = [...sessions.values()].filter((s) => s.bcast === grid).length;
+    termsEl.style.setProperty("--cols", Math.max(1, Math.ceil(Math.sqrt(n))));
+  } else {
+    termsEl.style.removeProperty("--cols");
+  }
+  for (const s of sessions.values()) {
+    // A broadcast group shows every one of its panes at once; a single tab shows
+    // itself. `inActive` folds the two cases into one predicate.
+    s.host.hidden = !inActive(s);
+    s.host.classList.toggle("focused", grid !== null && s.id === activeId);
+  }
   if (activeId !== null) {
-    const s = sessions.get(activeId);
-    // The pane only has its real size once it's visible, so fit after the swap.
-    // A canvas scales itself in CSS and just needs the keyboard.
-    requestAnimationFrame(() => { s.fit?.fit(); (s.term ?? s.canvas)?.focus(); });
+    // Every visible pane needs its own fit after the grid template lands, or a
+    // brand-new grid opens at whatever size the first pane thought it had.
+    requestAnimationFrame(() => {
+      if (grid) {
+        for (const s of sessions.values()) if (inActive(s)) s.fit?.fit();
+      }
+      const s = sessions.get(activeId);
+      s?.fit?.fit();
+      (s?.term ?? s?.canvas)?.focus();
+    });
   }
   placeWebViews();
   renderDetail();
@@ -684,16 +773,39 @@ function renderTabs() {
   const label = group === null ? "All jacks" : groupLabel().split("/").join(" / ");
   const browse = `<div class="tab" data-id="" aria-selected="${activeId === null}">
       ${icon("layers")}<span class="lbl">${esc(label)}</span><span class="n">${shown.length}</span></div>`;
-  tabsEl.innerHTML = browse + [...sessions.values()].map((s) => `
-      <div class="tab ${s.dead ? "dead" : ""}" data-id="${s.id}" aria-selected="${s.id === activeId}">
-        <span class="dot ${s.dead ? "down" : "up"}"></span>
-        ${s.kind === "rdp" ? `<span class="tabkind">${icon("monitor")}</span>` : ""}
-        ${s.kind === "web" ? `<span class="tabkind">${icon("globe")}</span>` : ""}
-        ${s.kind === "sftp" ? `<span class="tabkind">${icon("folder")}</span>` : ""}
-        ${s.task ? `<span class="tabkind">${icon(s.task === "trace" ? "waypoints" : "plug")}</span>` : ""}
-        <span class="lbl">${esc(s.task ? `${s.task} ${s.name}` : s.name)}</span>
-        <span class="x" data-close="${s.id}" data-tip="Close  ${chord('w')}">${icon("x")}</span>
-      </div>`).join("");
+  // Broadcast groups collapse into one chip: N panes, one tab. The chip is aria-
+  // selected whenever any of its panes has focus, and its own dot pulses when input
+  // is fanning out. Non-broadcast sessions render as before.
+  const seen = new Set();
+  const chips = [];
+  for (const s of sessions.values()) {
+    if (s.bcast) {
+      if (seen.has(s.bcast.gid)) continue;
+      seen.add(s.bcast.gid);
+      const b = s.bcast;
+      const anyActive = [...sessions.values()].some((x) => x.bcast === b && x.id === activeId);
+      const alive = b.live.size;
+      chips.push(`<div class="tab bcast ${b.on ? "on" : ""}" data-gid="${b.gid}" aria-selected="${anyActive}">
+        <span class="tabkind">${icon("radio-tower")}</span>
+        <span class="lbl">Broadcast · ${alive} of ${b.names.length}</span>
+        <button type="button" class="bmute" data-bmute="${b.gid}"
+          data-tip="${b.on ? "Stop broadcasting keystrokes" : "Broadcast keystrokes to every pane"}"
+          aria-pressed="${b.on}">${icon(b.on ? "radio-tower" : "square")}</button>
+        <span class="x" data-bclose="${b.gid}" data-tip="Close all">${icon("x")}</span>
+      </div>`);
+      continue;
+    }
+    chips.push(`<div class="tab ${s.dead ? "dead" : ""}" data-id="${s.id}" aria-selected="${s.id === activeId}">
+      <span class="dot ${s.dead ? "down" : "up"}"></span>
+      ${s.kind === "rdp" ? `<span class="tabkind">${icon("monitor")}</span>` : ""}
+      ${s.kind === "web" ? `<span class="tabkind">${icon("globe")}</span>` : ""}
+      ${s.kind === "sftp" ? `<span class="tabkind">${icon("folder")}</span>` : ""}
+      ${s.task ? `<span class="tabkind">${icon(s.task === "trace" ? "waypoints" : "plug")}</span>` : ""}
+      <span class="lbl">${esc(s.task ? `${s.task} ${s.name}` : s.name)}</span>
+      <span class="x" data-close="${s.id}" data-tip="Close  ${chord('w')}">${icon("x")}</span>
+    </div>`);
+  }
+  tabsEl.innerHTML = browse + chips.join("");
   // Enough tabs and the strip scrolls even with every label squeezed, so the one you
   // just switched to has to be brought back into view. By hand, not scrollIntoView:
   // that one walks up to *any* scrollable ancestor, and it took the detail pane off
@@ -723,6 +835,20 @@ tabsEl.addEventListener("scroll", markTabOverflow, { passive: true });
 tabsEl.addEventListener("click", (e) => {
   const close = e.target.closest("[data-close]")?.dataset.close;
   if (close) return closeSession(+close);
+  const bclose = e.target.closest("[data-bclose]")?.dataset.bclose;
+  if (bclose) return closeBroadcast(+bclose);
+  const bmute = e.target.closest("[data-bmute]")?.dataset.bmute;
+  if (bmute) return toggleBroadcast(+bmute);
+  const bcast = e.target.closest("[data-gid]");
+  if (bcast) {
+    const gid = +bcast.dataset.gid;
+    // Focusing a group tab lands on the first live pane, or on the first pane if
+    // every one of them has died since.
+    const first = [...sessions.values()].find((s) => s.bcast?.gid === gid && !s.dead)
+      ?? [...sessions.values()].find((s) => s.bcast?.gid === gid);
+    if (first) { activeId = first.id; showTab(); renderTabs(); }
+    return;
+  }
   const tab = e.target.closest("[data-id]");
   if (!tab) return;
   activeId = tab.dataset.id === "" ? null : +tab.dataset.id;
@@ -730,17 +856,42 @@ tabsEl.addEventListener("click", (e) => {
   renderTabs();
 });
 
+function toggleBroadcast(gid) {
+  const s = [...sessions.values()].find((x) => x.bcast?.gid === gid);
+  if (!s) return;
+  s.bcast.on = !s.bcast.on;
+  // Muting a *background* group must not repaint the grid you're actually looking
+  // at - showTab reads the active group's own `.on`, whichever group that is.
+  showTab();
+  renderTabs();
+}
+
+function closeBroadcast(gid) {
+  for (const s of [...sessions.values()]) if (s.bcast?.gid === gid) closeSession(s.id);
+}
+
 addEventListener("resize", () => {
-  if (activeId !== null) sessions.get(activeId)?.fit?.fit();
+  // A grid has as many terminals as it has cells, so one fit is not enough - every
+  // visible pane recomputes its cols and rows against its share of the pane.
+  for (const s of sessions.values()) if (inActive(s)) s.fit?.fit();
   placeWebViews();
   markTabOverflow();
 });
 
 function cycleSession(d) {
-  const ids = [null, ...sessions.keys()];
-  if (ids.length < 2) return;
-  const i = ids.indexOf(activeId);
-  activeId = ids[(i + d + ids.length) % ids.length];
+  // One step per chip, not per pane: a broadcast of twelve devices is one tab in the
+  // strip, so ⌘] should skip past it rather than stepping through twelve panes.
+  const stops = [null];
+  const seen = new Set();
+  for (const s of sessions.values()) {
+    if (!s.bcast) { stops.push(s.id); continue; }
+    if (seen.has(s.bcast.gid)) continue;
+    seen.add(s.bcast.gid);
+    stops.push(s.id);
+  }
+  if (stops.length < 2) return;
+  const i = stops.indexOf(activeId);
+  activeId = stops[(i + d + stops.length) % stops.length];
   showTab();
   renderTabs();
 }

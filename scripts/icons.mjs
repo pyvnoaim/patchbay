@@ -46,6 +46,8 @@ const USED = [
   "list",          // the two ways the middle column lists
   "share-2",       // the map: a route, branching
   "corner-down-right",  // a device hanging off a hop
+  "radio-tower",   // broadcast: input fanning out to every pane
+  "square",        // the broadcast tab chip's mute state
 ];
 
 const inner = (name) =>

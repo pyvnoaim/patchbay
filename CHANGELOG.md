@@ -10,6 +10,13 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- **Broadcast to marked devices.** Pick out several boxes, right-click, hit Broadcast:
+  every device opens as its own pane in one tab, and one keystroke reaches all of them.
+  Click a pane to focus it and one keystroke goes there instead; the tab's broadcast
+  toggle turns fan-out on and off without closing anything. Marks a NAS's web UI along
+  with the ssh boxes? The web ones are left out and named.
+- A bulk-action bar appears when you mark two or more devices: move them, broadcast to
+  them, or delete them without hunting for the right-click menu.
 - A device whose address begins with `-` is refused rather than handed to `ssh`, which
   would have read it as an option. Nothing in a config file is executed as written, and
   now that holds for a ping or traceroute through a jump too.
@@ -22,6 +29,8 @@ it back. Nothing is retyped anywhere.
   `rsync` and anything else that reads that file, jump chains included. Off until
   you turn it on in Settings ▸ Devices, and a name your own config already defines
   is left alone.
+- A previous install's `~/.ssh/patchbay.conf` and its `Include` line are found on
+  launch and offered a one-click cleanup, for whenever the setting above is off.
 - A **Map** view beside the list: devices grouped by the route to them, so a bastion
   and everything behind it sit together however you filed them. A bastion that isn't
   answering says so once, instead of every device behind it looking broken on its own.

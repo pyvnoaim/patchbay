@@ -174,7 +174,13 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "n")) { e.preventDefault(); move(1); }
   else if (e.key === "ArrowUp" || (e.ctrlKey && e.key === "p")) { e.preventDefault(); move(-1); }
   else if (e.key === "Enter" && shown[sel]) { e.preventDefault(); primary(shown[sel].name); }
-  else if (e.key === "Escape") { group = null; sel = 0; marked.clear(); render(); }
+  else if (e.key === "Escape") {
+    // Two-stage: marks first, folder and selection second. Escape used to do all
+    // three at once, which threw the highlighted row back to the top the moment
+    // you cleared a batch you'd finished with.
+    if (marked.size) { marked.clear(); paintRows(); }
+    else { group = null; sel = 0; render(); }
+  }
   else if (shown[sel] && (e.key === "Backspace" || e.key === "Delete")) {
     e.preventDefault();
     const bulk = markedHere();
@@ -344,8 +350,19 @@ async function takeLink() {
   if (name) primary(name);
 }
 
+/// A previous install left `~/.ssh/patchbay.conf` and the `Include` line in
+/// `~/.ssh/config` behind - uninstall on macOS is drag-to-trash, and the app can't
+/// clean up when it isn't there. On launch, if the setting has been off since
+/// (re)install and either leftover is here, offer to sweep. Silent if the setting is
+/// on: then it isn't a leftover, it's the feature working.
+async function offerSshCleanup() {
+  const left = await invoke("ssh_leftovers").catch(() => null);
+  if (!left) return;
+  showSshLeftover(left);
+}
+
 // Behind the first paint: the window is for the device list, not for an errand.
-load().then(takeLink).then(offerUpdate);
+load().then(takeLink).then(offerUpdate).then(offerSshCleanup);
 setInterval(refreshProbes, PROBE_EVERY);
 // The config is a file you edit by hand, so pick up changes when the window comes back.
 window.addEventListener("focus", load);

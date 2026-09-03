@@ -85,6 +85,30 @@ pub fn remove_ssh_include(dir: &Path) -> Result<(), String> {
     write_text(&cfg, &format!("{}\n", kept.join("\n").trim_start()))
 }
 
+/// What a previous install left behind in `~/.ssh`, so the window can offer to sweep
+/// it up when this setting has been off since (re)install. The two answers are
+/// independent: someone might have deleted `patchbay.conf` themselves and left the
+/// `Include` line, or the file might be here without a line reading it.
+#[derive(Debug, serde::Serialize, PartialEq)]
+pub struct Leftovers {
+    pub conf_file: bool,
+    pub include_line: bool,
+    /// Absolute paths, so the pill can show them and the user knows what will go.
+    pub conf_path: String,
+    pub config_path: String,
+}
+
+pub fn ssh_leftovers(dir: &Path) -> Leftovers {
+    let conf = dir.join(SSH_FILE);
+    let cfg = dir.join("config");
+    Leftovers {
+        conf_file: conf.is_file(),
+        include_line: std::fs::read_to_string(&cfg).is_ok_and(|s| includes_ours(&s)),
+        conf_path: conf.display().to_string(),
+        config_path: cfg.display().to_string(),
+    }
+}
+
 /// Spelled either way people write it - ours goes in relative, but someone who has
 /// moved it to an absolute path still has it, and adding a second line would be worse
 /// than leaving theirs alone.
@@ -940,6 +964,33 @@ folders = ["prod/eu/web"]
         assert_eq!(std::fs::read_to_string(dir.join("config")).unwrap(), "Include patchbay.conf\n\n");
         remove_ssh_include(&dir).unwrap();
         assert_eq!(std::fs::read_to_string(dir.join("config")).unwrap().trim(), "");
+    }
+
+    /// The reason `ssh_leftovers` exists: uninstall is drag-to-trash on macOS, so a
+    /// previous install of patchbay can leave the file and the Include line behind.
+    /// The window offers to clean up on first launch of the next install.
+    #[test]
+    fn a_previous_install_can_be_swept_up_and_a_clean_machine_says_so() {
+        let dir = std::env::temp_dir().join(format!("patchbay-{}-sshleft", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Nothing left behind: both false.
+        let l = ssh_leftovers(&dir);
+        assert!(!l.conf_file && !l.include_line);
+        // Simulate an install that turned the setting on once.
+        write_ssh_include(&dir, "Host db\n").unwrap();
+        let l = ssh_leftovers(&dir);
+        assert!(l.conf_file && l.include_line, "the file and the include line are both here");
+        assert!(l.conf_path.ends_with("patchbay.conf"));
+        // Someone deleted the file by hand but left the line in ~/.ssh/config -
+        // one leftover is still a leftover.
+        std::fs::remove_file(dir.join(SSH_FILE)).unwrap();
+        let l = ssh_leftovers(&dir);
+        assert!(!l.conf_file && l.include_line);
+        // The cleanup takes them both out and stays quiet on a machine that has neither.
+        remove_ssh_include(&dir).unwrap();
+        let l = ssh_leftovers(&dir);
+        assert!(!l.conf_file && !l.include_line);
     }
 
     #[test]

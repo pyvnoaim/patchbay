@@ -1196,6 +1196,28 @@ fn set_theme(window: tauri::WebviewWindow, theme: String) -> String {
     }
 }
 
+/// What a previous install left behind in `~/.ssh` after uninstall - the app can't
+/// clean up when it isn't there to be asked, so it does it on first launch instead.
+/// Only returned when the setting is currently off: if you're using it, the file
+/// isn't a leftover, it's the feature working.
+#[tauri::command]
+fn ssh_leftovers() -> Option<config::Leftovers> {
+    if config::load_settings().write_ssh_config {
+        return None;
+    }
+    let dir = ssh_dir()?;
+    let l = config::ssh_leftovers(&dir);
+    (l.conf_file || l.include_line).then_some(l)
+}
+
+/// The click. Removes the file and takes the `Include` line back out of `~/.ssh/config`,
+/// same code path as unticking the setting.
+#[tauri::command]
+fn clean_ssh_leftovers() -> Result<(), String> {
+    let dir = ssh_dir().ok_or("no ~/.ssh on this machine")?;
+    config::remove_ssh_include(&dir)
+}
+
 #[tauri::command]
 fn save_settings(next: config::Settings) -> Result<(), String> {
     // Turning it off has to undo it here: `jacks` only ever writes the file, so with
@@ -1687,7 +1709,7 @@ fn main() {
             save_jack, delete_jack, rename_group, delete_group, open_url, open_link,
             spaces, space_files, create_space, delete_space, move_jack,
             settings, save_settings, set_theme, colors, save_color, defaults, save_defaults, ssh_keys,
-            ssh_hosts,
+            ssh_hosts, ssh_leftovers, clean_ssh_leftovers,
             team_sync, team_join, team_create, team_resolve, team_leave,
             open_web_view, place_web_view, close_web_view, web_check, web_trust, web_cert, web_trust_cert,
             open_rdp, open_vnc, open_rdp_session, close_rdp_session, rdp_input,

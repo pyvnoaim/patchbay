@@ -421,7 +421,58 @@ function paintRows() {
     el.setAttribute("aria-selected", +el.dataset.i === sel);
     el.classList.toggle("marked", marked.has(j?.name));
   }
+  renderDock();
 }
+
+/// Every bulk action, floated up when there is something to bulk. Same actions the
+/// ⌘-right-click menu carries, so the gesture is discoverable without knowing the
+/// chord - and `data-a` dispatches to the same handlers, in one place at the bottom
+/// of the file.
+function renderDock() {
+  const dock = $("dock");
+  if (!dock) return;
+  const bulk = markedHere();
+  if (bulk.length < 2) { dock.hidden = true; dock.innerHTML = ""; return; }
+  const ssh = bulk.filter((j) => j.ssh).length;
+  // A hand-dropped `evil".toml` in `spaces/` would inject through `data-a` unescaped,
+  // so the attribute goes through esc() like every other interpolated value. The
+  // label already does; this brings the two halves back in step.
+  const btn = (a, ic, lbl, extra = "") =>
+    `<button type="button" class="ghost" data-a="${esc(a)}"${extra}>${icon(ic)}${esc(lbl)}</button>`;
+  // Up to three spaces get their own button - the target is visible without a second
+  // click. More than that would overflow the pane, so they collapse into one
+  // "Move to…" button that opens the same list the right-click menu carries.
+  const targets = [null, ...spaces];
+  const moves = targets.length <= 3
+    ? targets.map((sp) => btn(`move:${sp ?? ""}`, "box", `Move to ${sp ?? "Private"}`)).join("")
+    : btn("moveto", "box", "Move to…");
+  dock.innerHTML = `
+    <span class="count"><b>${bulk.length}</b> selected</span>
+    ${ssh >= 2 ? btn("bcast", "radio-tower", `Broadcast to ${ssh}`) : ""}
+    ${moves}
+    ${btn("del", "trash-2", `Delete ${bulk.length}`, ' data-danger="1"')}`;
+  dock.hidden = false;
+}
+
+$("dock")?.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-a]");
+  const a = el?.dataset.a;
+  if (!a) return;
+  const bulk = markedHere();
+  if (!bulk.length) return;
+  if (a === "bcast") return openBroadcast(bulk);
+  if (a === "del") return removeMarked(bulk);
+  if (a === "moveto") {
+    // Anchored on the button so the menu drops beside it, and the same items the
+    // right-click menu carries - one list means one thing to keep in step.
+    const r = el.getBoundingClientRect();
+    return showCtx(r.left, r.top - 8, `Move ${bulk.length} devices to`,
+      [null, ...spaces].map((sp) => ({
+        icon: "box", label: sp ?? "Private", run: () => moveMarked(bulk, sp),
+      })));
+  }
+  if (a.startsWith("move:")) return moveMarked(bulk, a.slice(5) || null);
+});
 
 /// ⌘-click picks a row out, shift-click takes the run between it and the selected one -
 /// the two gestures every list has. `sel` stays put as the anchor, so a second
@@ -430,7 +481,10 @@ function markToggle(i) {
   const n = shown[i]?.name;
   if (!n) return;
   marked.has(n) ? marked.delete(n) : marked.add(n);
-  select(i);
+  // sel stays put: ⌘-click picks a row out of a group without moving the highlighted
+  // one, which is what makes it an anchor for shift-click. Moving sel here also
+  // reset the detail pane on every mark, which read as flicker.
+  paintRows();
 }
 function markRange(i) {
   for (let k = Math.min(sel, i); k <= Math.max(sel, i); k++) marked.add(shown[k].name);
