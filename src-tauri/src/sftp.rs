@@ -35,19 +35,27 @@ pub struct Entry {
 /// authentication. Named by the jack, in the OS temp dir: a stale one is harmless
 /// because ssh only reuses a socket a live master is still answering on.
 pub fn control_path(name: &str) -> PathBuf {
-    let safe: String = name
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
-    std::env::temp_dir().join(format!("patchbay-sftp-{}-{safe}", std::process::id()))
+    std::env::temp_dir().join(format!("patchbay-sftp-{}-{}", std::process::id(), safe_name(name)))
+}
+
+/// A jack's name as one path segment. It comes from a file a colleague may have
+/// written, and both callers build a path out of it.
+fn safe_name(name: &str) -> String {
+    name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect()
+}
+
+/// Where a file opened for editing is kept while it is open. Per jack, or two devices
+/// with a `docker-compose.yml` would be editing the same copy.
+pub fn edit_dir(name: &str) -> PathBuf {
+    std::env::temp_dir().join("patchbay-edit").join(safe_name(name))
 }
 
 /// `sftp` takes the same options as `ssh` bar two: the port is `-P`, not `-p`, and it
 /// is getopt-strict - every option has to come *before* the destination, which is what
 /// `ssh_args` puts last. So `-b -` goes in here rather than being appended by the
 /// caller; appended, sftp answers a directory listing with its usage message.
-/// Forwards are dropped: a file copy has no use for the hop's tunnels, and re-binding
-/// a port a live session already holds only produces an error.
+/// Forwards of every kind are dropped: a file copy has no use for the hop's tunnels,
+/// and re-binding a port a live session already holds only produces an error.
 fn sftp_args(ssh: Vec<String>, socket: &Path) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(ssh.len() + 8);
     let mut it = ssh.into_iter();
@@ -57,7 +65,7 @@ fn sftp_args(ssh: Vec<String>, socket: &Path) -> Vec<String> {
                 out.push("-P".into());
                 out.extend(it.next());
             }
-            "-L" => {
+            f if patchbay::FORWARD_FLAGS.contains(&f) => {
                 it.next();
             }
             _ => out.push(a),
@@ -288,6 +296,27 @@ pub fn get(name: &str, remote: &str, into: &Path, recurse: bool) -> Result<PathB
     Ok(to)
 }
 
+/// The writes a file list needs, as the one batch line each of them is. A verb the far
+/// end was never going to be asked for is refused here rather than sent.
+pub fn edit(name: &str, op: &str, path: &str, to: &str) -> Result<(), String> {
+    let p = safe_path(path)?;
+    let line = match op {
+        "mkdir" => format!("mkdir \"{p}\"\n"),
+        "rm" => format!("rm \"{p}\"\n"),
+        "rmdir" => format!("rmdir \"{p}\"\n"),
+        "rename" => format!("rename \"{p}\" \"{}\"\n", safe_path(to)?),
+        _ => return Err(format!("no file operation named \"{op}\"")),
+    };
+    match batch(name, &line, Some(TIMEOUT)) {
+        // sftp has no recursive remove, and a server's answer for a folder that still
+        // has something in it is the bare word "Failure".
+        Err(e) if op == "rmdir" && e.contains("Failure") => {
+            Err(format!("\"{p}\" isn't empty, and sftp only removes an empty folder"))
+        }
+        other => other.map(|_| ()),
+    }
+}
+
 pub fn put(name: &str, local: &Path, remote_dir: &str) -> Result<(), String> {
     let dir = safe_path(remote_dir)?;
     let from = local_arg(local)?;
@@ -377,12 +406,13 @@ mod tests {
     /// batch flag, it is two stray operands and a usage message.
     #[test]
     fn every_option_lands_before_the_destination() {
-        let ssh = ["-J", "bastion", "-p", "2222", "-L", "8080:localhost:80", "me@nas"];
+        let ssh = ["-J", "bastion", "-p", "2222", "-L", "8080:localhost:80", "-D", "1080", "me@nas"];
         let a = sftp_args(ssh.iter().map(|s| s.to_string()).collect(), Path::new("/tmp/sock"));
 
         assert_eq!(a.last().unwrap(), "me@nas", "the destination comes last");
         assert!(a.windows(2).any(|w| w == ["-P", "2222"]), "sftp spells the port -P: {a:?}");
         assert!(!a.iter().any(|x| x == "-p" || x == "-L" || x == "8080:localhost:80"));
+        assert!(!a.iter().any(|x| x == "-D" || x == "1080"), "every kind of forward goes: {a:?}");
         assert!(a.windows(2).any(|w| w == ["-J", "bastion"]), "the jump chain survives");
         assert!(a.windows(2).any(|w| w == ["-b", "-"]), "the batch flag is here, not appended");
         assert!(a.windows(2).any(|w| w == ["-o", "ServerAliveInterval=15"]), "a dead host is noticed");
@@ -406,5 +436,11 @@ mod tests {
         // The local side of the line gets the same treatment.
         let dropped = std::env::temp_dir().join("a\"\nget /etc/shadow");
         assert!(put("nowhere", &dropped, "/tmp").is_err(), "a local name can smuggle too");
+
+        // Both sides of a rename, and the name it would be renamed to.
+        assert!(edit("nowhere", "rename", "/tmp/a", "/tmp/b\nrm /etc/passwd").is_err());
+        assert!(edit("nowhere", "mkdir", "/tmp/x\"; rm -rf /", "").is_err());
+        // And a verb we never meant to offer is not passed along to be interpreted.
+        assert!(edit("nowhere", "chmod 777", "/tmp/a", "").is_err());
     }
 }
