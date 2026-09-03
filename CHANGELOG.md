@@ -10,6 +10,13 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- A device whose address begins with `-` is refused rather than handed to `ssh`, which
+  would have read it as an option. Nothing in a config file is executed as written, and
+  now that holds for a ping or traceroute through a jump too.
+- Tailscale addresses count as your own network, so a `100.x` device's web UI opens in
+  a tab like every other one instead of being sent to the browser.
+- A `patchbay://` link matches a device name exactly, and can carry a name with a dot
+  in it. `patchbay://db` no longer opens `db-prod`.
 - patchbay can write your devices into `~/.ssh/patchbay.conf` and have `~/.ssh/config`
   include it, so `ssh web-01` in any terminal goes where Connect goes. So do `scp`,
   `rsync` and anything else that reads that file, jump chains included. Off until

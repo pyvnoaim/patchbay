@@ -647,7 +647,17 @@ fn is_private_host(host: &str) -> bool {
     let host = host.trim().trim_start_matches('[').trim_end_matches(']');
     match host.parse::<IpAddr>() {
         Ok(IpAddr::V4(v4)) => {
-            v4.is_private() || v4.is_loopback() || v4.is_link_local() || v4 == Ipv4Addr::UNSPECIFIED
+            // 100.64/10 is carrier-grade NAT, and it is what Tailscale hands every
+            // node - the homelab this feature exists for is as likely to be reached
+            // there as on 192.168. `is_private` is RFC 1918 only, and `is_shared`,
+            // which would say this in one call, is still unstable.
+            let o = v4.octets();
+            let cgnat = o[0] == 100 && (64..128).contains(&o[1]);
+            v4.is_private()
+                || cgnat
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4 == Ipv4Addr::UNSPECIFIED
         }
         Ok(IpAddr::V6(v6)) => {
             // Unique-local (fc00::/7) and link-local (fe80::/10), plus ::1.
@@ -1405,8 +1415,11 @@ fn watch_edit(
 /// written at install time and a single-instance hand-off, which is a plugin's worth
 /// of work for the same two lines of behaviour.
 fn link_target(url: &str) -> Option<String> {
-    let jacks = read().ok()?;
-    patchbay::resolve(&link_name(url)?, &jacks).ok()
+    let name = link_name(url)?;
+    // The exact name, never `resolve`'s unique-substring match. The palette guesses
+    // because you are watching it guess; a link in an alert is read once and acted on,
+    // and `patchbay://db` quietly opening `db-prod` is the wrong box at 3am.
+    read().ok()?.contains_key(&name).then_some(name)
 }
 
 /// The name a link carries, or None. Split out from the lookup so the part that
@@ -1418,8 +1431,12 @@ fn link_name(url: &str) -> Option<String> {
     // Structurally not an address, rather than incidentally not one. `resolve` would
     // refuse a host anyway by simply not finding it, but a link that cannot even be
     // *shaped* like `user@host:22` is the property worth being able to point at.
+    // A dot is allowed: `web.example` is an ordinary jack name, and it is the `@` and
+    // the `:` that keep a link from being shaped like `user@host:22`. Being unable to
+    // name a host was never the guarantee anyway - `link_target` matches this against
+    // the config exactly, so a link can only ever open a device you already have.
     let ok = !name.is_empty()
-        && !name.contains(['@', ':', ' ', '.', '\\', '/'])
+        && !name.contains(['@', ':', ' ', '\\', '/'])
         && !name.chars().any(char::is_control);
     ok.then_some(name)
 }
@@ -1730,9 +1747,11 @@ host = "x; id"
 
     /// A link is the one way into this app that a *web page* can reach. So what it may
     /// carry is a device name and nothing else: a link that could name a host would be
-    /// a link that dials a stranger's box and asks you for a password.
+    /// a link that dials a stranger's box and asks you for a password. `link_target`
+    /// then matches that name against the config exactly, so the worst a link can do
+    /// is open something already on this machine, or nothing.
     #[test]
-    fn a_link_carries_a_device_name_and_can_never_be_shaped_like_an_address() {
+    fn a_link_carries_a_device_name_and_never_a_login() {
         assert_eq!(super::link_name("patchbay://web-01").as_deref(), Some("web-01"));
         assert_eq!(super::link_name("patchbay://web-01/").as_deref(), Some("web-01"));
         // Anything after the name is not part of it.
@@ -1741,9 +1760,12 @@ host = "x; id"
         // An escape is a byte of UTF-8, not a character - `caf%C3%A9` is one letter.
         assert_eq!(super::link_name("patchbay://caf%C3%A9").as_deref(), Some("café"));
 
+        // A dotted name is a name people actually use, and it is `link_target` that
+        // decides whether it exists here.
+        assert_eq!(super::link_name("patchbay://web.example").as_deref(), Some("web.example"));
+
         for bad in [
             "patchbay://root@evil.example",
-            "patchbay://evil.example",
             "patchbay://10.0.0.1:22",
             "patchbay://",
             "patchbay://a b",
@@ -1838,12 +1860,17 @@ host = "x; id"
         for ours in [
             "10.0.0.251", "10.0.0.4", "172.16.3.9", "172.31.255.1",
             "127.0.0.1", "localhost", "169.254.1.1", "nas", "nas.local", "::1", "fe80::1", "fd00::1",
+            // Tailscale hands out 100.64/10, and a tailnet is someone's own network
+            // in every sense that matters here.
+            "100.64.0.1", "100.101.102.103", "100.127.255.254",
         ] {
             assert!(super::is_private_host(ours), "{ours:?} is on your own network");
         }
         for theirs in [
             "example.com", "8.8.8.8", "172.32.0.1", "172.15.0.1", "1.1.1.1",
             "evil.example.co.uk", "2606:4700::1111",
+            // Either side of the CGNAT block is the public internet.
+            "100.63.255.255", "100.128.0.1",
         ] {
             assert!(!super::is_private_host(theirs), "{theirs:?} is not");
         }

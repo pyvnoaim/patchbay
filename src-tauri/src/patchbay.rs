@@ -174,6 +174,28 @@ pub fn spec(j: &Jack) -> String {
     }
 }
 
+/// A destination on its way into argv. ssh reads a leading `-` as an option, and a
+/// destination is not always the last word: `task_argv` appends `traceroute <host>`
+/// after the chain, which supplies the operand a smuggled `-oProxyCommand=` needs to
+/// run. So a host from a file someone else wrote is refused here rather than passed
+/// along - this is where "nothing in a config is executed as written" is enforced.
+fn dest(s: String) -> Result<String, String> {
+    if s.trim().is_empty() {
+        return Err("that jack has no host to connect to".into());
+    }
+    if s.starts_with('-') {
+        return Err(format!("\"{s}\" isn't a usable host - ssh would read it as an option"));
+    }
+    Ok(s)
+}
+
+/// The same rule for a jack, which needs its `host` checked before `spec` hides an
+/// empty one behind a `user@`.
+fn dest_of(j: &Jack) -> Result<String, String> {
+    dest(j.host.clone())?;
+    dest(spec(j))
+}
+
 /// The jump chain, ordered the way `ssh -J` wants it: leftmost is the first hop
 /// from here. Walking `jump` goes outward from the target, so the walk is reversed -
 /// `db → web → bastion` has to dial bastion first, not web.
@@ -192,13 +214,13 @@ pub fn hops(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
         match jacks.get(&h) {
             // not a jack name, pass through as a raw ssh spec
             None => {
-                out.push(h);
+                out.push(dest(h)?);
                 break;
             }
             Some(via) => {
                 out.push(match via.port {
-                    Some(p) => format!("{}:{p}", spec(via)),
-                    None => spec(via),
+                    Some(p) => format!("{}:{p}", dest_of(via)?),
+                    None => dest_of(via)?,
                 });
                 hop = via.jump.clone();
             }
@@ -286,7 +308,7 @@ pub fn ssh_args(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
         args.push(flag.into());
         args.push(spec.into());
     }
-    args.push(spec(j));
+    args.push(dest_of(j)?);
     Ok(args)
 }
 
@@ -681,6 +703,45 @@ forward = ["5432:localhost:5432"]
         for bad in ["-o ProxyCommand=id", "-L", "-L8080:h:80", "--", "-D", "-R "] {
             assert!(forward_arg(bad).is_err(), "{bad:?} should be refused");
         }
+    }
+
+    /// The whole safety story for a config a colleague wrote: it may produce an ssh
+    /// argv and nothing else. A host beginning with `-` is an ssh *option*, and a
+    /// ping or traceroute through a jump appends its own operand after the chain -
+    /// which is the destination a smuggled `-oProxyCommand=` was missing.
+    #[test]
+    fn a_host_can_never_become_an_ssh_option() {
+        let j = parse(
+            r#"
+            [jack.evil]
+            host = "-oProxyCommand=touch /tmp/pwned"
+
+            [jack.behind]
+            host = "10.0.0.4"
+            jump = "evil"
+
+            [jack.raw]
+            host = "10.0.0.5"
+            jump = "-oProxyCommand=touch /tmp/pwned"
+
+            [jack.nohost]
+            user = "root"
+            "#,
+        )
+        .unwrap();
+        for name in ["evil", "behind", "raw", "nohost"] {
+            assert!(ssh_args(name, &j).is_err(), "{name:?} produced an argv");
+        }
+        // The hop is what `task_argv` builds on, so the chain has to refuse it too.
+        assert!(hops("behind", &j).is_err());
+        assert!(hops("raw", &j).is_err());
+        // A user in front would make it an operand again, and that is not a rule worth
+        // having: whether a config is safe would then depend on `[defaults] user`.
+        let dressed = parse("[jack.x]\nhost = \"-oProxyCommand=id\"\nuser = \"root\"\n").unwrap();
+        assert!(ssh_args("x", &dressed).is_err());
+        // An ordinary host is untouched by any of this.
+        let fine = parse("[jack.x]\nhost = \"10.0.0.4\"\nuser = \"root\"\n").unwrap();
+        assert_eq!(ssh_args("x", &fine).unwrap().last().unwrap(), "root@10.0.0.4");
     }
 
     #[test]
