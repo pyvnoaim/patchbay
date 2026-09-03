@@ -13,6 +13,18 @@
   --bg:        #17171a;   /* opaque fallback; macOS paints vibrancy behind instead */
   --tip:       #3a3a42;
   --tip-fg:    #f2f2f6;
+  /* The terminal's 16, read out by `theme()` in sessions.js rather than hardcoded
+     there, so a session repaints with the rest of the app when the theme changes.
+     Red, green and blue are --down, --up and --accent themselves: a failing unit in
+     `systemctl status` should be the same red as a device that is down. */
+  --a-black:   #2a2a30;  --a-bright-black:   #6d6d78;
+  --a-red:     #ff6b6b;  --a-bright-red:     #ff8f8f;
+  --a-green:   #43c463;  --a-bright-green:   #6ed98a;
+  --a-yellow:  #e8c26a;  --a-bright-yellow:  #f2d68a;
+  --a-blue:    #4f9dfd;  --a-bright-blue:    #7bb7ff;
+  --a-magenta: #c98bf0;  --a-bright-magenta: #dcaaf7;
+  --a-cyan:    #56c8d8;  --a-bright-cyan:    #7fdce8;
+  --a-white:   #d6d6de;  --a-bright-white:   #f0f0f4;
   /* Lucide's chevron-down, as a mask - it is painted with --fg-faint at the point
      of use, so unlike the colours above it needs no light-mode twin. */
   --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
@@ -28,6 +40,16 @@
   --row:rgba(0,0,0,.05); --row-hover:rgba(0,0,0,.07); --line:rgba(0,0,0,.10);
   --bg:#f4f4f6;
   --tip:#2c2c33; --tip-fg:#f6f6f8;
+  /* On a light ground "bright" means *more* contrast, so these go darker rather than
+     lighter - the pale twins that read as emphasis on black are invisible here. */
+  --a-black:   #2b2b33;  --a-bright-black:   #8b8b95;
+  --a-red:     #d63c3c;  --a-bright-red:     #b52d2d;
+  --a-green:   #1e9e46;  --a-bright-green:   #157a35;
+  --a-yellow:  #9a6b00;  --a-bright-yellow:  #7a5400;
+  --a-blue:    #2f6fd0;  --a-bright-blue:    #1f57ad;
+  --a-magenta: #9a4bbf;  --a-bright-magenta: #7d3aa0;
+  --a-cyan:    #0e7c8a;  --a-bright-cyan:    #0a6371;
+  --a-white:   #5f5f6a;  --a-bright-white:   #16161a;
 }
 
 * { box-sizing: border-box; margin: 0; }
@@ -65,7 +87,16 @@ body[data-os="macos"] { background: transparent; }
 .tabstrip {
   display: flex; align-items: center; gap: 4px;
   flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none;
+  /* Two masks intersected, each a no-op at 0 - so the edge that has more beyond it
+     is the only one that fades, set by `markTabOverflow()` in sessions.js. */
+  --fade-l: 0px; --fade-r: 0px;
+  mask-image: linear-gradient(90deg, transparent, #000 var(--fade-l)),
+              linear-gradient(90deg, #000 calc(100% - var(--fade-r)), transparent);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
 }
+.tabstrip.more-l { --fade-l: 26px; }
+.tabstrip.more-r { --fade-r: 26px; }
 .tabstrip::-webkit-scrollbar { display: none; }
 .tabactions { display: flex; align-items: center; gap: 6px; flex: none; -webkit-app-region: no-drag; }
 body:not([data-os="macos"]) .tabs { height: 40px; }

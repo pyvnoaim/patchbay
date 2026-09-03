@@ -400,6 +400,18 @@ fn open_url(name: String) -> Result<String, String> {
     Ok(url)
 }
 
+/// A link in terminal output: text a remote host wrote, so it goes nowhere until
+/// someone clicks it, and nowhere but a browser. `is_web_url` is the same http(s)
+/// check a jack's `url` passes, and `os_open` never goes through a shell.
+#[tauri::command]
+fn open_link(url: String) -> Result<String, String> {
+    if !is_web_url(&url) {
+        return Err(format!("not a web address: \"{url}\""));
+    }
+    os_open(url.as_ref())?;
+    Ok(url)
+}
+
 /// One request of our own before the url reaches a webview, because a webview has no
 /// "proceed anyway" for a certificate this machine doesn't trust - it paints nothing
 /// at all and looks like a broken app. This is a deliberate click, not a background
@@ -1404,7 +1416,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             jacks, connect, probe, config_path, open_config,
-            save_jack, delete_jack, rename_group, delete_group, open_url,
+            save_jack, delete_jack, rename_group, delete_group, open_url, open_link,
             spaces, create_space, delete_space, move_jack,
             settings, save_settings, set_theme, colors, save_color, defaults, save_defaults, ssh_keys,
             ssh_hosts,

@@ -12,11 +12,25 @@ let nextId = 1;
 const theme = () => {
   const css = getComputedStyle(document.body);
   const v = (name, fallback) => css.getPropertyValue(name).trim() || fallback;
+  // The 16 are `--a-*` in app.css, not literals here, so light and dark are one
+  // block each in the file that owns every other colour. Left as xterm's own
+  // defaults they are the raw VT hexes, which is a #00ff00 `ls` beside a palette
+  // that was tuned - the loudest thing in the window and the only undesigned one.
+  const ansi = {};
+  for (const name of ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]) {
+    ansi[name] = v(`--a-${name}`, "");
+    // xterm's key for bright red is `brightRed`, and the token is `--a-bright-red`.
+    ansi[`bright${name[0].toUpperCase()}${name.slice(1)}`] = v(`--a-bright-${name}`, "");
+  }
   return {
     background: "rgba(0,0,0,0)",
     foreground: v("--fg", "#f0f0f4"),
     cursor: v("--accent", "#4f9dfd"),
+    // What is drawn *under* a block cursor: the app's own ground, or the character
+    // it covers is painted in a colour the theme never chose.
+    cursorAccent: v("--bg", "#17171a"),
     selectionBackground: "rgba(79,157,253,.35)",
+    ...ansi,
   };
 };
 
@@ -35,22 +49,52 @@ function makeTerm(host) {
   const term = new Terminal({
     fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace',
     fontSize: termFont(),
-    lineHeight: 1.2,
+    // Not 1.2: a box-drawing glyph is exactly one cell tall, so any leading at all
+    // breaks every vertical rule a TUI draws into a dashed line. The DOM renderer
+    // takes these from the font and cannot stretch them, so the cell has to fit.
+    lineHeight: 1,
     cursorBlink: true,
+    // An unfocused tab is not a live one, and a solid block in both says otherwise.
+    cursorInactiveStyle: "outline",
     allowTransparency: true,
     scrollback: 5000,
     theme: theme(),
   });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
+  // A link in output belongs to whatever wrote it, so it goes to the browser through
+  // `open_link`, which takes http(s) and nothing else - never to a webview of ours.
+  term.loadAddon(new WebLinksAddon.WebLinksAddon((_, uri) => {
+    invoke("open_link", { url: uri }).catch(alertish);
+  }));
   term.open(host);
+  // No webgl renderer: it has to composite against the transparent background the
+  // macOS vibrancy needs, and leaves the previous frame behind when it does.
   return { term, fit };
+}
+
+/// A tab is a view of one thing, so asking for that thing again is a request to look
+/// at it, not to open a second one. `key` is what the tab is *of*: a one-shot check
+/// is not the same tab as a shell on the same device, and a web tab carries its url,
+/// because a device whose address has changed since is a different page. A dead tab
+/// is not a view of anything - Enter in it dials again, and a fresh click should not
+/// land you in a corpse.
+function showOpen(key) {
+  const open = [...sessions.values()].find((s) => s.key === key && !s.dead);
+  if (!open) return false;
+  activeId = open.id;
+  showTab();
+  renderTabs();
+  renderTree();
+  return true;
 }
 
 /// `task` is "ping" or "trace": the same pty and the same tab, running a one-shot
 /// check instead of a shell. It runs on the jump host when there is one, because a
 /// device behind a bastion isn't reachable from here to begin with.
 async function openSession(name, task = null) {
+  const key = `term:${task ?? ""}:${name}`;
+  if (showOpen(key)) return;
   const id = nextId++;
   const host = document.createElement("div");
   host.className = "termhost";
@@ -58,12 +102,17 @@ async function openSession(name, task = null) {
 
   const { term, fit } = makeTerm(host);
 
-  const s = { id, name, task, kind: "term", term, fit, host, dead: false, unlisten: [] };
+  const s = { id, name, task, kind: "term", key, term, fit, host, dead: false, unlisten: [] };
   sessions.set(id, s);
   activeId = id;
   showTab();
   renderTabs();
   renderTree();
+  // One frame, so the pane has its real width before the pty is told a size. Sized
+  // here and resized again a frame later, the shell gets a SIGWINCH mid-login and
+  // anything drawing with cursor moves - a fastfetch box, any TUI - is left painting
+  // on a grid that has since reflowed underneath it.
+  await new Promise((r) => requestAnimationFrame(r));
   fit.fit();
 
   term.onData((d) => {
@@ -289,13 +338,15 @@ termsEl.addEventListener("click", async (e) => {
 // sftp in a tab. Ordinary HTML, unlike the web tab: nothing here is a foreign page,
 // so it lives in our own webview and behaves like the rest of the app.
 async function openFilesSession(name) {
+  const key = `sftp:${name}`;
+  if (showOpen(key)) return;
   const id = nextId++;
   const host = document.createElement("div");
   host.className = "termhost filehost";
   termsEl.append(host);
 
   watchDrops();
-  const s = { id, name, kind: "sftp", host, cwd: ".", dead: false, unlisten: [] };
+  const s = { id, name, kind: "sftp", key, host, cwd: ".", dead: false, unlisten: [] };
   sessions.set(id, s);
   activeId = id;
   showTab();
@@ -522,13 +573,15 @@ async function watchDrops() {
 }
 
 async function openWebSession(name) {
+  const key = `web:${name}:${all.find((j) => j.name === name)?.url ?? ""}`;
+  if (showOpen(key)) return;
   watchOverlays();
   const id = nextId++;
   const host = document.createElement("div");
   host.className = "termhost webhost";
   termsEl.append(host);
 
-  const s = { id, name, kind: "web", host, dead: false, unlisten: [] };
+  const s = { id, name, kind: "web", key, host, dead: false, unlisten: [] };
   sessions.set(id, s);
   activeId = id;
   showTab();
@@ -589,7 +642,19 @@ function renderTabs() {
       tabsEl.scrollLeft = right - tabsEl.clientWidth;
     }
   }
+  markTabOverflow();
 }
+
+/// The strip hides its scrollbar, so a tab past the edge is a tab that simply isn't
+/// there. Fade whichever edge still has something beyond it - and only that edge, or
+/// a strip with three tabs in it looks like it is hiding some.
+function markTabOverflow() {
+  const room = tabsEl.scrollWidth - tabsEl.clientWidth;
+  // A sub-pixel layout leaves a fraction of scrollable width on a strip that fits.
+  tabsEl.classList.toggle("more-l", room > 1 && tabsEl.scrollLeft > 1);
+  tabsEl.classList.toggle("more-r", room > 1 && tabsEl.scrollLeft < room - 1);
+}
+tabsEl.addEventListener("scroll", markTabOverflow, { passive: true });
 
 tabsEl.addEventListener("click", (e) => {
   const close = e.target.closest("[data-close]")?.dataset.close;
@@ -604,6 +669,7 @@ tabsEl.addEventListener("click", (e) => {
 addEventListener("resize", () => {
   if (activeId !== null) sessions.get(activeId)?.fit?.fit();
   placeWebViews();
+  markTabOverflow();
 });
 
 function cycleSession(d) {
@@ -651,6 +717,10 @@ const rdpCreds = new Map();
 async function openRdpSession(name) {
   const j = all.find((x) => x.name === name);
   if (!j) return;
+  // Before the credentials are asked for: a second desktop is a second login, and
+  // being asked to sign in again for the session already on screen is the worst of it.
+  const key = `rdp:${name}`;
+  if (showOpen(key)) return;
 
   let creds = rdpCreds.get(name);
   if (!creds) {
@@ -670,7 +740,7 @@ async function openRdpSession(name) {
   termsEl.append(host);
   const ctx = canvas.getContext("2d");
 
-  const s = { id, name, kind: "rdp", canvas, host, dead: false, unlisten: [] };
+  const s = { id, name, kind: "rdp", key, canvas, host, dead: false, unlisten: [] };
   sessions.set(id, s);
   activeId = id;
   showTab();
