@@ -8,6 +8,7 @@ const FILES = [
   ["@xterm/xterm/css/xterm.css", "xterm.css"],
   ["@xterm/addon-fit/lib/addon-fit.js", "addon-fit.js"],
   ["@xterm/addon-web-links/lib/addon-web-links.js", "addon-web-links.js"],
+  ["@xterm/addon-search/lib/addon-search.js", "addon-search.js"],
 ];
 
 mkdirSync("ui/vendor", { recursive: true });
