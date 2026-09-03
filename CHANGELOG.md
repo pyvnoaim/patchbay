@@ -10,14 +10,10 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
-- A space now has a page of its own: which file it is, where it syncs, and what the
-  sync is doing - with the sync button and the conflict answer right there.
-- The window opens where you left it, and the sidebar is as wide as you dragged it.
-- Terminal sessions use patchbay's own colours instead of the raw VT palette, so a
-  failing unit is the same red as a device that's down. Links in output are
-  clickable, and they open in your browser.
-- Clicking a device you already have open takes you to that tab instead of opening
-  a second one.
+- A space has a page of its own now: which file it is, and what its sync is doing.
+- The window opens where you left it, and the sidebar keeps the width you drag it to.
+- Terminal sessions use patchbay's colours, not the raw VT palette. Links are clickable.
+- Clicking a device you already have open goes to that tab.
 - patchbay updates itself. It asks once when the window opens, downloads only
   when you say so, and never restarts you: the new version is put in place and
   the button becomes `Restart`, which is a separate click because it takes your
