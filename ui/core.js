@@ -18,6 +18,11 @@ const impWrap = $("importwrap"), impForm = $("importform"), impList = $("imp-lis
 const impNote = $("imp-note"), impErr = $("imp-err"), impOk = $("imp-ok");
 const teamErr = $("team-err"), setNav = $("setnav");
 const upWrap = $("uptoast"), upText = $("up-text"), upInstall = $("up-install"), upClose = $("up-close");
+// When the last check answered, as a clock time. The launch check says nothing when
+// there is nothing to install, so without this the settings pane cannot tell "current"
+// from "never asked" - which are the same sentence to read and not the same thing.
+let lastChecked = null;
+const checkedNow = () => (lastChecked = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
 const upMore = $("up-more"), upNotes = $("up-notes");
 const msgWrap = $("msg"), msgText = $("msg-text"), msgClose = $("msg-close");
 
@@ -52,6 +57,7 @@ let prefs = {};               // [settings] from the config
 let colors = {};              // [colors] overrides, os key -> hex
 let cfgPath = "";             // where the config lives, shown on first run
 let spaces = [];              // the extra config files beside it, by name
+let spaceFiles = [];          // { space, path } - which file each space actually is
 let sshKeys = [];             // private keys found in ~/.ssh, to suggest in the key field
 let tunnels = [];             // live ssh -L forwards holding RDP open
 let teams = [];               // last answer from team_sync, one per team space
@@ -65,6 +71,24 @@ const TEAM_STUCK = {
   error: "The team sync is stuck on this config",
   readonly: "You edited a read-only space, so those changes stay here",
 };
+
+/// What a team space's sync is doing, as a sentence. Here rather than in either of
+/// the two panes that show it, for the same reason TEAM_STUCK is here: a second copy
+/// is how the settings sheet and the detail pane end up telling you different things.
+function teamNote(t) {
+  const seats = `${t.seats} seat${t.seats === 1 ? "" : "s"}${t.paid ? "" : ", free up to three"}`;
+  return {
+    conflict: "This space and the team's have both changed since they last agreed. Pick one - "
+      + `whichever you drop is kept beside it as ${t.space}.toml.bak.`,
+    blocked: `${t.error ?? ""} Your edits stay on this machine until the team has room for them.`,
+    offline: `Not reaching the server: ${t.error ?? ""} - the list still works, and changes go up when it answers.`,
+    // Nothing is wrong with it: it is a subscription, and only an edit makes it awkward.
+    readonly: `${t.error ?? "read-only"} - undo them, or copy the devices you want into a space of your own.`,
+    // Nothing to do with the server, so don't blame it: this machine's own copy is
+    // in the way, and nothing syncs either direction until it's readable again.
+    error: `${t.error ?? "the sync stopped here"} - nothing is going up or coming down until that's sorted.`,
+  }[t.state] ?? `In sync · ${seats}`;
+}
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 

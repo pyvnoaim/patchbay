@@ -322,6 +322,23 @@ fn spaces() -> Vec<String> {
         .collect()
 }
 
+/// The file each space *is*. "A space is a config file" is the whole model and until
+/// now nothing on screen said which file - the detail pane names it.
+#[tauri::command]
+fn space_files() -> Vec<SpaceFile> {
+    patchbay::space_paths(&patchbay::config_path())
+        .into_iter()
+        .map(|(space, path)| SpaceFile { space, path: path.display().to_string() })
+        .collect()
+}
+
+#[derive(serde::Serialize)]
+struct SpaceFile {
+    /// `null` is the main config - your own list, which is a space like any other.
+    space: Option<String>,
+    path: String,
+}
+
 #[tauri::command]
 fn create_space(name: String) -> Result<String, String> {
     config::create_space_at(&patchbay::config_path(), &name)
@@ -1428,7 +1445,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             jacks, connect, probe, config_path, open_config,
             save_jack, delete_jack, rename_group, delete_group, open_url, open_link,
-            spaces, create_space, delete_space, move_jack,
+            spaces, space_files, create_space, delete_space, move_jack,
             settings, save_settings, set_theme, colors, save_color, defaults, save_defaults, ssh_keys,
             ssh_hosts,
             team_sync, team_join, team_create, team_resolve, team_leave,

@@ -56,6 +56,7 @@ function renderTree() {
   // that says nothing. The folders sit at the top level until there's a second space.
   const spaces = spacesOf();
   const nested = spaces.length > 1;
+  if (nested) rows.push(`<div class="tree-sep"></div>`);
   for (const space of spaces) {
     const mine = all.filter((j) => (j.space ?? null) === space);
     // The space's own folders are its children, so its row folds like any other and
@@ -119,7 +120,7 @@ function render() {
   $("newgroup").innerHTML = icon("folder-plus");
   $("newgroup").dataset.tip = "New folder";
   $("newspace").innerHTML = icon("box");
-  $("newspace").dataset.tip = "New space - a config file of its own";
+  $("newspace").dataset.tip = "New space";
   $("editcfg").innerHTML = icon("file-pen-line");
   $("editcfg").dataset.tip = `Open the config file  ${chord("e")}`;
   $("settings").innerHTML = icon("settings");
@@ -195,6 +196,13 @@ function renderGroup() {
   const open = [...sessions.values()].filter((s) => !s.dead && members.some((j) => j.name === s.name));
   // A space row has no folder to rename or delete.
   const real = group !== null && group.path !== null;
+  // ...and a folder is not a space: what makes one a space is which file it is, and
+  // when it belongs to a team, what the sync is doing. Neither was anywhere near the
+  // row you clicked - the file was nowhere at all, the sync two clicks into settings.
+  const space = group !== null && group.path === null ? group.space : undefined;
+  const team = space === undefined ? null : teams.find((t) => t.space === space);
+  const file = space === undefined ? null
+    : spaceFiles.find((f) => (f.space ?? null) === space)?.path;
 
   detailEl.innerHTML = `
     <div class="d-name"><span class="d-os">${icon(
@@ -212,13 +220,24 @@ function renderGroup() {
     ${open.length ? `<div class="d-sec">${icon("square-terminal")}Sessions</div>
       <div class="route">${open.map((s) => `<span class="last"><i class="pip"></i>${esc(s.name)}</span>`).join("")}</div>` : ""}
 
-
+    ${space === undefined ? "" : `<div class="d-sec">${icon("box")}Space</div>
+      <div class="d-row"><dt>kind</dt><dd>${
+        !team ? "On this machine only"
+        : team.code ? "A team's, mirrored through a server"
+        : "Following a published list, read-only"}</dd></div>
+      ${file ? `<div class="d-row"><dt>file</dt><dd>${esc(file)}</dd></div>` : ""}
+      ${team ? `<div class="d-row"><dt>server</dt><dd>${esc(team.url)}</dd></div>
+        <div class="d-row"><dt>sync</dt><dd>${esc(teamNote(team))}</dd></div>` : ""}`}
 `;
 
   dActions.innerHTML = `
     <button class="primary" data-gact="new">${icon("plus")}Device</button>
     ${real ? `<button class="ghost" data-gact="rename" data-tip="Rename folder">${icon("pencil")}</button>
-    <button class="ghost danger" data-gact="del" data-tip="Delete folder" data-tip-at="right">${icon("trash-2")}</button>` : ""}`;
+    <button class="ghost danger" data-gact="del" data-tip="Delete folder" data-tip-at="right">${icon("trash-2")}</button>` : ""}
+    ${team?.state === "conflict" ? `
+      <button class="ghost" data-gact="theirs">Take the team's</button>
+      <button class="ghost" data-gact="mine">Push mine</button>` : ""}
+    ${team ? `<button class="ghost" data-gact="sync" data-tip="Sync now" data-tip-at="right">${icon("rotate-cw")}</button>` : ""}`;
 }
 
 function renderJack(j, live) {
@@ -289,7 +308,7 @@ function renderJack(j, live) {
     ${j.ssh && j.primary !== "sftp" ? `<button class="ghost" data-act="files" data-tip="Browse files over sftp">${icon("folder")}</button>` : ""}
     ${j.url && j.primary !== "web" ? `<button class="ghost" data-act="web" data-tip="Open web UI">${icon("globe")}</button>` : ""}
     ${j.rdp && j.primary !== "rdp" ? `<button class="ghost" data-act="rdp" data-tip="Remote desktop">${icon("monitor")}</button>` : ""}
-    ${j.vnc && j.primary !== "vnc" ? `<button class="ghost" data-act="vnc" data-tip="Screen sharing">${icon("screen-share")}</button>` : ""}
+    ${j.vnc && j.primary !== "vnc" ? `<button class="ghost" data-act="vnc" data-tip="VNC">${icon("screen-share")}</button>` : ""}
     <button class="ghost" data-act="edit" data-tip="Edit device">${icon("pencil")}</button>`;
 }
 

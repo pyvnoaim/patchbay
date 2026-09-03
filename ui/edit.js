@@ -68,7 +68,7 @@ document.addEventListener("contextmenu", (e) => {
       ] : []),
       // A handoff like the system RDP client, for the same reason: the viewer is the
       // one already installed, and patchbay speaks no VNC.
-      ...(j.vnc ? [{ icon: "screen-share", label: "Screen sharing", key: ent("vnc"), run: () => openVnc(j.name) }] : []),
+      ...(j.vnc ? [{ icon: "screen-share", label: "VNC", key: ent("vnc"), run: () => openVnc(j.name) }] : []),
       // sftp rides the ssh connection, so it is offered exactly where ssh is.
       ...(j.ssh ? [{ icon: "folder", label: "Browse files", key: ent("sftp"), run: () => openFilesSession(j.name) }] : []),
       { icon: "copy", label: "Copy ssh command", run: () => navigator.clipboard.writeText(j.command).catch(() => {}) },
@@ -265,11 +265,12 @@ async function checkUpdates(said) {
     const offer = await invoke("update_check");
     if (offer) {
       showUpdate(offer);
+      checkedNow();
       say(`${offer.version} is ready to install`);
       return;
     }
     const now = await invoke("app_version").catch(() => "");
-    say("Up to date");
+    say(`Up to date, checked at ${checkedNow()}`);
     if (!said) flash(now ? `patchbay ${now} is the latest` : "patchbay is up to date");
   } catch (e) {
     say(`Couldn't check: ${e}`);
@@ -614,8 +615,9 @@ async function openSettings() {
   syncTeam();   // seats and state, fresh, while the sheet is already up
   $("page-openconfig").innerHTML = `${icon("file-pen-line")}Open config file`;
   $("page-checkupdate").innerHTML = `${icon("rotate-cw")}Check for updates`;
-  // Last time's answer is not this time's, and the sheet outlives one opening.
-  $("update-said").textContent = "";
+  // Last time's answer is not this time's, and the sheet outlives one opening - but
+  // when the check happened is still true, and is the thing this pane is asked.
+  $("update-said").textContent = lastChecked ? `Checked at ${lastChecked}` : "Not checked yet.";
   invoke("app_version")
     .then((v) => ($("appversion").textContent = `patchbay ${v}`))
     .catch(() => {});
@@ -691,28 +693,16 @@ function renderTeam() {
     const count = `${n} device${n === 1 ? "" : "s"}`;
     if (!t) {
       return `<div class="space-row">
-        <div class="space-name">${icon("box")}${esc(sp ?? "Private")}</div>
-        <div class="space-note">${count} · on this machine only</div>
+        <div class="space-name">${icon("box")}${esc(sp ?? "Private")}<span class="space-count">${count}</span></div>
+        <div class="space-note">On this machine only</div>
         ${sp ? `<div class="btns"><button type="button" class="ghost" data-sact="share" data-space="${esc(sp)}">
           ${icon("network")}Share with a team…</button></div>` : ""}
       </div>`;
     }
-    const seats = `${t.seats} seat${t.seats === 1 ? "" : "s"}${t.paid ? "" : ", free up to three"}`;
-    const say = {
-      conflict: "This space and the team's have both changed since they last agreed. Pick one - " +
-        `whichever you drop is kept beside it as ${sp}.toml.bak.`,
-      blocked: `${t.error ?? ""} Your edits stay on this machine until the team has room for them.`,
-      offline: `Not reaching the server: ${t.error ?? ""} - the list still works, and changes go up when it answers.`,
-      // Nothing is wrong with it: it is a subscription, and only an edit makes it awkward.
-      readonly: `${t.error ?? "read-only"} - undo them, or copy the devices you want into a space of your own.`,
-      // Nothing to do with the server, so don't blame it: this machine's own copy is
-      // in the way, and nothing syncs either direction until it's readable again.
-      error: `${t.error ?? "the sync stopped here"} - nothing is going up or coming down until that's sorted.`,
-    };
     return `<div class="space-row">
-      <div class="space-name">${icon("network")}${esc(sp)}</div>
-      <div class="mono">${t.code ? `${esc(t.code)}   ` : ""}${esc(t.url)}</div>
-      <div class="space-note">${count} · ${esc(say[t.state] ?? `In sync · ${seats}`)}</div>
+      <div class="space-name">${icon("network")}${esc(sp)}<span class="space-count">${count}</span></div>
+      <div class="space-note">${esc(teamNote(t))}</div>
+      <div class="mono">${esc(t.url)}</div>
       <div class="btns">
         ${t.state === "conflict" ? `
           <button type="button" class="ghost" data-sact="theirs" data-space="${esc(sp)}">Take the team's list</button>
@@ -729,7 +719,11 @@ async function teamCall(fn) {
   try {
     await fn();
     await load();       // load() runs syncTeam(), which re-renders this pane
-  } catch (e) { showErr(teamErr, String(e)); }
+  } catch (e) {
+    // The same actions are on the space's detail pane, where this line sits inside a
+    // sheet nobody has open - so a failed resolve there would say nothing at all.
+    if (setWrap.hidden) alertish(e); else showErr(teamErr, String(e));
+  }
 }
 
 $("team-join").addEventListener("click", () => teamCall(() => invoke("team_join", {

@@ -10,6 +10,8 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- A space now has a page of its own: which file it is, where it syncs, and what the
+  sync is doing - with the sync button and the conflict answer right there.
 - The window opens where you left it, and the sidebar is as wide as you dragged it.
 - Terminal sessions use patchbay's own colours instead of the raw VT palette, so a
   failing unit is the same red as a device that's down. Links in output are

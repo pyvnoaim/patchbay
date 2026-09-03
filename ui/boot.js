@@ -47,6 +47,12 @@ detailPane.addEventListener("click", async (e) => {
     if (gact === "new") openJack(null, group);
     if (gact === "rename") renameGroup(group);
     if (gact === "del") removeGroup(group);
+    // A space's own actions, on the space's own pane: a sync you asked for, and the
+    // conflict answered where you are looking at it rather than two clicks away.
+    if (gact === "sync") syncTeam();
+    if (gact === "theirs" || gact === "mine") {
+      teamCall(() => invoke("team_resolve", { space: group.space, keep: gact }));
+    }
     return;
   }
   const act = e.target.closest("[data-act]")?.dataset.act;
@@ -162,16 +168,17 @@ function reveal() {
 
 async function load() {
   try {
-    // Seven independent reads of the same config. Serially they were seven round
+    // Eight independent reads of the same config. Serially they were eight round
     // trips stacked in front of the first paint, and load() runs on every focus.
     // `jacks` is the only one left uncaught - it failing is what the error branch
     // below is for, and Promise.all rejecting is how it still gets there.
-    [prefs, sshKeys, colors, cfgPath, spaces, tunnels, all] = await Promise.all([
+    [prefs, sshKeys, colors, cfgPath, spaces, spaceFiles, tunnels, all] = await Promise.all([
       invoke("settings").catch(() => ({})),
       sshKeys.length ? sshKeys : invoke("ssh_keys").catch(() => []),
       invoke("colors").catch(() => ({})),
       invoke("config_path").catch(() => ""),
       invoke("spaces").catch(() => []),
+      invoke("space_files").catch(() => []),
       invoke("tunnels").catch(() => []),
       invoke("jacks"),
     ]);
@@ -276,7 +283,10 @@ grip.addEventListener("pointerdown", (e) => {
 /// runs on every launch, so the next one can raise it.
 async function offerUpdate() {
   if (prefs.check_updates === false) return;
-  const offer = await invoke("update_check").catch(() => null);
+  // `undefined` is the endpoint failing, `null` is it answering "nothing new" - the
+  // second is a check that happened and the settings pane says so.
+  const offer = await invoke("update_check").catch(() => undefined);
+  if (offer !== undefined) checkedNow();
   if (offer) showUpdate(offer);
 }
 

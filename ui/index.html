@@ -56,7 +56,7 @@
           <div class="how-row">
             <label class="how-opt"><input type="radio" name="reach" value="ssh" checked><span>Terminal</span></label>
             <label class="how-opt"><input type="radio" name="reach" value="rdp"><span>Remote desktop</span></label>
-            <label class="how-opt"><input type="radio" name="reach" value="vnc"><span>Screen sharing</span></label>
+            <label class="how-opt"><input type="radio" name="reach" value="vnc"><span>VNC</span></label>
             <label class="how-opt"><input type="radio" name="reach" value="web"><span>Web UI</span></label>
             <label class="how-opt"><input type="radio" name="reach" value="sftp"><span>SFTP</span></label>
           </div>
@@ -153,38 +153,43 @@
 
         <section class="pane" data-pane="team" hidden>
           <div class="d-sec">Spaces</div>
-          <p class="page-note">A space is a config file of its own. Your own list never leaves this
-          machine. A team space is the same kind of file, mirrored through a server you run - the
-          code is the only credential, so anyone who has it has that list.</p>
+          <p class="page-note">A space is a config file of its own. Yours never leaves this machine;
+          a team space is the same file, mirrored through a server you run.</p>
           <div id="spaces-list"></div>
 
-          <div class="d-sec">Join a team</div>
-          <div class="grid2">
-            <label class="f wide"><span>Team server</span><input id="team-url" spellcheck="false" placeholder="https://patchbay.example"></label>
-            <label class="f wide"><span>Team code</span><input id="team-code" spellcheck="false" placeholder="from whoever made the team"></label>
-            <label class="f wide"><span>Call the space</span><input id="team-name" spellcheck="false" placeholder="acme"></label>
-          </div>
-          <p class="page-note">No code? Point the address straight at a TOML file someone
-          publishes - a raw git URL will do - and you get a read-only copy of it.</p>
-          <div class="btns">
-            <button type="button" class="primary" id="team-join">Join</button>
-          </div>
-          <p class="sheet-err" id="team-err" hidden></p>
+          <!-- Joining is a once-a-year errand, so it folds away rather than standing
+               under the spaces you actually have. `details` because the browser
+               already knows how to open and close one. -->
+          <details class="drop">
+            <summary>Join a team</summary>
+            <div class="grid2">
+              <label class="f wide"><span>Team server</span><input id="team-url" spellcheck="false" placeholder="https://patchbay.example"></label>
+              <label class="f wide"><span>Team code</span><input id="team-code" spellcheck="false" placeholder="from whoever made the team"></label>
+              <label class="f wide"><span>Call the space</span><input id="team-name" spellcheck="false" placeholder="acme"></label>
+            </div>
+            <p class="page-note">No code? Point the address at a TOML file someone publishes -
+            a raw git URL will do - for a read-only copy.</p>
+            <div class="btns">
+              <button type="button" class="primary" id="team-join">Join</button>
+            </div>
+            <p class="sheet-err" id="team-err" hidden></p>
+          </details>
         </section>
 
         <section class="pane" data-pane="updates" hidden>
           <div class="d-sec">Updates</div>
-          <p class="page-note">The one request patchbay makes on its own: does the release page
-          have a newer version. What comes back is verified against a key built into this app
-          before anything is replaced, and nothing is installed until you say so.</p>
-          <div class="btns">
-            <button type="button" class="ghost" id="page-checkupdate"></button>
-            <span class="page-said" id="update-said"></span>
+          <!-- What you have, what you can do about it, and what came of it last time -
+               in that order, because the version is what the pane is opened to read. -->
+          <div class="space-row">
+            <div class="space-name"><span id="appversion">patchbay</span>
+              <button type="button" class="ghost" id="page-checkupdate"></button></div>
+            <p class="space-note" id="update-said"></p>
           </div>
           <label class="opt"><input type="checkbox" name="check_updates">
             <span><b>Check on launch</b>
             Untick it and the button above becomes the only check.</span></label>
-          <div class="mono" id="appversion"></div>
+          <p class="page-note">patchbay's only outbound request. What comes back is verified
+          against a key built into this app, and nothing installs until you say so.</p>
         </section>
 
         <section class="pane" data-pane="config" hidden>
