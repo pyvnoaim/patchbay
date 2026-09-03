@@ -94,7 +94,7 @@ body[data-os="macos"] { background: transparent; }
 }
 .tabstrip {
   display: flex; align-items: center; gap: 4px;
-  flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none;
+  flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none;
   /* Two masks intersected, each a no-op at 0 - so the edge that has more beyond it
      is the only one that fades, set by `markTabOverflow()` in sessions.js. */
   --fade-l: 0px; --fade-r: 0px;
@@ -106,6 +106,7 @@ body[data-os="macos"] { background: transparent; }
 .tabstrip.more-l { --fade-l: 26px; }
 .tabstrip.more-r { --fade-r: 26px; }
 .tabstrip::-webkit-scrollbar { display: none; }
+.tabfill { flex: 1; min-width: 0; height: 100%; }
 .tabactions { display: flex; align-items: center; gap: 6px; flex: none; -webkit-app-region: no-drag; }
 body:not([data-os="macos"]) .tabs { height: 40px; }
 .pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
