@@ -282,23 +282,59 @@ pub fn ssh_args(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
         args.push(expand(k));
     }
     for f in j.forward.iter().flatten() {
-        args.push("-L".into());
-        args.push(f.clone());
+        let (flag, spec) = forward_arg(f)?;
+        args.push(flag.into());
+        args.push(spec.into());
     }
     args.push(spec(j));
     Ok(args)
 }
 
-/// The local port an `-L [bind:]port:host:hostport` binds - the end of the forward
-/// this machine can connect to, and so the one a standing tunnel watches for.
+/// The flags `forward_arg` can hand back, so the two callers that strip forwards - a
+/// one-shot check, an sftp run - drop the flag *and* its operand for every kind, and
+/// not just for the one that existed first.
+pub const FORWARD_FLAGS: [&str; 3] = ["-L", "-R", "-D"];
+
+/// Which ssh flag a forward is, and the spec that goes after it. A bare one is `-L`,
+/// the local forward every config already had; a remote one and a SOCKS proxy are
+/// written as ssh's own flag, because anyone reaching for either already knows its name.
+///
+/// The flag is matched exactly and the rest may not start with `-`: this value becomes
+/// argv, and a config a team wrote must not be able to put an option of its choosing
+/// there. That is the same property `-L` had for free by never being anything but an
+/// operand.
+pub fn forward_arg(spec: &str) -> Result<(&'static str, &str), String> {
+    let spec = spec.trim();
+    let (flag, rest) = match spec.split_once(' ') {
+        Some(("-L", r)) => ("-L", r),
+        Some(("-R", r)) => ("-R", r),
+        Some(("-D", r)) => ("-D", r),
+        _ => ("-L", spec),
+    };
+    let rest = rest.trim();
+    if rest.is_empty() || rest.starts_with('-') {
+        return Err(format!(
+            "\"{spec}\" isn't a forward - write \"8080:localhost:80\", or -R or -D and its own"
+        ));
+    }
+    Ok((flag, rest))
+}
+
+/// The local port a forward binds - the end of it this machine can connect to, and so
+/// the one a standing tunnel watches for. A `-R` binds on the far end and has none.
 ///
 /// ponytail: a bracketed IPv6 bind address has colons of its own and gives None,
 /// which reads as "no port to watch" rather than the wrong one.
 pub fn forward_local(spec: &str) -> Option<u16> {
-    let parts: Vec<&str> = spec.split(':').collect();
-    match parts.len() {
-        3 => parts[0].parse().ok(),
-        4 => parts[1].parse().ok(),
+    let (flag, rest) = forward_arg(spec).ok()?;
+    let parts: Vec<&str> = rest.split(':').collect();
+    match (flag, parts.len()) {
+        // -D is `[bind:]port` - the whole forward is the local end.
+        ("-D", 1) => parts[0].parse().ok(),
+        ("-D", 2) => parts[1].parse().ok(),
+        ("-R", _) | ("-D", _) => None,
+        (_, 3) => parts[0].parse().ok(),
+        (_, 4) => parts[1].parse().ok(),
         _ => None,
     }
 }
@@ -628,5 +664,38 @@ forward = ["5432:localhost:5432"]
         assert_eq!(forward_local("8080:/run/thing.sock"), None);
         assert_eq!(forward_local("[::1]:8080:h:80"), None);
         assert_eq!(forward_local("70000:h:80"), None);
+        // A SOCKS proxy binds one port here; a remote forward binds none.
+        assert_eq!(forward_local("-D 1080"), Some(1080));
+        assert_eq!(forward_local("-D 127.0.0.1:1080"), Some(1080));
+        assert_eq!(forward_local("-R 9000:localhost:9000"), None);
+    }
+
+    /// The value reaches argv. `-L` was safe for free by only ever being an operand;
+    /// three flags means the prefix has to be matched exactly, or a config a team wrote
+    /// could hand ssh an option of its own.
+    #[test]
+    fn a_forward_is_one_of_three_flags_and_never_an_option_of_its_own() {
+        assert_eq!(forward_arg("8080:localhost:80").unwrap(), ("-L", "8080:localhost:80"));
+        assert_eq!(forward_arg("-R 9000:localhost:9000").unwrap(), ("-R", "9000:localhost:9000"));
+        assert_eq!(forward_arg("-D 1080").unwrap(), ("-D", "1080"));
+        for bad in ["-o ProxyCommand=id", "-L", "-L8080:h:80", "--", "-D", "-R "] {
+            assert!(forward_arg(bad).is_err(), "{bad:?} should be refused");
+        }
+    }
+
+    #[test]
+    fn every_kind_of_forward_reaches_argv_behind_its_own_flag() {
+        let j = parse(
+            "[jack.x]\nhost = \"h\"\nforward = [\"8080:localhost:80\", \"-R 9000:localhost:9000\", \"-D 1080\"]\n",
+        )
+        .unwrap();
+        let a = ssh_args("x", &j).unwrap();
+        assert!(a.windows(2).any(|w| w == ["-L", "8080:localhost:80"]), "got {a:?}");
+        assert!(a.windows(2).any(|w| w == ["-R", "9000:localhost:9000"]), "got {a:?}");
+        assert!(a.windows(2).any(|w| w == ["-D", "1080"]), "got {a:?}");
+
+        // A broken one fails the connection rather than being passed through.
+        let bad = parse("[jack.x]\nhost = \"h\"\nforward = [\"-o ProxyCommand=id\"]\n").unwrap();
+        assert!(ssh_args("x", &bad).is_err());
     }
 }
