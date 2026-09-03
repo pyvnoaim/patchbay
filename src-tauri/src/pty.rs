@@ -72,11 +72,25 @@ pub fn spawn(
     Ok(Session { writer, master: pair.master })
 }
 
+/// A session log is a transcript of whatever ran, which can hold anything the
+/// remote box printed - owner-only, the same reasoning as `team.toml`.
+#[cfg(unix)]
+fn open_log(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new().create(true).append(true).mode(0o600).open(path)
+}
+
+#[cfg(not(unix))]
+fn open_log(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    std::fs::OpenOptions::new().create(true).append(true).open(path)
+}
+
 #[derive(Default)]
 pub struct Sessions(Mutex<HashMap<u32, Session>>);
 
 impl Sessions {
     /// Output is emitted as `pty:<id>`; on exit, `pty-exit:<id>` carries the status.
+    /// `log` appends the same bytes to a file, when session logging is turned on.
     pub fn open(
         &self,
         app: &AppHandle,
@@ -85,15 +99,26 @@ impl Sessions {
         args: &[String],
         cols: u16,
         rows: u16,
+        log: Option<std::path::PathBuf>,
     ) -> Result<(), String> {
         let data_handle = app.clone();
         let exit_handle = app.clone();
+        let log_file = log.and_then(|path| {
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            open_log(&path).ok()
+        });
+        let log_file = log_file.map(Mutex::new);
         let session = spawn(
             program,
             args,
             cols,
             rows,
             move |chunk| {
+                if let Some(f) = &log_file {
+                    let _ = f.lock().unwrap().write_all(chunk.as_bytes());
+                }
                 let _ = data_handle.emit(&format!("pty:{id}"), chunk);
             },
             move |code| {

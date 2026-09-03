@@ -260,8 +260,22 @@ fn open_task(
     let jacks = read()?;
     let resolved = patchbay::resolve(&name, &jacks)?;
     let (program, args) = task_argv(&task, &resolved, &jacks)?;
-    sessions.open(&app, id, &program, &args, cols.max(2), rows.max(2))?;
+    sessions.open(&app, id, &program, &args, cols.max(2), rows.max(2), None)?;
     Ok(terminal::command_line_of(&program, &args))
+}
+
+/// A device name as a filename: whatever survives isn't a path, so a hand-edited
+/// config with a slash or a dot in a jack name can't land the log somewhere else.
+fn log_path(name: &str) -> std::path::PathBuf {
+    let safe: String = name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    patchbay::logs_dir().join(format!("{safe}-{stamp}.log"))
 }
 
 /// Opens a session in the window. `connect` is still there for "open in my real
@@ -283,7 +297,8 @@ fn open_session(
     // command line below - that is the command, not our plumbing.
     let mux = sftp::mux(&sftp::control_path(&resolved));
     let spawned: Vec<String> = mux.into_iter().chain(args.iter().cloned()).collect();
-    sessions.open(&app, id, "ssh", &spawned, cols.max(2), rows.max(2))?;
+    let log = config::load_settings().log_sessions.then(|| log_path(&resolved));
+    sessions.open(&app, id, "ssh", &spawned, cols.max(2), rows.max(2), log)?;
     Ok(terminal::command_line(&args))
 }
 
@@ -1316,7 +1331,7 @@ fn open_master(
         let mut spawned = vec!["-N".to_string()];
         spawned.extend(sftp::mux(&sftp::control_path(&resolved)));
         spawned.extend(args);
-        sessions.open(&app, id, "ssh", &spawned, cols.max(2), rows.max(2))
+        sessions.open(&app, id, "ssh", &spawned, cols.max(2), rows.max(2), None)
     }
 }
 

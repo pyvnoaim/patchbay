@@ -66,6 +66,12 @@ pub fn config_path() -> PathBuf {
     home.join("patchbay").join("patchbay.toml")
 }
 
+/// Where a session's log lands when logging is turned on - beside the config, not
+/// in it, same reasoning as `team.toml`.
+pub fn logs_dir() -> PathBuf {
+    config_path().parent().unwrap_or(Path::new(".")).join("logs")
+}
+
 fn expand(p: &str) -> String {
     match p.strip_prefix('~') {
         Some(rest) => format!("{}{}", dirs::home_dir().unwrap_or_default().display(), rest),

@@ -142,6 +142,10 @@
             So <code>ssh web-01</code> works in any terminal, jump chains and all, and so do
             scp and rsync. Writes its own file plus one <code>Include</code> line; hosts you
             defined yourself are left alone.</span></label>
+          <label class="opt"><input type="checkbox" name="log_sessions">
+            <span><b>Log sessions to a file</b>
+            Appends each session's terminal output to <code>logs/</code> beside the config,
+            one file per session. Off by default: it's a record you may not want kept.</span></label>
         </section>
 
         <section class="pane" data-pane="defaults" hidden>

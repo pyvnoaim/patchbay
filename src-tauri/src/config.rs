@@ -432,6 +432,11 @@ pub struct Settings {
     /// it is the only request the app makes on its own.
     #[serde(default = "yes")]
     pub check_updates: bool,
+    /// Append every session's terminal output to a file under `logs/` beside the
+    /// config, for whoever wants a record of what ran on a box. Off by default,
+    /// same reasoning as `write_ssh_config`: it writes outside patchbay's own file.
+    #[serde(default)]
+    pub log_sessions: bool,
     /// "system" follows the machine; "light" and "dark" pin it. Anything else reads
     /// as "system", so a typo here is a working app rather than an unstyled one.
     #[serde(default = "system")]
@@ -470,6 +475,7 @@ impl Default for Settings {
             write_ssh_config: false,
             os_colors: true,
             check_updates: true,
+            log_sessions: false,
             theme: system(),
             font_size: font_size(),
             sidebar: sidebar(),
@@ -575,6 +581,7 @@ pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
     t["connect_in_terminal"] = value(s.connect_in_terminal);
     t["os_colors"] = value(s.os_colors);
     t["check_updates"] = value(s.check_updates);
+    t["log_sessions"] = value(s.log_sessions);
     // Both are read straight back out by the window - one onto the root element, one
     // into xterm - so they are narrowed here rather than wherever they land.
     t["theme"] = value(match s.theme.as_str() {
@@ -752,6 +759,15 @@ folders = ["prod/eu/web"]
 
         save_settings_at(&p, &Settings { check_updates: false, ..Settings::default() }).unwrap();
         assert!(!load_settings_at(&p).check_updates);
+    }
+
+    #[test]
+    fn session_logging_is_off_until_it_is_turned_on() {
+        let p = scratch("log_sessions");
+        assert!(!load_settings_at(&p).log_sessions);
+
+        save_settings_at(&p, &Settings { log_sessions: true, ..Settings::default() }).unwrap();
+        assert!(load_settings_at(&p).log_sessions);
     }
 
     #[test]

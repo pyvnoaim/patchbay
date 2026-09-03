@@ -10,6 +10,8 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- A setting to log a session's terminal output to a file under `logs/`, beside the
+  config. Off by default.
 - **Broadcast to marked devices.** Pick out several boxes, right-click, hit Broadcast:
   every device opens as its own pane in one tab, and one keystroke reaches all of them.
   Click a pane to focus it and one keystroke goes there instead; the tab's broadcast
