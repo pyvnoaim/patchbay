@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face {
+    font-family: "Bricolage Grotesque";
+    src: local("Bricolage Grotesque");
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 1200px; height: 630px; overflow: hidden;
+    background: radial-gradient(120% 140% at 8% -10%, #182036 0%, #0c0d11 46%), #0c0d11;
+    font-family: -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
+  }
+  .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(80% 90% at 30% 30%, #000 30%, transparent 78%);
+  }
+  .wrap { position: relative; width: 1200px; height: 630px; padding: 78px 84px; }
+  .brand { display: flex; align-items: center; gap: 16px; }
+  .brand svg { width: 46px; height: 46px; color: #6aa6ff; }
+  .brand span {
+    font-family: "Bricolage Grotesque", -apple-system, sans-serif;
+    font-weight: 800; font-size: 34px; letter-spacing: -.03em; color: #f3f4f8;
+  }
+  h1 {
+    margin-top: 92px;
+    font-family: "Bricolage Grotesque", -apple-system, sans-serif;
+    font-weight: 800; font-size: 76px; line-height: 1.04; letter-spacing: -.03em;
+    color: #f3f4f8; max-width: 920px;
+  }
+  p {
+    margin-top: 26px; font-size: 25px; line-height: 1.55; color: #9498a8; max-width: 720px;
+  }
+  .tag {
+    position: absolute; right: 84px; bottom: 78px;
+    display: flex; align-items: center; gap: 10px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 17px; color: #6d7280;
+  }
+  .tag i { width: 8px; height: 8px; border-radius: 50%; background: #3ecf8e; box-shadow: 0 0 10px 1px #3ecf8e; }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="wrap">
+    <div class="brand">
+      <svg viewBox="283 283 458 458" fill="none" stroke="currentColor">
+        <path d="M386 386 Q430 606 638 638" stroke-width="30" stroke-linecap="round"/>
+        <g stroke-width="42">
+          <circle cx="386" cy="386" r="74"/><circle cx="638" cy="386" r="74"/>
+          <circle cx="386" cy="638" r="74"/><circle cx="638" cy="638" r="74"/>
+        </g>
+        <g fill="currentColor" stroke="none">
+          <circle cx="386" cy="386" r="30"/><circle cx="638" cy="638" r="30"/>
+        </g>
+      </svg>
+      <span>patchbay</span>
+    </div>
+    <h1>Every host,<br>one jack away.</h1>
+    <p>A connection manager that is a TOML file and an ssh exec.<br>No Electron, no sync service, no credential store.</p>
+    <div class="tag"><i></i>up &middot; ssh -J bastion,web root@10.0.0.5</div>
+  </div>
+</body>
+</html>
