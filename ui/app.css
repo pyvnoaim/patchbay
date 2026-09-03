@@ -238,7 +238,14 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
 }
 .jack[aria-selected="true"] .host, .jack[aria-selected="true"] .folder { color: rgba(255,255,255,.82); }
 .jack[aria-selected="true"] .folder { background: rgba(255,255,255,.2); }
-.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--fg-faint); align-self: center; }
+/* A probe answering is news, and news that arrives as an instant colour swap reads
+   as a glitch. Long enough to catch the eye, short enough to be over by the time
+   you look. */
+.dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--fg-faint); align-self: center;
+  transition: background-color .22s ease, box-shadow .22s ease;
+}
 .dot.up { background: var(--up); }
 .dot.down { background: var(--down); }
 .dot.unknown { background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg-faint); }
@@ -273,6 +280,22 @@ button { display: flex; align-items: center; justify-content: center; gap: 6px; 
 button, .tab, .tab .x, .chip, .ctx-item, .how-opt, .crumb .drop,
 .group, .jack, .twist, .opt, .setnav button, [data-act], [data-a] { cursor: pointer; }
 button:disabled { cursor: default; }
+/* Hover is the app answering, and an instant swap reads as a flicker rather than a
+   reply. Colour only: the selected row's gradient is a background-image and stays
+   put. Same list as the cursor rule above, for the same reason - if it looks
+   clickable it acknowledges being pointed at. */
+button, .tab, .tab .x, .chip, .ctx-item, .how-opt, .crumb .drop,
+.group, .jack, .frow, .imp-row, .sw .reset, .setnav button {
+  transition: background-color .12s ease, color .12s ease, opacity .12s ease;
+}
+/* A press is not a hover: it wants to land the instant the mouse goes down, so the
+   transition that softens the hover is what makes a click feel late. */
+.group:active, .jack:active, .frow:active, .tab:active, .ctx-item:active {
+  background: color-mix(in srgb, var(--fg) 13%, transparent);
+  transition: none;
+}
+/* The selected row is already the accent gradient, so it darkens instead. */
+.jack[aria-selected="true"]:active { background: linear-gradient(180deg, var(--accent), var(--accent-deep)); filter: brightness(.94); }
 .d-row { display: flex; gap: 10px; padding: 2px 0; font-size: 12.5px; }
 .d-row dt { color: var(--fg-faint); width: 42px; flex: none; }
 .d-row dd { margin: 0; overflow: hidden; text-overflow: ellipsis; -webkit-user-select: text; user-select: text; }
@@ -322,7 +345,17 @@ button.ghost { flex: none; }
   background: rgba(0,0,0,.34);
   backdrop-filter: blur(6px) saturate(.9);
   -webkit-backdrop-filter: blur(6px) saturate(.9);
+  transition: opacity .13s ease;
 }
+/* Overlays arrive rather than appear. Entrance only: `@starting-style` is what an
+   element gets on its first frame out of `display: none`, and the exit stays instant
+   because a dismissal that lingers is one you are waiting on. 130ms is under the
+   threshold where it reads as a wait, and enough that the eye follows the box in. */
+@starting-style {
+  #palette, #sheetwrap, #askwrap, #importwrap, #setwrap { opacity: 0; }
+  .pal, .sheet { opacity: 0; transform: scale(.97) translateY(4px); }
+}
+.pal, .sheet { transition: opacity .13s ease, transform .13s cubic-bezier(.2,.8,.3,1); }
 #palette {
   position: fixed; inset: 0; z-index: 10;
   display: flex; justify-content: center; align-items: center; padding: 5vh 16px;
@@ -842,4 +875,8 @@ body.intro .jack:nth-child(n+13) { animation-delay: .38s; }
 @keyframes intro-d { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 @keyframes intro-u { from { opacity: 0; transform: translateY(6px); }  to { opacity: 1; transform: none; } }
 
-@media (prefers-reduced-motion: reduce) { body.intro *, .pill, .pill * { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  body.intro *, .pill, .pill * { animation: none; }
+  /* The colour fades stay - they are not motion. The box travelling is. */
+  .pal, .sheet { transition: opacity .13s ease; }
+}
