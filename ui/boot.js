@@ -66,6 +66,11 @@ detailPane.addEventListener("click", async (e) => {
   if (act === "rdp") openRdp(j.name);
   if (act === "vnc") openVnc(j.name);
   if (act === "files") openFilesSession(j.name);
+  if (act === "forward") {
+    try { await invoke("open_forwards", { name: j.name }); }
+    catch (e) { alertish(e); }
+    refreshTunnels();
+  }
   if (act === "untunnel") {
     for (const t of tunnels.filter((x) => x.jack === j.name)) await invoke("close_tunnel", { id: t.id });
     refreshTunnels();

@@ -48,6 +48,13 @@ pub fn free_port() -> Result<u16, String> {
         .map_err(|e| format!("no free local port: {e}"))
 }
 
+/// Whether something already holds a port a forward is about to ask for. `accepts`
+/// can't answer this - a session already carrying the same `-L` makes the port answer,
+/// so the tunnel would look up while its own ssh sat there having failed to bind.
+pub fn port_taken(port: u16) -> bool {
+    TcpListener::bind(("127.0.0.1", port)).is_err()
+}
+
 fn accepts(port: u16, limit: Duration) -> bool {
     let addr = match format!("127.0.0.1:{port}").to_socket_addrs().ok().and_then(|mut a| a.next()) {
         Some(a) => a,

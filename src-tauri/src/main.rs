@@ -289,8 +289,7 @@ struct SshHosts {
 
 /// What an ssh config could become. Nothing is written here - the window shows the
 /// list and writes only what gets ticked, through `save_jack` like every other edit.
-/// ponytail: `~/.ssh/config` only. `bay import <file>` takes a path for the odd
-/// case, and a picker in the window would be a file dialog for a file that is always
+/// `~/.ssh/config` only: a picker would be a file dialog for a file that is always
 /// in the same place.
 #[tauri::command]
 fn ssh_hosts() -> Result<SshHosts, String> {
@@ -907,13 +906,54 @@ fn dial_address(
         ];
         // The chain's far end is the box we tunnel from, not the target.
         args.push(hops.last().cloned().unwrap_or_default());
-        // A clock-derived id can collide, and a collision would overwrite the
-        // map entry and leak the child with nothing left to kill it.
-        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
-        let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        shared.open(id, resolved, &args, local, hops.join(" → "))?;
+        shared.open(next_tunnel_id(), resolved, &args, local, hops.join(" → "))?;
         format!("127.0.0.1:{local}")
     })
+}
+
+/// A clock-derived id can collide, and a collision would overwrite the map entry and
+/// leak the child with nothing left to kill it.
+fn next_tunnel_id() -> u32 {
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The device's own `forward` list, held open on its own. The same `ssh -L` a session
+/// would carry, minus the shell: a database port shouldn't come down because you
+/// closed the terminal tab that happened to be holding it.
+#[tauri::command]
+async fn open_forwards(
+    tunnels: tauri::State<'_, rdp::SharedTunnels>,
+    name: String,
+) -> Result<u16, String> {
+    let shared = tunnels.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let jacks = read()?;
+        let resolved = patchbay::resolve(&name, &jacks)?;
+        let j = jacks
+            .get(&resolved)
+            .ok_or_else(|| format!("no jack named \"{resolved}\""))?;
+        let ports: Vec<u16> = j.forward.iter().flatten().filter_map(|f| patchbay::forward_local(f)).collect();
+        let local = *ports
+            .first()
+            .ok_or_else(|| format!("\"{resolved}\" has no forward to open"))?;
+        // Every one of them, not just the one we watch: ExitOnForwardFailure ends ssh
+        // if any single -L can't bind, so a clash on the second forward would surface
+        // as the first one's twelve-second "never came up" and blame the network.
+        if let Some(p) = ports.iter().copied().find(|p| rdp::port_taken(*p)) {
+            return Err(format!("something is already listening on 127.0.0.1:{p}"));
+        }
+        // -N: no shell, just the forwards. ExitOnForwardFailure so a forward that
+        // can't bind ends the tunnel instead of leaving a live ssh carrying nothing.
+        let mut args = vec!["-N".to_string(), "-o".to_string(), "ExitOnForwardFailure=yes".to_string()];
+        args.extend(patchbay::ssh_args(&resolved, &jacks)?);
+        let hops = patchbay::hops(&resolved, &jacks)?;
+        let via = if hops.is_empty() { patchbay::spec(j) } else { hops.join(" → ") };
+        shared.open(next_tunnel_id(), &resolved, &args, local, via)?;
+        Ok(local)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Screen sharing the way remote desktop is handed off: we never speak VNC, the OS
@@ -1450,7 +1490,8 @@ fn main() {
             ssh_hosts,
             team_sync, team_join, team_create, team_resolve, team_leave,
             open_web_view, place_web_view, close_web_view, web_check, web_trust, web_cert, web_trust_cert,
-            open_rdp, open_vnc, open_rdp_session, close_rdp_session, rdp_input, tunnels, close_tunnel,
+            open_rdp, open_vnc, open_rdp_session, close_rdp_session, rdp_input,
+            tunnels, close_tunnel, open_forwards,
             open_session, open_task, write_session, resize_session, close_session,
             sftp_ls, sftp_get, sftp_put, sftp_ready, open_master, open_full_disk_access,
             app_version, update_check, update_install, update_restart

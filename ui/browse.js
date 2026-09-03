@@ -278,7 +278,9 @@ function renderJack(j, live) {
     </div>
 
     ${j.forward.length ? `<div class="d-sec">${icon("arrow-right-left")}Forwards</div>
-      <dl>${j.forward.map((f) => `<div class="d-row"><dt>-L</dt><dd>${esc(f)}</dd></div>`).join("")}</dl>` : ""}
+      <dl>${j.forward.map((f) => `<div class="d-row"><dt>-L</dt><dd>${esc(f)}</dd></div>`).join("")}</dl>
+      ${mine.length ? "" : `<div class="btns"><button class="ghost" data-act="forward"
+        data-tip="Hold these open without a session">${icon("arrow-right-left")}Open forwards</button></div>`}` : ""}
 
     <div class="d-sec">${icon("plug")}Reachable</div>
     <div style="font-size:12.5px">${reach}</div>

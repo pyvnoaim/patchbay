@@ -167,7 +167,7 @@ pub fn load_all(cfg: &Path) -> Result<Jacks, String> {
     Ok(out)
 }
 
-fn spec(j: &Jack) -> String {
+pub fn spec(j: &Jack) -> String {
     match &j.user {
         Some(u) => format!("{u}@{}", j.host),
         None => j.host.clone(),
@@ -287,6 +287,20 @@ pub fn ssh_args(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
     }
     args.push(spec(j));
     Ok(args)
+}
+
+/// The local port an `-L [bind:]port:host:hostport` binds - the end of the forward
+/// this machine can connect to, and so the one a standing tunnel watches for.
+///
+/// ponytail: a bracketed IPv6 bind address has colons of its own and gives None,
+/// which reads as "no port to watch" rather than the wrong one.
+pub fn forward_local(spec: &str) -> Option<u16> {
+    let parts: Vec<&str> = spec.split(':').collect();
+    match parts.len() {
+        3 => parts[0].parse().ok(),
+        4 => parts[1].parse().ok(),
+        _ => None,
+    }
 }
 
 /// Exact name wins; otherwise substring match, but only if it's unambiguous.
@@ -603,5 +617,16 @@ forward = ["5432:localhost:5432"]
         assert_eq!(how("url = \"https://x\""), "ssh", "ssh wins unless the device says otherwise");
         assert_eq!(how("primary = \"web\"\nurl = \"https://x\""), "web");
         assert_eq!(how("primary = \"rdp\""), "ssh", "a primary pointing at what's gone falls back");
+    }
+
+    #[test]
+    fn a_forwards_local_port_is_the_one_before_the_target() {
+        assert_eq!(forward_local("5432:localhost:5432"), Some(5432));
+        assert_eq!(forward_local("127.0.0.1:8080:10.0.0.9:80"), Some(8080));
+        assert_eq!(forward_local("0.0.0.0:8080:10.0.0.9:80"), Some(8080));
+        // Not a port we could watch: a socket path, a bracketed v6 bind, nonsense.
+        assert_eq!(forward_local("8080:/run/thing.sock"), None);
+        assert_eq!(forward_local("[::1]:8080:h:80"), None);
+        assert_eq!(forward_local("70000:h:80"), None);
     }
 }
