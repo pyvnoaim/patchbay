@@ -63,12 +63,31 @@ fn accepts(port: u16, limit: Duration) -> bool {
     let deadline = Instant::now() + limit;
     while Instant::now() < deadline {
         if let Ok(s) = TcpStream::connect_timeout(&addr, Duration::from_millis(300)) {
+            // A connection whose own port is the one it dialled is TCP's loopback
+            // self-connect, not a listener: the OS can hand an outgoing socket the very
+            // ephemeral port it is aiming at, and `free_port` picks from that range. Left
+            // in, a tunnel whose ssh never managed to bind occasionally reads as up, and
+            // whatever dials it then talks to itself.
+            let mine = s.local_addr().ok().map(|a| a.port());
             let _ = s.shutdown(Shutdown::Both);
-            return true;
+            if mine != Some(port) {
+                return true;
+            }
         }
         std::thread::sleep(Duration::from_millis(100));
     }
     false
+}
+
+/// A tunnel with no local port to connect to: every forward in it is a `-R`, bound on
+/// the far end. `ExitOnForwardFailure` makes ssh give up when a bind is refused, so
+/// "still here a moment later" is the only answer available without asking the far end.
+///
+/// ponytail: a bind that fails after this is a tunnel quietly carrying nothing. Reading
+/// ssh's stderr is the upgrade if that ever bites.
+fn still_running(child: &mut Child) -> bool {
+    std::thread::sleep(Duration::from_millis(1200));
+    matches!(child.try_wait(), Ok(None))
 }
 
 pub struct Tunnel {
@@ -96,7 +115,11 @@ impl Tunnels {
             .map_err(|e| format!("could not start the tunnel: {e}"))?;
 
         let mut t = Tunnel { child, jack: jack.to_string(), local, via: via.clone() };
-        if !accepts(local, Duration::from_secs(12)) {
+        let up = match local {
+            0 => still_running(&mut t.child),
+            p => accepts(p, Duration::from_secs(12)),
+        };
+        if !up {
             let _ = t.child.kill();
             let _ = t.child.wait();
             return Err(format!(
@@ -168,16 +191,29 @@ mod tests {
         assert!(!rdp_file("h", Some("  ")).unwrap().contains("username"));
     }
 
+    /// The listener is bound here and held for the whole check, rather than asked for
+    /// through `free_port`: that one lets go of the port before it returns, and other
+    /// tests in this binary are asking the OS for ephemeral ports at the same time - so
+    /// anything built on "this port is still mine a moment later" goes red on a
+    /// collision far more often than on a bug. What is left is race-free, and it still
+    /// fails if the self-connect guard in `accepts` is ever turned the wrong way round.
     #[test]
-    fn free_port_gives_something_bindable() {
-        let p = free_port().unwrap();
-        assert!(p > 1024);
-        assert!(TcpListener::bind(("127.0.0.1", p)).is_ok(), "port {p} should be free");
+    fn accepts_sees_something_listening_and_free_port_gives_a_plausible_one() {
+        let held = TcpListener::bind("127.0.0.1:0").unwrap();
+        let p = held.local_addr().unwrap().port();
+        assert!(accepts(p, Duration::from_millis(600)), "a real listener answers");
+        assert!(free_port().unwrap() > 1024);
     }
 
+    /// The readiness check a remote-only forward gets: ssh that died is a tunnel that
+    /// never came up, and there is no local port to prove it either way.
     #[test]
-    fn a_port_nothing_listens_on_is_reported_as_such() {
-        let p = free_port().unwrap();
-        assert!(!accepts(p, Duration::from_millis(400)));
+    #[cfg(not(windows))]
+    fn a_tunnel_with_no_local_port_is_judged_by_ssh_still_being_alive() {
+        let mut dead = Command::new("sh").arg("-c").arg("exit 0").spawn().unwrap();
+        assert!(!still_running(&mut dead));
+        let mut alive = Command::new("sh").arg("-c").arg("sleep 5").spawn().unwrap();
+        assert!(still_running(&mut alive));
+        let _ = alive.kill();
     }
 }
