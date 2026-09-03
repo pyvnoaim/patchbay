@@ -41,6 +41,11 @@ const USED = [
   "cctv",
   "rotate-cw",     // try that again
   "arrow-up",      // up a folder
+  "chevron-up",    // find in session
+  "chevron-down",
+  "list",          // the two ways the middle column lists
+  "share-2",       // the map: a route, branching
+  "corner-down-right",  // a device hanging off a hop
 ];
 
 const inner = (name) =>

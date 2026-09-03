@@ -232,6 +232,33 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
   padding: 7px 9px; border-radius: 7px; white-space: nowrap;
 }
 .jack:hover { background: var(--row-hover); }
+/* The map. A branch is a hop and everything reached through it; the rail down the
+   left is the route, so a device four columns in is four hops away and looks it. */
+.hop { position: relative; padding-left: 0; }
+.hop::before {
+  content: ""; position: absolute; left: 9px; top: 26px; bottom: 4px;
+  border-left: 1px solid var(--line);
+}
+.hopnote {
+  display: flex; align-items: center; gap: 5px;
+  padding: 2px 0 3px 30px; color: var(--fg-faint); font-size: 11px;
+}
+.hopnote .i { width: 11px; height: 11px; }
+/* Behind a hop that isn't answering, so the branch explains itself once rather than
+   leaving every row under it showing a dot that looks like its own problem. */
+.hop.blocked > .jack, .hop.blocked > .hopnote { opacity: .55; }
+.hop.blocked > .hopnote { color: var(--down); }
+.hoparm { display: flex; flex: none; align-self: center; color: var(--fg-faint); }
+.hoparm .i { width: 12px; height: 12px; }
+/* A jump host that isn't one of your devices - a raw user@host in someone's config. */
+.jack.hopraw { cursor: default; }
+.jack.hopraw:hover { background: transparent; }
+
+/* Picked out with ⌘-click or a shift-drag, for an action about several devices at
+   once. Not the same thing as the selected row, which is where the keyboard is - so
+   the bar rather than another background, and both can be true of one row. */
+.jack.marked { background: var(--row-hover); box-shadow: inset 2px 0 0 var(--accent); }
+.jack.marked[aria-selected="true"] { box-shadow: inset 2px 0 0 rgba(255,255,255,.9); }
 /* Same gradient and inner highlight as button.primary, so the selected row and
    the Connect button it points at read as one object. */
 .jack[aria-selected="true"] {
@@ -252,6 +279,16 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
 .dot.up { background: var(--up); }
 .dot.down { background: var(--down); }
 .dot.unknown { background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg-faint); }
+/* Nothing has come back for this one yet. Deliberately not the same as `unknown`,
+   which is what every device wears when reachability checks are switched off: that dot
+   is waiting for nothing, and one that breathes forever would be promising an answer
+   that is never coming. Opacity only, so it survives reduced motion the way the other
+   colour fades here do - and so it can't jitter the row it sits in. */
+.dot.checking {
+  background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg-dim);
+  animation: dot-wait 1.5s ease-in-out infinite;
+}
+@keyframes dot-wait { 50% { opacity: .25; } }
 .name { font-weight: 560; letter-spacing: -.005em; }
 .host { color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; }
 .folders { margin-left: auto; display: flex; gap: 4px; flex: none; }
@@ -589,6 +626,26 @@ button:disabled { opacity: .5; }
 .fempty b { color: var(--fg); font-weight: 550; }
 .flist .btns { padding: 0 14px; }
 .files .loading { padding: 18px 14px; color: var(--fg-dim); font-size: 12.5px; }
+/* Find in a session. Floats over the terminal in the corner a scrollbar isn't, the
+   way every editor's find box does - it is not a sheet, so the pane behind it stays
+   live and the shell keeps its size. */
+#find {
+  position: absolute; top: 12px; right: 18px; z-index: 5;
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 6px 5px 10px; border-radius: 10px;
+  background: var(--panel); backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
+  border: 1px solid var(--line); box-shadow: 0 10px 28px rgba(0,0,0,.34);
+}
+#find[hidden] { display: none !important; }
+#find .fi { display: flex; color: var(--fg-faint); }
+#find .fi .i { width: 13px; height: 13px; }
+#find input {
+  width: 180px; padding: 0; border: 0; background: none;
+  color: var(--fg); font: inherit; font-size: 12.5px; outline: none;
+}
+#find #find-n { flex: none; color: var(--fg-faint); font-size: 11.5px; }
+#find .flat .i { width: 14px; height: 14px; }
+
 .rdphost { display: grid; place-items: center; background: #000; overflow: hidden; }
 .rdphost canvas { max-width: 100%; max-height: 100%; outline: none; }
 .tabkind { display: inline-flex; opacity: .55; }
@@ -621,8 +678,15 @@ button:disabled { opacity: .5; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
 .opt { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; }
 .opt input { margin: 2px 0 0; flex: none; accent-color: var(--accent); }
-.opt span { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; color: var(--fg-dim); }
-.opt b { font-weight: 550; color: var(--fg); }
+/* Block, not a flex column: the title and the line under it are the only two things
+   here, and as flex items every inline `code` or `b` in that line became a row of its
+   own. Ordinary flow is what a sentence with a word in it wants. */
+.opt span { display: block; font-size: 12.5px; line-height: 1.45; color: var(--fg-dim); }
+.opt b { display: block; margin-bottom: 2px; font-weight: 550; color: var(--fg); }
+.opt code, .page-note code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 11.5px; color: var(--fg);
+}
 .page-note { margin: 2px 0 8px; font-size: 12px; line-height: 1.5; color: var(--fg-dim); }
 
 /* One block per space in the settings sheet: what it is, where it syncs, what you

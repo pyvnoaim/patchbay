@@ -45,8 +45,25 @@ document.addEventListener("contextmenu", (e) => {
   const jackRow = e.target.closest("#list .jack");
   const groupRow = e.target.closest(".group");
 
-  if (jackRow) {
-    select(+jackRow.dataset.i);
+  if (jackRow && jackRow.dataset.i !== undefined) {
+    const at = +jackRow.dataset.i;
+    // Right-clicking a row that isn't picked out is a click like any other: it takes
+    // the selection with it and drops the marks.
+    if (!marked.has(shown[at]?.name)) marked.clear();
+    select(at);
+    const bulk = markedHere();
+    if (bulk.length > 1) {
+      return showCtx(e.clientX, e.clientY, `${bulk.length} devices`, [
+        // One row per space rather than a picker: a space is a file, there are rarely
+        // more than a few, and the answer is worth reading before it's clicked. With no
+        // second space there is nowhere to move them, so the rows aren't offered.
+        ...(spaces.length ? [null, ...spaces].map((sp) => ({
+          icon: "box", label: `Move to ${sp ?? "Private"}`, run: () => moveMarked(bulk, sp),
+        })).concat("-") : []),
+        { icon: "trash-2", label: `Delete ${bulk.length} devices`, key: "⌫", danger: true,
+          run: () => removeMarked(bulk) },
+      ]);
+    }
     const j = shown[sel];
     // Enter opens whichever one of these the device is reached by, so it is labelled
     // on that row rather than on whatever happens to be first.
@@ -115,16 +132,24 @@ document.addEventListener("contextmenu", (e) => {
     const entry = row && s.rows[+row.dataset.fi];
     if (!entry) {
       return showCtx(e.clientX, e.clientY, s.cwd, [
+        { icon: "folder-plus", label: "New folder…", run: () => makeFolder(s) },
         { icon: "rotate-cw", label: "Refresh", run: () => listFiles(s) },
         { icon: "arrow-up", label: "Up a folder", run: () => upFolder(s) },
       ]);
     }
     const path = `${s.cwd}/${entry.name}`;
     return showCtx(e.clientX, e.clientY, entry.name, [
-      ...(entry.dir ? [{ icon: "folder-open", label: "Open", run: () => listFiles(s, path) }] : []),
+      ...(entry.dir ? [{ icon: "folder-open", label: "Open", run: () => listFiles(s, path) }] : [
+        // Downloaded, opened, and put back on save - so it is above the download that
+        // only does the first half of that.
+        { icon: "file-pen-line", label: "Edit here", run: () => editFile(s, entry.name) },
+      ]),
       { icon: "download", label: entry.dir ? "Download folder" : "Download",
         run: () => downloadFile(s, entry.name, entry.dir) },
       { icon: "copy", label: "Copy path", run: () => navigator.clipboard.writeText(path).catch(() => {}) },
+      "-",
+      { icon: "pencil", label: "Rename…", run: () => renameFile(s, entry) },
+      { icon: "trash-2", label: "Delete", danger: true, run: () => removeFile(s, entry) },
     ]);
   }
 
@@ -442,6 +467,34 @@ async function removeJack(name, space) {
   if (!(await ask(`Delete "${name}"? This edits your config file.`, null, "Delete"))) return;
   try { await invoke("delete_jack", { space, name }); sel = 0; await load(); }
   catch (e) { alertish(e); }
+}
+
+/// Both bulk actions loop the single-device command rather than adding one of their
+/// own: each device carries the space its file is, so one call per device is what
+/// `config.rs` was always going to do anyway.
+async function moveMarked(js, to) {
+  try {
+    for (const j of js) {
+      if ((j.space ?? null) !== to) await invoke("move_jack", { from: j.space ?? null, to, name: j.name });
+    }
+  } catch (e) { alertish(e); }
+  marked.clear();
+  await load();
+}
+
+async function removeMarked(js) {
+  // Named, so this is a list you can check rather than a number to trust - but only
+  // as far as the sheet can show without becoming a wall.
+  const names = js.slice(0, 8).map((j) => j.name).join(", ");
+  const msg = `Delete ${js.length} devices? This edits your config file.`
+    + `\n\n${names}${js.length > 8 ? `, and ${js.length - 8} more` : ""}`;
+  if (!(await ask(msg, null, "Delete"))) return;
+  try {
+    for (const j of js) await invoke("delete_jack", { space: j.space ?? null, name: j.name });
+  } catch (e) { alertish(e); }
+  marked.clear();
+  sel = 0;
+  await load();
 }
 
 async function newSpace() {

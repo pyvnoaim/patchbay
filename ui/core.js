@@ -44,6 +44,10 @@ let probes = new Map();       // name -> { target, ms }
 let group = null;
 let expanded = new Set();     // open rows, by gkey
 let sel = 0;
+// Rows picked out for an action about several devices at once, by name rather than by
+// index: the list is refiltered under them by every render, and an index would then
+// point at whichever device had moved into that row.
+let marked = new Set();
 let palSel = 0;
 let editing = null;   // jack name being edited, or null when adding
 let editingSpace = null;      // which space's file that save lands in
@@ -53,6 +57,10 @@ let pending = new Map();      // gkey -> { space, path }
 let seeded = false;           // the tree's initial expansion is a one-off
 let lastProbe = 0;            // epoch ms of the last sweep, for the throttle below
 let detailMode = "jack";      // what the right pane describes: "jack" or "group"
+// How the middle column lists: "list" is the flat one, "map" groups by the route to
+// each device. The sidebar tree is how *you* filed them; the map is the shape of the
+// network, which nothing else in the app can draw because nothing else resolves a chain.
+let listMode = "list";
 let prefs = {};               // [settings] from the config
 let colors = {};              // [colors] overrides, os key -> hex
 let cfgPath = "";             // where the config lives, shown on first run

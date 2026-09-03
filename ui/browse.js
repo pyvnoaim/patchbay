@@ -99,6 +99,16 @@ function row(node, depth, glyph, live, id) {
 
 // Something nested under it makes it a folder; a flat one is just a label. Same
 // test the sidebar splits Folders from Tags on, so the wording matches the tree.
+/// What the status dot says. "checking" and "unknown" are two different answers: one
+/// is waiting on a sweep that is running, the other is a device nothing is ever going
+/// to ask about because reachability checks are off. Here rather than in the three
+/// places that draw a dot, because a fourth copy is how they start disagreeing.
+function dotState(name) {
+  if (prefs.probe === false) return "unknown";
+  const p = probes.get(name);
+  return !p ? "checking" : p.ms == null ? "down" : "up";
+}
+
 const inGroup = (j) =>
   group === null ? true
   : (j.space ?? null) !== group.space ? false
@@ -116,6 +126,9 @@ function render() {
 
   renderTabs();
   searchBtn.innerHTML = `${icon("search")}Search<kbd>${chord("k")}</kbd>`;
+  $("viewmode").innerHTML = listMode === "map" ? `${icon("list")}List` : `${icon("share-2")}Map`;
+  $("viewmode").dataset.tip = listMode === "map"
+    ? "Back to the flat list" : "Group by the route to each device";
   $("newjack").innerHTML = `${icon("plus")}Device<kbd>${chord("n")}</kbd>`;
   $("newgroup").innerHTML = icon("folder-plus");
   $("newgroup").dataset.tip = "New folder";
@@ -150,25 +163,89 @@ function render() {
     return;
   }
   sel = Math.min(sel, shown.length - 1);
-  listEl.innerHTML = shown.map((j, i) => {
-    const p = probes.get(j.name);
-    const state = !p ? "unknown" : p.ms == null ? "down" : "up";
-    // `readable()` nudges a brand hex against the *panel*, but the selected row is a
-    // solid block of accent - Synology's navy clears 3:1 there and vanishes here. So
-    // the row's own white wins on that one row, the way .host and .folder already do.
-    const tint = i === sel ? null : osColor(j.os);
-    return `<div class="jack" data-i="${i}" aria-selected="${i === sel}">
-      <span class="dot ${state}"></span>
-      <span class="os"${j.os ? ` data-tip="${esc(j.os)}"` : ""}${
-        tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(j.os)}</span>
-      <span class="name">${esc(j.name)}</span>
-      <span class="host">${esc(j.user ? j.user + "@" + j.host : j.host)}${j.port ? ":" + j.port : ""}</span>
-      ${j.url ? `<span class="web" data-tip="${esc(j.url)}" data-tip-at="right">${icon("globe")}</span>` : ""}
-      <span class="folders">${j.folders.map((f) => `<span class="folder">${esc(f.split("/").pop())}</span>`).join("")}</span>
-    </div>`;
-  }).join("");
+  listEl.innerHTML = listMode === "map" ? mapHtml() : shown.map((j, i) => jackRow(j, i)).join("");
+  paintRows();
   renderDetail();
   listEl.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+}
+
+/// One row, drawn the same whichever way the column is listing - so selection, the
+/// double-click and the whole context menu keep working in the map without knowing it
+/// exists. `i` indexes `shown`, which is what every handler reads.
+function jackRow(j, i, depth = 0) {
+  const state = dotState(j.name);
+  // `readable()` nudges a brand hex against the *panel*, but the selected row is a
+  // solid block of accent - Synology's navy clears 3:1 there and vanishes here. So
+  // the row's own white wins on that one row, the way .host and .folder already do.
+  const tint = i === sel ? null : osColor(j.os);
+  return `<div class="jack" data-i="${i}" aria-selected="${i === sel}"${
+    depth ? ` style="margin-left:${depth * 18}px"` : ""}>
+    ${depth ? `<span class="hoparm">${icon("corner-down-right")}</span>` : ""}
+    <span class="dot ${state}"></span>
+    <span class="os"${j.os ? ` data-tip="${esc(j.os)}"` : ""}${
+      tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(j.os)}</span>
+    <span class="name">${esc(j.name)}</span>
+    <span class="host">${esc(j.user ? j.user + "@" + j.host : j.host)}${j.port ? ":" + j.port : ""}</span>
+    ${j.url ? `<span class="web" data-tip="${esc(j.url)}" data-tip-at="right">${icon("globe")}</span>` : ""}
+    <span class="folders">${j.folders.map((f) => `<span class="folder">${esc(f.split("/").pop())}</span>`).join("")}</span>
+  </div>`;
+}
+
+// ── map ────────────────────────────────────────────────────────────────────
+// The same rows, grouped by the route to them instead of by the folder they were
+// filed in. A bastion and the six machines behind it are one branch here even when
+// those six live in six different folders - which is the thing a name tree can't show
+// and nothing else in this category draws, because nothing else resolves the chain.
+
+/// A jack's chain is a path, never a graph, so this is a tree and not a diagram.
+function chainTree(js) {
+  const root = { kids: new Map(), leaves: [] };
+  for (const j of js) {
+    let at = root;
+    for (const h of j.hops) {
+      if (!at.kids.has(h)) at.kids.set(h, { name: h, kids: new Map(), leaves: [] });
+      at = at.kids.get(h);
+    }
+    at.leaves.push(j);
+  }
+  return root;
+}
+
+function mapHtml() {
+  const at = (j) => shown.indexOf(j);
+  const tree = chainTree(shown);
+
+  const walk = (node, depth, blocked) => {
+    // A hop that is itself a device is drawn as its own row heading the branch, not
+    // repeated below it as one of the things reached directly.
+    const rows = node.leaves
+      .filter((j) => !node.kids.has(j.name))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((j) => jackRow(j, at(j), depth));
+
+    for (const kid of [...node.kids.values()].sort((a, b) => a.name.localeCompare(b.name))) {
+      const via = shown.find((j) => j.name === kid.name);
+      const p = probes.get(kid.name);
+      // The one thing the chain buys us: a bastion that isn't answering explains
+      // everything behind it, so the branch says so once instead of every row
+      // underneath it showing its own unrelated-looking dot.
+      const down = blocked || (p && p.ms == null);
+      const behind = kid.leaves.length + kid.kids.size;
+      rows.push(`<div class="hop ${down ? "blocked" : ""}" style="margin-left:${depth * 18}px">
+        ${via ? jackRow(via, at(via)) : `<div class="jack hopraw">
+          <span class="dot unknown"></span><span class="os">${icon("waypoints")}</span>
+          <span class="name">${esc(kid.name)}</span>
+          <span class="host">not in your list</span></div>`}
+        <div class="hopnote">${icon("share-2")}${behind} behind ${esc(kid.name)}${
+          down ? ` · not reachable while ${esc(kid.name)} is down` : ""}</div>
+        ${walk(kid, depth + 1, down)}
+      </div>`);
+    }
+    return rows.join("");
+  };
+
+  const html = walk(tree, 0, false);
+  return html || `<p class="empty">nothing here</p>`;
 }
 
 function renderDetail() {
@@ -186,13 +263,11 @@ const groupLabel = () =>
 
 function renderGroup() {
   const members = all.filter(inGroup);
-  const state = (j) => {
-    const p = probes.get(j.name);
-    return !p ? "unknown" : p.ms == null ? "down" : "up";
-  };
-  const up = members.filter((j) => state(j) === "up").length;
-  const down = members.filter((j) => state(j) === "down").length;
-  const unknown = members.length - up - down;
+  const up = members.filter((j) => dotState(j.name) === "up").length;
+  const down = members.filter((j) => dotState(j.name) === "down").length;
+  const rest = members.length - up - down;
+  // Whatever the dots are actually wearing, so the tally and the rows agree.
+  const waiting = prefs.probe !== false;
   const open = [...sessions.values()].filter((s) => !s.dead && members.some((j) => j.name === s.name));
   // A space row has no folder to rename or delete.
   const real = group !== null && group.path !== null;
@@ -214,7 +289,8 @@ function renderGroup() {
     <div class="tallies">
       <span><i class="dot up"></i>${up} up</span>
       <span><i class="dot down"></i>${down} down</span>
-      ${unknown ? `<span><i class="dot unknown"></i>${unknown} unknown</span>` : ""}
+      ${rest ? `<span><i class="dot ${waiting ? "checking" : "unknown"}"></i>${
+        rest} ${waiting ? "still checking" : "not checked"}</span>` : ""}
     </div>
 
     ${open.length ? `<div class="d-sec">${icon("square-terminal")}Sessions</div>
@@ -243,9 +319,12 @@ function renderGroup() {
 function renderJack(j, live) {
   if (!j) { detailEl.innerHTML = ""; dActions.innerHTML = ""; return; }
   const p = probes.get(j.name);
-  const reach = prefs.probe === false ? `<span style="color:var(--fg-faint)">not checked</span>`
-    : !p ? `<span style="color:var(--fg-faint)">checking…</span>`
-    : p.ms == null ? `<span style="color:var(--down)">no answer</span> · ${esc(p.target)}`
+  // Same decider as the dot beside the row, so the pane and the list can't disagree
+  // about whether this device is still being asked about.
+  const said = dotState(j.name);
+  const reach = said === "unknown" ? `<span style="color:var(--fg-faint)">not checked</span>`
+    : said === "checking" ? `<span style="color:var(--fg-faint)">checking…</span>`
+    : said === "down" ? `<span style="color:var(--down)">no answer</span> · ${esc(p.target)}`
     : `<span style="color:var(--up)">up</span> · ${esc(p.target)} · ${p.ms}ms`;
 
   const stops = [...j.hops, j.user ? `${j.user}@${j.host}` : j.host];
@@ -265,7 +344,9 @@ function renderJack(j, live) {
       ${j.rdp ? `<div class="d-row"><dt>rdp</dt><dd>${j.rdp}</dd></div>` : ""}
     </dl>
     ${mine.length ? `<div class="d-sec">${icon("waypoints")}Tunnel</div>
-      <div class="route">${mine.map((t) => `<span class="last"><i class="pip"></i>127.0.0.1:${t.local}
+      <div class="route">${mine.map((t) => `<span class="last"><i class="pip"></i>${
+        /* A -R binds its port on the far end, so there is no local address to print. */
+        t.local ? `127.0.0.1:${t.local}` : "held open on the far end"}
         <i class="arm">via ${esc(t.via)}</i></span>`).join("")}</div>
       <div class="btns"><button class="ghost danger" data-act="untunnel"
         data-tip="Close the forward">${icon("unplug")}Close tunnel</button></div>` : ""}
@@ -278,7 +359,11 @@ function renderJack(j, live) {
     </div>
 
     ${j.forward.length ? `<div class="d-sec">${icon("arrow-right-left")}Forwards</div>
-      <dl>${j.forward.map((f) => `<div class="d-row"><dt>-L</dt><dd>${esc(f)}</dd></div>`).join("")}</dl>
+      <dl>${j.forward.map((f) => {
+        // A bare forward is `-L`, the way `patchbay::forward_arg` reads it back.
+        const m = /^(-[LRD])\s+(.+)$/.exec(f.trim());
+        return `<div class="d-row"><dt>${m ? m[1] : "-L"}</dt><dd>${esc(m ? m[2] : f)}</dd></div>`;
+      }).join("")}</dl>
       ${mine.length ? "" : `<div class="btns"><button class="ghost" data-act="forward"
         data-tip="Hold these open without a session">${icon("arrow-right-left")}Open forwards</button></div>`}` : ""}
 
@@ -320,10 +405,41 @@ function select(i) {
   detailMode = "jack";
   if (!shown.length) return;
   sel = (i + shown.length) % shown.length;
-  listEl.querySelectorAll(".jack").forEach((el, n) => el.setAttribute("aria-selected", n === sel));
+  paintRows();
   renderDetail();
   listEl.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
 }
+
+/// Selection and marks, painted without rebuilding the list - replacing innerHTML
+/// destroys the row under the cursor, so the browser never pairs two clicks into a
+/// dblclick on one node. Keyed on each row's own `data-i` rather than its position:
+/// the map draws the same rows in the shape of the network, and a jump host that isn't
+/// one of your devices is a row with no device behind it at all.
+function paintRows() {
+  for (const el of listEl.querySelectorAll(".jack[data-i]")) {
+    const j = shown[+el.dataset.i];
+    el.setAttribute("aria-selected", +el.dataset.i === sel);
+    el.classList.toggle("marked", marked.has(j?.name));
+  }
+}
+
+/// ⌘-click picks a row out, shift-click takes the run between it and the selected one -
+/// the two gestures every list has. `sel` stays put as the anchor, so a second
+/// shift-click extends from where you started rather than from the last one.
+function markToggle(i) {
+  const n = shown[i]?.name;
+  if (!n) return;
+  marked.has(n) ? marked.delete(n) : marked.add(n);
+  select(i);
+}
+function markRange(i) {
+  for (let k = Math.min(sel, i); k <= Math.max(sel, i); k++) marked.add(shown[k].name);
+  paintRows();
+}
+
+/// What a bulk action applies to: the marks that are still in front of you. A device
+/// marked in one folder and then filtered out of view is not part of what you asked for.
+const markedHere = () => shown.filter((j) => marked.has(j.name));
 
 const move = (d) => select(sel + d);
 

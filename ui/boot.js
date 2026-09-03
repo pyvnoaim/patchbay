@@ -4,6 +4,10 @@
 
 // ── events ─────────────────────────────────────────────────────────────────
 searchBtn.addEventListener("click", () => openPalette());
+$("viewmode").addEventListener("click", () => {
+  listMode = listMode === "map" ? "list" : "map";
+  render();
+});
 $("newjack").addEventListener("click", () => openJack(null, group));
 $("newgroup").addEventListener("click", () => newGroup({ space: group?.space ?? null, path: null }));
 $("newspace").addEventListener("click", () => newSpace());
@@ -23,6 +27,9 @@ treeEl.addEventListener("click", (e) => {
     group = id;
     if (foldable) expanded.add(gkey(id));
     sel = 0;
+    // A different list is a different set of rows; marks made in the last one are not
+    // an answer to anything here.
+    marked.clear();
     detailMode = "group";   // the pane describes the folder, not its first device
   }
   render();
@@ -35,7 +42,16 @@ listEl.addEventListener("click", (e) => {
   if (act === "cfg") return invoke("open_config");
   const row = e.target.closest(".jack");
   if (!row) return;
-  select(+row.dataset.i);
+  // The map draws a jump host that isn't one of your devices as a row with nothing
+  // behind it. There is nothing to select, connect to or delete there.
+  if (row.dataset.i === undefined) return;
+  const i = +row.dataset.i;
+  if (e.metaKey || e.ctrlKey) return markToggle(i);
+  if (e.shiftKey) return markRange(i);
+  // A plain click is about one device, so it drops whatever was picked out - the same
+  // thing clicking away does in every other list.
+  marked.clear();
+  select(i);
   // e.detail is the click count, so this survives a re-render landing mid-gesture
   // in a way a separate dblclick listener does not.
   if (e.detail === 2) primary(shown[sel].name);
@@ -128,6 +144,13 @@ document.addEventListener("keydown", (e) => {
   if (mod && e.key === ",") { e.preventDefault(); return openSettings(); }
   if (mod && e.key === "[") { e.preventDefault(); return cycleSession(-1); }
   if (mod && e.key === "]") { e.preventDefault(); return cycleSession(1); }
+  // The one chord a session gives up, and on macOS only: Ctrl+F is readline's own
+  // forward-char, so elsewhere it is Ctrl+Shift+F, which is how every Linux terminal
+  // spells find. It does nothing outside a session, where ⌘K is already the search.
+  if (e.key.toLowerCase() === "f" && (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && e.shiftKey)) {
+    e.preventDefault();
+    return toggleFind();
+  }
 
   // Above the session guard on purpose: the palette is modal and holds the focus,
   // so those keys were never ssh's to begin with. Below it, Escape could not close
@@ -151,8 +174,13 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "n")) { e.preventDefault(); move(1); }
   else if (e.key === "ArrowUp" || (e.ctrlKey && e.key === "p")) { e.preventDefault(); move(-1); }
   else if (e.key === "Enter" && shown[sel]) { e.preventDefault(); primary(shown[sel].name); }
-  else if (e.key === "Escape") { group = null; sel = 0; render(); }
-  else if (shown[sel] && (e.key === "Backspace" || e.key === "Delete")) { e.preventDefault(); removeJack(shown[sel].name, shown[sel].space ?? null); }
+  else if (e.key === "Escape") { group = null; sel = 0; marked.clear(); render(); }
+  else if (shown[sel] && (e.key === "Backspace" || e.key === "Delete")) {
+    e.preventDefault();
+    const bulk = markedHere();
+    if (bulk.length > 1) removeMarked(bulk);
+    else removeJack(shown[sel].name, shown[sel].space ?? null);
+  }
   else if (mod && e.key === "e") { e.preventDefault(); invoke("open_config"); }
   else if (mod && e.key === "r") { e.preventDefault(); load(); }
   // Just start typing, like fzf - the palette opens carrying the keystroke.
@@ -302,8 +330,22 @@ async function offerUpdate() {
 listen("menu:check-update", () => checkUpdates(setWrap.hidden ? null : $("update-said")))
   .catch(() => { /* no capability, so the settings button is the only way in */ });
 
+/// `patchbay://web-01` from a runbook, a ticket or an alert. Rust has already resolved
+/// it against this machine's config - the window only ever sees a name it already has,
+/// and opens it the way Enter would.
+///
+/// Asked for once as well as listened for: macOS launches the app to deliver the first
+/// link, and that arrives while this file is still fetching the list.
+listen("open:link", ({ payload: name }) => primary(name))
+  .catch(() => { /* no capability, so a link only works on a cold start */ });
+
+async function takeLink() {
+  const name = await invoke("take_link").catch(() => null);
+  if (name) primary(name);
+}
+
 // Behind the first paint: the window is for the device list, not for an errand.
-load().then(offerUpdate);
+load().then(takeLink).then(offerUpdate);
 setInterval(refreshProbes, PROBE_EVERY);
 // The config is a file you edit by hand, so pick up changes when the window comes back.
 window.addEventListener("focus", load);

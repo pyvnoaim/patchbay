@@ -62,6 +62,8 @@ function makeTerm(host) {
   });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
+  const search = new SearchAddon.SearchAddon();
+  term.loadAddon(search);
   // A link in output belongs to whatever wrote it, so it goes to the browser through
   // `open_link`, which takes http(s) and nothing else - never to a webview of ours.
   term.loadAddon(new WebLinksAddon.WebLinksAddon((_, uri) => {
@@ -70,7 +72,7 @@ function makeTerm(host) {
   term.open(host);
   // No webgl renderer: it has to composite against the transparent background the
   // macOS vibrancy needs, and leaves the previous frame behind when it does.
-  return { term, fit };
+  return { term, fit, search };
 }
 
 /// A tab is a view of one thing, so asking for that thing again is a request to look
@@ -100,9 +102,9 @@ async function openSession(name, task = null) {
   host.className = "termhost";
   termsEl.append(host);
 
-  const { term, fit } = makeTerm(host);
+  const { term, fit, search } = makeTerm(host);
 
-  const s = { id, name, task, kind: "term", key, term, fit, host, dead: false, unlisten: [] };
+  const s = { id, name, task, kind: "term", key, term, fit, search, host, dead: false, unlisten: [] };
   sessions.set(id, s);
   activeId = id;
   showTab();
@@ -199,6 +201,8 @@ function dropTab(id) {
 
 // activeId === null is the "All jacks" tab; anything else is a session.
 function showTab() {
+  // The bar searches one session's scrollback, so it does not follow you to the next.
+  if (!findEl.hidden) closeFind();
   browseEl.hidden = activeId !== null;
   termsEl.hidden = activeId === null;
   for (const s of sessions.values()) s.host.hidden = s.id !== activeId;
@@ -346,6 +350,7 @@ async function openFilesSession(name) {
   termsEl.append(host);
 
   watchDrops();
+  watchEdits();
   const s = { id, name, kind: "sftp", key, host, cwd: ".", dead: false, unlisten: [] };
   sessions.set(id, s);
   activeId = id;
@@ -428,6 +433,8 @@ function renderFiles(s) {
       <button type="button" class="flat" data-up="1" data-tip="Up a folder">${icon("chevron-right")}</button>
       <span class="mono">${esc(s.cwd)}</span>
       <span class="fhint">${icon("download")}drop files here to upload</span>
+      <button type="button" class="flat" data-files="mkdir" data-tip="New folder"
+        data-tip-at="right">${icon("folder-plus")}</button>
     </div>
     <div class="flist">${rows.length ? "" : emptyNote(s)}${rows.map((e, i) => `
       <div class="frow" data-fi="${i}" data-dir="${e.dir}">
@@ -447,6 +454,7 @@ termsEl.addEventListener("click", (e) => {
   if (act === "term") return openSession(s.name);
   if (act === "fda") return invoke("open_full_disk_access").catch(alertish);
   if (act === "retry") return listFiles(s);
+  if (act === "mkdir") return makeFolder(s);
   if (e.target.closest("[data-up]")) return upFolder(s);
   const row = e.target.closest("[data-fi]");
   if (!row || e.detail !== 2) return;
@@ -462,9 +470,10 @@ async function signIn(s) {
   const id = nextId++;
   s.master = id;
   s.host.innerHTML = "";
-  const { term, fit } = makeTerm(s.host);
+  const { term, fit, search } = makeTerm(s.host);
   s.term = term;
   s.fit = fit;
+  s.search = search;
   renderTabs();
   fit.fit();
   term.focus();
@@ -546,6 +555,61 @@ async function downloadFile(s, name, dir = false) {
     const at = await invoke("sftp_get", { name: s.name, remote: `${s.cwd}/${name}`, recurse: dir });
     fileNote(s, `Saved to ${at}`);
   } catch (e) { fileNote(s, String(e), true); }
+}
+
+/// The three writes, all through one command. Every one of them re-lists rather than
+/// patching the row: the far end is what decides whether it worked, and a listing is
+/// one round trip on a connection that is already open.
+async function fileEdit(s, op, path, to = "") {
+  try { await invoke("sftp_edit", { name: s.name, op, path, to }); }
+  catch (e) { return fileNote(s, String(e), true); }
+  await listFiles(s);
+}
+
+async function makeFolder(s) {
+  const name = await ask(`New folder in ${s.cwd}`, "", "Create");
+  if (!name) return;
+  fileEdit(s, "mkdir", `${s.cwd}/${name}`);
+}
+
+async function renameFile(s, entry) {
+  const to = await ask(`Rename "${entry.name}" to`, entry.name, "Rename");
+  if (!to || to === entry.name) return;
+  fileEdit(s, "rename", `${s.cwd}/${entry.name}`, `${s.cwd}/${to}`);
+}
+
+async function removeFile(s, entry) {
+  // A folder is the one that can't be undone by re-uploading, and sftp only removes an
+  // empty one anyway - so it says which it is rather than asking the same question twice.
+  const what = entry.dir ? `the folder "${entry.name}"` : `"${entry.name}"`;
+  if (!(await ask(`Delete ${what} on ${s.name}?`, null, "Delete"))) return;
+  fileEdit(s, entry.dir ? "rmdir" : "rm", `${s.cwd}/${entry.name}`);
+}
+
+/// Downloaded, handed to whatever this machine opens it with, and put back each time it
+/// is saved - the watch is a thread in Rust, because nothing in the window survives the
+/// tab being closed and an editor stays open longer than a file listing does.
+async function editFile(s, name) {
+  fileNote(s, `Opening ${name}…`);
+  try {
+    await invoke("sftp_open", { name: s.name, remote: `${s.cwd}/${name}` });
+    fileNote(s, `${name} is open - saving it puts it back`);
+  } catch (e) { fileNote(s, String(e), true); }
+}
+
+/// The saves come from a thread with no tab of its own, so the note has to find one -
+/// and say so out loud when the tab has since been closed and something went wrong.
+async function watchEdits() {
+  if (watchEdits.on) return;
+  watchEdits.on = true;
+  try {
+    await listen("sftp:saved", ({ payload: p }) => {
+      const s = [...sessions.values()].find((x) => x.kind === "sftp" && x.name === p.name);
+      if (!p.error) return void (s && fileNote(s, `${p.file} saved back to ${p.name}`));
+      const why = `${p.file} could not be saved back to ${p.name}: ${p.error}`;
+      s ? fileNote(s, why, true) : alertish(why);
+    });
+  } catch { /* no capability means no notice, not a broken tab */ }
 }
 
 // Real paths, straight from the webview's own drop event - a file picker would mean a
@@ -680,6 +744,80 @@ function cycleSession(d) {
   showTab();
   renderTabs();
 }
+
+// ── find in a session ──────────────────────────────────────────────────────
+// 5000 lines of scrollback and, until this, no way to look through them but the eye.
+const findEl = $("find"), findQ = $("find-q"), findN = $("find-n");
+// Which session the bar is searching. Not `activeId`: closing the bar has to clear the
+// highlights off the terminal it was searching, and switching tabs is when it closes.
+let findFor = null;
+
+/// The colours the addon paints matches with. Read off the page rather than passed as
+/// hexes: every other colour in the window comes from `:root`, and a match highlighted
+/// in a colour the theme never chose is the one thing on screen that looks pasted on.
+const findColors = () => {
+  const css = getComputedStyle(document.body);
+  const v = (n) => css.getPropertyValue(n).trim();
+  return {
+    decorations: {
+      matchBackground: v("--row-hover"),
+      matchBorder: v("--line"),
+      matchOverviewRuler: v("--fg-faint"),
+      activeMatchBackground: v("--accent"),
+      activeMatchBorder: v("--accent"),
+      activeMatchColorOverviewRuler: v("--accent"),
+    },
+  };
+};
+
+function findRun(back = false) {
+  const s = sessions.get(findFor);
+  const q = findQ.value;
+  if (!s?.search || !q) { findN.textContent = ""; return; }
+  const opts = { ...findColors(), incremental: !back };
+  const hit = back ? s.search.findPrevious(q, opts) : s.search.findNext(q, opts);
+  findN.textContent = hit ? "" : "no match";
+}
+
+/// Only where there is scrollback to search: a desktop, a page and a file list have
+/// none, and a find box over them would be a control that does nothing.
+function toggleFind() {
+  const s = sessions.get(activeId);
+  if (!s?.search) return;
+  if (!findEl.hidden) return closeFind();
+  findFor = activeId;
+  // Painted here rather than in render(): the bar lives in the session pane, which
+  // render() never touches, and this is the only moment it is about to be looked at.
+  $("find-icon").innerHTML = icon("search");
+  $("find-prev").innerHTML = icon("chevron-up");
+  $("find-next").innerHTML = icon("chevron-down");
+  $("find-x").innerHTML = icon("x");
+  findEl.hidden = false;
+  findQ.select();
+  findQ.focus();
+  findRun();
+}
+
+function closeFind() {
+  findEl.hidden = true;
+  findN.textContent = "";
+  // The highlights belong to the search, so they go with it - and the keyboard goes
+  // back to the shell it was taken from.
+  const s = sessions.get(findFor);
+  findFor = null;
+  s?.search?.clearDecorations();
+  if (s && s.id === activeId) s.term?.focus();
+}
+
+findQ.addEventListener("input", () => findRun());
+findQ.addEventListener("keydown", (e) => {
+  // The input has the keyboard here, so these never reach the window's own handler.
+  if (e.key === "Escape") { e.preventDefault(); closeFind(); }
+  else if (e.key === "Enter") { e.preventDefault(); findRun(e.shiftKey); }
+});
+$("find-prev").addEventListener("click", () => findRun(true));
+$("find-next").addEventListener("click", () => findRun());
+$("find-x").addEventListener("click", closeFind);
 
 // ── remote desktop tabs ────────────────────────────────────────────────────
 // Same tab strip as a terminal, but the pane is a <canvas> that Rust paints

@@ -27,6 +27,7 @@
       <div class="tabs" data-tauri-drag-region>
         <div class="tabstrip" id="tabs"></div>
         <div class="tabactions">
+          <button class="chip" id="viewmode"></button>
           <button class="chip" id="searchbtn"></button>
           <button class="chip" id="newjack"></button>
         </div>
@@ -34,7 +35,20 @@
       <div class="pane" id="browse">
         <main id="list"></main>
       </div>
-      <div class="terms" id="terms" hidden></div>
+      <div class="terms" id="terms" hidden>
+        <!-- Over the session, not a sheet: a terminal keeps the keyboard, and this is
+             one input. Deliberately not in OVERLAYS() for the same reason the update
+             pill isn't - modalOpen() would hand the window's chords to a find box, and
+             shrink the web tab away every time you looked for something in a shell. -->
+        <div id="find" hidden>
+          <span id="find-icon" class="fi"></span>
+          <input id="find-q" placeholder="Find in session" spellcheck="false" autocomplete="off">
+          <span id="find-n"></span>
+          <button type="button" id="find-prev" class="flat" data-tip="Previous"></button>
+          <button type="button" id="find-next" class="flat" data-tip="Next"></button>
+          <button type="button" id="find-x" class="flat" data-tip="Close"></button>
+        </div>
+      </div>
     </section>
 
     <aside id="detail">
@@ -67,7 +81,7 @@
         <label class="f" data-need="ssh sftp"><span>SSH port</span><input name="port" inputmode="numeric" placeholder="22"></label>
         <label class="f wide" data-need="ssh sftp"><span>Private key file</span><input name="key" spellcheck="false" list="sshkeys" placeholder="only if it isn't your default"></label>
         <label class="f wide" data-need="ssh sftp"><span>Jump host</span><input name="jump" spellcheck="false" list="jacknames" placeholder="another device, or user@host"></label>
-        <label class="f wide" data-need="ssh"><span>Port forwards</span><input name="forward" spellcheck="false" placeholder="8080:localhost:80 - reach a remote port locally"></label>
+        <label class="f wide" data-need="ssh"><span>Port forwards</span><input name="forward" spellcheck="false" placeholder="8080:localhost:80, -R 9000:localhost:9000, -D 1080"></label>
         <label class="f req" data-need="rdp"><span>RDP port</span><input name="rdp" inputmode="numeric" placeholder="3389"></label>
         <label class="f req" data-need="vnc"><span>VNC port</span><input name="vnc" inputmode="numeric" placeholder="5900"></label>
         <label class="f wide" data-need="web"><span>URL</span>
@@ -119,6 +133,11 @@
           <label class="opt"><input type="checkbox" name="connect_in_terminal">
             <span><b>Connect in the system terminal</b>
             Hands the ssh command to Terminal / Windows Terminal instead of opening a tab here.</span></label>
+          <label class="opt"><input type="checkbox" name="write_ssh_config">
+            <span><b>Add these devices to your ssh config</b>
+            So <code>ssh web-01</code> works in any terminal, jump chains and all, and so do
+            scp and rsync. Writes its own file plus one <code>Include</code> line; hosts you
+            defined yourself are left alone.</span></label>
         </section>
 
         <section class="pane" data-pane="defaults" hidden>
@@ -279,6 +298,7 @@
 <script src="vendor/xterm.js"></script>
 <script src="vendor/addon-fit.js"></script>
 <script src="vendor/addon-web-links.js"></script>
+<script src="vendor/addon-search.js"></script>
 <script src="gen/icons.js"></script>
 <script src="gen/brands.js"></script>
 <script src="core.js"></script>
