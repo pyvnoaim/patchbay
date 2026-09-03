@@ -38,6 +38,80 @@ fn read_doc(path: &Path) -> Result<DocumentMut, String> {
         .map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// The name of the file patchbay writes into `~/.ssh`, and the `Include` line that
+/// makes ssh read it. Relative, because ssh resolves a relative Include against `~/.ssh`
+/// and an absolute one would bake this machine's home directory into a line people
+/// carry between machines.
+const SSH_FILE: &str = "patchbay.conf";
+const SSH_INCLUDE: &str = "Include patchbay.conf";
+
+/// Write the generated host list and make sure `~/.ssh/config` reads it.
+///
+/// Its own file, never theirs: people hand-tune that config for years and it is not
+/// ours to rewrite. The one thing we touch in it is a single `Include` at the top, and
+/// the top is where a first-wins file wants it - `to_ssh_config` has already left out
+/// every name their config spells out, so nothing of theirs is shadowed from up there.
+pub fn write_ssh_include(dir: &Path, body: &str) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let ours = dir.join(SSH_FILE);
+    // Nothing to do is the common case - this runs whenever the list is read.
+    if std::fs::read_to_string(&ours).is_ok_and(|had| had == body) {
+        return Ok(());
+    }
+    let tmp = dir.join(format!("{SSH_FILE}.tmp"));
+    std::fs::write(&tmp, body).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, &ours).map_err(|e| format!("{}: {e}", ours.display()))?;
+
+    let cfg = dir.join("config");
+    let had = std::fs::read_to_string(&cfg).unwrap_or_default();
+    if includes_ours(&had) {
+        return Ok(());
+    }
+    write_text(&cfg, &format!("{SSH_INCLUDE}\n\n{had}"))
+}
+
+/// Put it back the way it was: the generated file goes, and so does the one line we
+/// added. Everything else in their config is left exactly where they wrote it.
+pub fn remove_ssh_include(dir: &Path) -> Result<(), String> {
+    let _ = std::fs::remove_file(dir.join(SSH_FILE));
+    let cfg = dir.join("config");
+    let Ok(had) = std::fs::read_to_string(&cfg) else {
+        return Ok(());
+    };
+    if !includes_ours(&had) {
+        return Ok(());
+    }
+    let kept: Vec<&str> = had.lines().filter(|l| !is_our_include(l)).collect();
+    write_text(&cfg, &format!("{}\n", kept.join("\n").trim_start()))
+}
+
+/// Spelled either way people write it - ours goes in relative, but someone who has
+/// moved it to an absolute path still has it, and adding a second line would be worse
+/// than leaving theirs alone.
+///
+/// The *whole* last segment, never just the tail: `Include ~/.ssh/work-patchbay.conf`
+/// is someone else's file, and reading it as ours would take their line out of their
+/// config the first time this is switched off.
+fn is_our_include(line: &str) -> bool {
+    let l = line.trim();
+    let Some(path) = l.strip_prefix("Include ").or_else(|| l.strip_prefix("include ")) else {
+        return false;
+    };
+    path.trim().rsplit('/').next() == Some(SSH_FILE)
+}
+
+fn includes_ours(src: &str) -> bool {
+    src.lines().any(is_our_include)
+}
+
+/// Temp file and rename, like every other write here - someone's ssh config is not a
+/// thing to leave half-written.
+fn write_text(path: &Path, body: &str) -> Result<(), String> {
+    let tmp = path.with_extension("patchbay-tmp");
+    std::fs::write(&tmp, body).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 fn write_doc(path: &Path, doc: &DocumentMut) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -150,6 +224,12 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
         if !crate::is_web_url(u) {
             return Err("a url has to start with http:// or https://".into());
         }
+    }
+    // Checked on the way in as well as on the way out, the way a url is: a forward
+    // becomes argv, and finding out it wasn't one at connect time means a device that
+    // was saved and simply never works.
+    for f in &j.forward {
+        crate::patchbay::forward_arg(f)?;
     }
 
     let mut doc = read_doc(path)?;
@@ -315,6 +395,11 @@ pub struct Settings {
     /// Connect opens the system terminal instead of a tab in the window.
     #[serde(default)]
     pub connect_in_terminal: bool,
+    /// Write the device list into `~/.ssh/patchbay.conf` and have `~/.ssh/config`
+    /// include it, so `ssh web-01` in any terminal reaches what Connect reaches. Off by
+    /// default: it is the one setting that writes outside patchbay's own directory.
+    #[serde(default)]
+    pub write_ssh_config: bool,
     /// Tint a device's icon by its `os`, using the brand's colour unless [colors]
     /// overrides it.
     #[serde(default = "yes")]
@@ -358,6 +443,7 @@ impl Default for Settings {
         Self {
             probe: true,
             connect_in_terminal: false,
+            write_ssh_config: false,
             os_colors: true,
             check_updates: true,
             theme: system(),
@@ -802,6 +888,58 @@ folders = ["prod/eu/web"]
         delete_jack_at(&p, "web").unwrap();
         assert!(!read(&p).contains("[jack.web]"));
         assert!(delete_jack_at(&p, "web").unwrap_err().contains("no jack named"));
+    }
+
+    /// The one write that lands outside patchbay's own directory. Their config is
+    /// theirs: one line goes in at the top, and turning it off takes exactly that line
+    /// and the generated file, leaving everything they wrote where they wrote it.
+    #[test]
+    fn the_ssh_include_is_one_line_of_theirs_and_comes_back_out_cleanly() {
+        let dir = std::env::temp_dir().join(format!("patchbay-{}-sshinc", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("config");
+        let mine = "Host mine\n  HostName 10.0.0.2\n";
+        std::fs::write(&cfg, mine).unwrap();
+
+        write_ssh_include(&dir, "Host db\n").unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("patchbay.conf")).unwrap(), "Host db\n");
+        let after = std::fs::read_to_string(&cfg).unwrap();
+        assert!(after.starts_with("Include patchbay.conf\n"), "at the top: {after:?}");
+        assert!(after.contains(mine), "everything they wrote is still there");
+
+        // Run again and it is the same file - this is called on every read of the list.
+        write_ssh_include(&dir, "Host db\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), after, "no second Include");
+
+        remove_ssh_include(&dir).unwrap();
+        assert!(!dir.join("patchbay.conf").exists());
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), mine, "theirs, untouched");
+    }
+
+    /// The line we take back out is *our* file, not anything whose name happens to end
+    /// the same way - taking someone's own Include out of their config would be the one
+    /// thing this feature promised never to do.
+    #[test]
+    fn only_our_own_include_line_is_ours_to_remove() {
+        assert!(is_our_include("Include patchbay.conf"));
+        assert!(is_our_include("  include ~/.ssh/patchbay.conf  "));
+        assert!(!is_our_include("Include ~/.ssh/work-patchbay.conf"));
+        assert!(!is_our_include("Include conf.d/*.conf"));
+        assert!(!is_our_include("Host patchbay.conf"));
+    }
+
+    /// Nothing of ours in there yet is the first-run case, and the common one for
+    /// anyone who has never written an ssh config by hand.
+    #[test]
+    fn a_machine_with_no_ssh_config_gets_one_with_only_the_include_in_it() {
+        let dir = std::env::temp_dir().join(format!("patchbay-{}-sshnew", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        write_ssh_include(&dir, "Host db\n").unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("config")).unwrap(), "Include patchbay.conf\n\n");
+        remove_ssh_include(&dir).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("config")).unwrap().trim(), "");
     }
 
     #[test]

@@ -1,6 +1,15 @@
-//! Turning an existing ssh config into jacks. Parses only: the window shows the list
-//! and writes what you tick through `save_jack`, like any other edit.
+//! The ssh config format, both directions.
+//!
+//! In: turning an existing ssh config into jacks. Parses only - the window shows the
+//! list and writes what you tick through `save_jack`, like any other edit.
+//!
+//! Out: `to_ssh_config` writes the list back as `Host` blocks, so `ssh web-01` in any
+//! terminal reaches what patchbay's Connect reaches, and so do `scp`, `rsync`, Ansible
+//! and anything else that reads that file. Every key it emits is one `ssh_args` already
+//! puts on the command line - this adds no way to reach a device that patchbay didn't
+//! already have.
 
+use crate::patchbay::{self, Jack, Jacks};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
@@ -12,8 +21,9 @@ pub struct Imported {
     pub port: Option<u16>,
     pub key: Option<String>,
     pub jump: Option<String>,
-    /// `LocalForward`, spelled the way `-L` wants it. A tunnel someone set up once is
-    /// part of how they reach that host, so importing without it imports half a jack.
+    /// `LocalForward`, `RemoteForward` and `DynamicForward`, spelled the way
+    /// `patchbay::forward_arg` reads them back. A tunnel someone set up once is part of
+    /// how they reach that host, so importing without it imports half a jack.
     pub forward: Vec<String>,
 }
 
@@ -28,9 +38,10 @@ pub struct Found {
 /// handled apart from these: a host can have several, and first-wins would drop them.
 const WANTED: [&str; 5] = ["hostname", "user", "port", "identityfile", "proxyjump"];
 
-/// `LocalForward 8080 localhost:80` is `-L 8080:localhost:80`; ssh accepts the whole
-/// thing written with colons too, which is already the shape we want.
-fn as_dash_l(v: &str) -> String {
+/// `LocalForward 8080 localhost:80` is `8080:localhost:80`; ssh accepts the whole
+/// thing written with colons too, which is already the shape we want. The same join
+/// does for the other two - `DynamicForward 1080` is one token either way.
+fn colon_joined(v: &str) -> String {
     v.split_whitespace().collect::<Vec<_>>().join(":")
 }
 
@@ -146,9 +157,17 @@ pub fn from_ssh_config(src: &str) -> Found {
             continue;
         }
         // Every one of them, in the order ssh would apply them - unlike the rest, a
-        // second LocalForward is another tunnel rather than an override.
-        if key == "localforward" && !value.is_empty() {
-            w.forwards.push(as_dash_l(&value));
+        // second forward is another tunnel rather than an override. `-L` is the bare
+        // spelling patchbay reads by default, so only the other two carry their flag.
+        if let Some(flag) = match key.as_str() {
+            "localforward" => Some(""),
+            "remoteforward" => Some("-R "),
+            "dynamicforward" => Some("-D "),
+            _ => None,
+        } {
+            if !value.is_empty() {
+                w.forwards.push(format!("{flag}{}", colon_joined(&value)));
+            }
             continue;
         }
         // First one wins, the way ssh reads them.
@@ -178,6 +197,128 @@ pub fn from_ssh_config(src: &str) -> Found {
     }
 
     Found { hosts: out, warnings }
+}
+
+/// A word ssh will read as one token in a `Host` line. `Host` takes *patterns*, so a
+/// name carrying `*`, `?` or `!` would match hosts it was never meant to, and a newline
+/// would start a directive of someone else's choosing - the same hole a `.rdp` has, and
+/// refused the same way rather than escaped.
+fn plain_token(s: &str) -> bool {
+    !s.is_empty() && !s.chars().any(|c| c.is_control() || c.is_whitespace() || "*?!\"".contains(c))
+}
+
+/// A value as ssh reads one. A space is legal inside double quotes, because a key
+/// really does live in a path with a space in it often enough; a quote or a control
+/// character is refused, since escaping is what turns one directive into two.
+fn ssh_value(v: &str) -> Option<String> {
+    let v = v.trim();
+    if v.is_empty() || v.chars().any(|c| c.is_control() || c == '"') {
+        return None;
+    }
+    Some(match v.contains(' ') {
+        true => format!("\"{v}\""),
+        false => v.to_string(),
+    })
+}
+
+fn line(out: &mut String, key: &str, v: Option<&str>) {
+    if let Some(v) = v.and_then(ssh_value) {
+        out.push_str(&format!("    {key} {v}\n"));
+    }
+}
+
+/// One jack as a `Host` block, or None if it has nothing to say to ssh. `ProxyJump`
+/// carries only the *immediate* hop, never the flattened chain: every hop is a `Host`
+/// block of its own here, and ssh chains ProxyJump itself. A jump that isn't a jack is
+/// a raw `user@host`, which is what ProxyJump wants anyway.
+fn host_block(name: &str, j: &Jack) -> Option<String> {
+    let mut out = format!("Host {name}\n");
+    line(&mut out, "HostName", Some(&j.host));
+    // A block with no HostName is a block that does nothing but shadow the name.
+    if !out.contains("HostName") {
+        return None;
+    }
+    line(&mut out, "User", j.user.as_deref());
+    line(&mut out, "Port", j.port.map(|p| p.to_string()).as_deref());
+    line(&mut out, "IdentityFile", j.key.as_deref());
+    line(&mut out, "ProxyJump", j.jump.as_deref());
+    for f in j.forward.iter().flatten() {
+        // Refused rather than emitted broken: `forward_arg` is the same check that
+        // decides what reaches argv, so the file can never say more than a connect would.
+        if let Ok((flag, spec)) = patchbay::forward_arg(f) {
+            let key = match flag {
+                "-R" => "RemoteForward",
+                "-D" => "DynamicForward",
+                _ => "LocalForward",
+            };
+            line(&mut out, key, Some(spec));
+        }
+    }
+    Some(out)
+}
+
+/// The list as ssh reads it. `theirs` is the `Host` names their own config already
+/// defines, and those are left out: they wrote that file, and quietly shadowing a host
+/// someone has used for years is the one way this could do real damage.
+///
+/// Left out with a reason written into the file, not silently - it is the only place
+/// anyone would go looking when `ssh web` doesn't reach what the window reaches.
+pub fn to_ssh_config(jacks: &Jacks, theirs: &HashSet<String>) -> String {
+    let mut out = String::from(
+        "# Written by patchbay. Edits here are lost the next time it writes - change\n\
+         # the device in the window instead, or turn this off in Settings > Devices.\n",
+    );
+    let mut skipped: Vec<String> = Vec::new();
+    let mut blocks = String::new();
+
+    for (name, j) in jacks {
+        if !j.ssh.unwrap_or(true) {
+            continue;   // a web-only or RDP-only device has nothing to say to ssh
+        }
+        if theirs.contains(name) {
+            skipped.push(format!("{name} (your own config already defines it)"));
+            continue;
+        }
+        if !plain_token(name) {
+            skipped.push(format!("{name} (not a name ssh can be given)"));
+            continue;
+        }
+        // Reuses the cycle guard rather than repeating it: a jump loop would become a
+        // ProxyJump loop, and ssh would only find out about it while you waited.
+        if patchbay::hops(name, jacks).is_err() {
+            skipped.push(format!("{name} (its jump chain doesn't resolve)"));
+            continue;
+        }
+        if let Some(b) = host_block(name, j) {
+            blocks.push('\n');
+            blocks.push_str(&b);
+        }
+    }
+
+    for s in &skipped {
+        out.push_str(&format!("# left out: {s}\n"));
+    }
+    out.push_str(&blocks);
+    out
+}
+
+/// The `Host` names a config already spells out. Exact names only, deliberately: a
+/// pattern is how people write global options, and `Host *` claiming every name would
+/// leave nothing to write. A pattern that overlaps one of ours still applies for every
+/// keyword we don't set, which is what someone writing `Host prod-*` meant anyway.
+///
+/// Read off the raw text rather than through `from_ssh_config`, which drops the
+/// patterns - and a name it dropped is still a name we must not shadow.
+pub fn host_names(src: &str) -> HashSet<String> {
+    let mut out = HashSet::new();
+    for l in src.lines() {
+        let l = l.trim();
+        let Some(rest) = l.strip_prefix("Host ").or_else(|| l.strip_prefix("host ")) else {
+            continue;
+        };
+        out.extend(rest.split_whitespace().map(str::to_string));
+    }
+    out
 }
 
 #[cfg(test)]
@@ -279,12 +420,84 @@ Match host *.internal
         assert_eq!(port("0"), None);
     }
 
+    /// The file makes `ssh db` do what Connect does, so the keys have to be the ones
+    /// `ssh_args` builds - and `ProxyJump` names the next hop only, because the hop is a
+    /// `Host` block here too and ssh chains them itself.
     #[test]
-    fn every_local_forward_comes_across_in_the_spelling_dash_l_wants() {
+    fn a_jack_comes_out_as_the_host_block_ssh_would_have_wanted() {
+        let jacks = patchbay::parse(
+            "[jack.bastion]\nhost = \"bastion.example\"\nport = 2222\n\n\
+             [jack.db]\nhost = \"db.internal\"\nuser = \"deploy\"\njump = \"bastion\"\n\
+             key = \"~/.ssh/prod\"\nforward = [\"5432:localhost:5432\", \"-D 1080\"]\n\n\
+             [jack.nas]\nhost = \"10.0.0.9\"\nssh = false\nurl = \"https://10.0.0.9\"\n",
+        )
+        .unwrap();
+        let out = to_ssh_config(&jacks, &HashSet::new());
+
+        assert!(out.contains("Host db\n"), "{out}");
+        assert!(out.contains("    HostName db.internal\n"));
+        assert!(out.contains("    User deploy\n"));
+        assert!(out.contains("    IdentityFile ~/.ssh/prod\n"));
+        assert!(out.contains("    LocalForward 5432:localhost:5432\n"));
+        assert!(out.contains("    DynamicForward 1080\n"));
+        // The next hop, not the flattened chain - ssh walks the rest itself.
+        assert!(out.contains("    ProxyJump bastion\n"));
+        assert!(out.contains("Host bastion\n") && out.contains("    Port 2222\n"));
+        // A device ssh can't reach has nothing to say here.
+        assert!(!out.contains("Host nas"), "a web-only device is not an ssh host: {out}");
+    }
+
+    /// Their file is theirs. A name it already spells out is left alone and said so in
+    /// the only place anyone would look when `ssh web` doesn't go where the window does.
+    #[test]
+    fn a_name_their_own_config_defines_is_left_to_them() {
+        let jacks = patchbay::parse("[jack.web]\nhost = \"10.0.0.4\"\n[jack.db]\nhost = \"10.0.0.5\"\n").unwrap();
+        let theirs = host_names("Host web\n  HostName elsewhere\nHost *\n  ServerAliveInterval 60\n");
+        assert!(theirs.contains("web"));
+        let out = to_ssh_config(&jacks, &theirs);
+        assert!(!out.contains("Host web\n"), "{out}");
+        assert!(out.contains("# left out: web (your own config already defines it)"));
+        // `Host *` is how people write global options, not a claim on every name.
+        assert!(out.contains("Host db\n"), "{out}");
+    }
+
+    /// ssh_config is line-based and `Host` takes patterns, so both are the `.rdp` hole
+    /// in another spelling: a newline starts a directive, a `*` claims hosts it wasn't
+    /// given. Refused rather than escaped, and never at the cost of the rest of the file.
+    #[test]
+    fn a_name_or_value_that_could_smuggle_a_directive_is_left_out() {
+        for bad in ["ev*il", "two words", "a\nProxyCommand id", "!no", "q\"uote"] {
+            assert!(!plain_token(bad), "{bad:?} should not be a Host name");
+        }
+        assert!(plain_token("prod-web01.eu"));
+
+        assert_eq!(ssh_value("10.0.0.4").as_deref(), Some("10.0.0.4"));
+        assert_eq!(ssh_value("~/my keys/id").as_deref(), Some("\"~/my keys/id\""));
+        assert_eq!(ssh_value("x\nProxyCommand id"), None);
+        assert_eq!(ssh_value("x\"y"), None);
+        assert_eq!(ssh_value("  "), None);
+
+        // And end to end: the hostile jack goes, the one beside it stays.
+        let jacks = patchbay::parse(
+            "[jack.ok]\nhost = \"10.0.0.4\"\n[jack.sneaky]\nhost = \"h\\nProxyCommand id\"\n",
+        )
+        .unwrap();
+        let out = to_ssh_config(&jacks, &HashSet::new());
+        assert!(!out.contains("ProxyCommand"), "{out}");
+        assert!(out.contains("Host ok\n"), "{out}");
+    }
+
+    #[test]
+    fn every_forward_comes_across_in_the_spelling_patchbay_reads_back() {
         let f = from_ssh_config(
             "Host db\n  LocalForward 5432 localhost:5432\n  LocalForward 127.0.0.1:6379 cache:6379\nHost other\n",
         );
         assert_eq!(f.hosts[0].forward, ["5432:localhost:5432", "127.0.0.1:6379:cache:6379"]);
+        // The other two carry the flag patchbay reads them back by.
+        let g = from_ssh_config(
+            "Host tun\n  RemoteForward 9000 localhost:9000\n  DynamicForward 1080\n",
+        );
+        assert_eq!(g.hosts[0].forward, ["-R 9000:localhost:9000", "-D 1080"]);
         // A block's forwards belong to that block and must not leak into the next.
         assert_eq!(f.hosts[1].forward, [] as [String; 0]);
     }
