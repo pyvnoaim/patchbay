@@ -12,6 +12,9 @@ pub struct Imported {
     pub port: Option<u16>,
     pub key: Option<String>,
     pub jump: Option<String>,
+    /// `LocalForward`, spelled the way `-L` wants it. A tunnel someone set up once is
+    /// part of how they reach that host, so importing without it imports half a jack.
+    pub forward: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -21,8 +24,15 @@ pub struct Found {
 }
 
 /// Everything else ssh already applies for us - we exec it, so importing its defaults
-/// would only duplicate them into a second file that can go stale.
+/// would only duplicate them into a second file that can go stale. `localforward` is
+/// handled apart from these: a host can have several, and first-wins would drop them.
 const WANTED: [&str; 5] = ["hostname", "user", "port", "identityfile", "proxyjump"];
+
+/// `LocalForward 8080 localhost:80` is `-L 8080:localhost:80`; ssh accepts the whole
+/// thing written with colons too, which is already the shape we want.
+fn as_dash_l(v: &str) -> String {
+    v.split_whitespace().collect::<Vec<_>>().join(":")
+}
 
 fn unquote(v: &str) -> &str {
     match v.len() > 1 && v.starts_with('"') && v.ends_with('"') {
@@ -45,6 +55,7 @@ struct Walk {
     taken: HashSet<String>,
     aliases: Vec<String>,
     block: HashMap<String, String>,
+    forwards: Vec<String>,
 }
 
 impl Walk {
@@ -65,6 +76,7 @@ impl Walk {
             ));
             jump = Some(last);
         }
+        let forwards = std::mem::take(&mut self.forwards);
         for alias in std::mem::take(&mut self.aliases) {
             // A dot is refused in a jack name, and two aliases can flatten onto one.
             let base = alias.replace('.', "-");
@@ -88,6 +100,7 @@ impl Walk {
                     .filter(|p| *p > 0),
                 key: self.block.get("identityfile").cloned(),
                 jump: jump.clone(),
+                forward: forwards.clone(),
             });
         }
         self.block.clear();
@@ -130,6 +143,12 @@ pub fn from_ssh_config(src: &str) -> Found {
         }
         if key == "include" {
             included = true;
+            continue;
+        }
+        // Every one of them, in the order ssh would apply them - unlike the rest, a
+        // second LocalForward is another tunnel rather than an override.
+        if key == "localforward" && !value.is_empty() {
+            w.forwards.push(as_dash_l(&value));
             continue;
         }
         // First one wins, the way ssh reads them.
@@ -205,6 +224,7 @@ Match host *.internal
                 port: Some(2222),
                 key: Some("~/.ssh/ops".into()),
                 jump: None,
+                forward: vec![],
             }
         );
 
@@ -257,6 +277,16 @@ Match host *.internal
         assert_eq!(port("0x16"), None, "Number() reads hex; ssh does not");
         assert_eq!(port("1e3"), None);
         assert_eq!(port("0"), None);
+    }
+
+    #[test]
+    fn every_local_forward_comes_across_in_the_spelling_dash_l_wants() {
+        let f = from_ssh_config(
+            "Host db\n  LocalForward 5432 localhost:5432\n  LocalForward 127.0.0.1:6379 cache:6379\nHost other\n",
+        );
+        assert_eq!(f.hosts[0].forward, ["5432:localhost:5432", "127.0.0.1:6379:cache:6379"]);
+        // A block's forwards belong to that block and must not leak into the next.
+        assert_eq!(f.hosts[1].forward, [] as [String; 0]);
     }
 
     #[test]

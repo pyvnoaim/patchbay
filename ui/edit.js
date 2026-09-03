@@ -548,7 +548,8 @@ async function openImport() {
       <input type="checkbox" data-i="${i}"${h.here ? " disabled" : " checked"}>
       <span class="imp-name">${esc(h.name)}</span>
       <span class="imp-host">${esc(h.user ? `${h.user}@${h.host}` : h.host)}${h.port ? `:${h.port}` : ""}</span>
-      ${h.here ? `<span class="imp-tag">already here</span>` : ""}
+      ${h.here ? `<span class="imp-tag">already here</span>`
+        : h.forward.length ? `<span class="imp-tag">${h.forward.length} forward${h.forward.length === 1 ? "" : "s"}</span>` : ""}
     </label>`).join("");
   impOk.disabled = !fresh;
 }
@@ -581,7 +582,7 @@ impForm.addEventListener("submit", async (e) => {
           name: h.name, host: h.host,
           user: h.user ?? null, port: h.port ?? null,
           key: h.key ?? null, jump: h.jump ?? null,
-          folders: [], forward: [],
+          folders: [], forward: h.forward,
         },
       });
     } catch { failed.push(h.name); }

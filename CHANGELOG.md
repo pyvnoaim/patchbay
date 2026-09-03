@@ -12,6 +12,7 @@ it back. Nothing is retyped anywhere.
 
 - A device's forwards can be held open on their own, without a session, from the
   Forwards section of its pane.
+- Importing an ssh config brings `LocalForward` lines across as forwards.
 - A space has a page of its own now: which file it is, and what its sync is doing.
 - The window opens where you left it, and the sidebar keeps the width you drag it to.
 - Terminal sessions use patchbay's colours, not the raw VT palette. Links are clickable.
