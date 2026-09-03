@@ -152,13 +152,16 @@ body:not([data-os="macos"]) .tabs { height: 40px; }
   background: var(--accent); opacity: 0; transition: opacity .12s ease;
 }
 .grip:hover::after, .grip.on::after { opacity: 1; }
-/* All jacks is a scope, not a space, so it does not sit in the list of them. */
-.tree-sep { height: 1px; margin: 6px 8px; background: var(--line); }
+/* All jacks is a scope, not a space, so it does not sit in the list of them. No
+   inset: #tree is padded already, and its own would sit narrower than every pill. */
+.tree-sep { height: 1px; margin: 6px 0; background: var(--line); }
 .drag { -webkit-app-region: drag; flex: none; }
 #side .drag { height: 46px; }
 body:not([data-os="macos"]) #side .drag { height: 40px; }
 
-#tree { flex: 1; overflow-y: auto; padding: 4px 8px 10px; scrollbar-width: thin; }
+/* The top pads to match #list, since both scrollers hang off a bar of the same
+   height - that is what puts the first folder level with the first device. */
+#tree { flex: 1; overflow-y: auto; padding: 8px 8px 10px; scrollbar-width: thin; }
 /* Rows are rounded, so back to back they read as one long pill. */
 .group + .group, .jack + .jack { margin-top: 2px; }
 .group {
