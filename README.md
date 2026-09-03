@@ -51,7 +51,7 @@ host = "10.0.0.4"
 user = "deploy"
 key  = "~/.ssh/prod"
 jump = "bastion"                 # another jack name, or a raw user@host
-forward = ["8080:localhost:80"]
+forward = ["8080:localhost:80", "-D 1080"]   # -L unless it says -R or -D
 folders = ["prod", "web"]
 desc = "main web box"
 ```
@@ -78,6 +78,18 @@ The app opens sessions in its own window - the system `ssh` on a real pty, with 
 `patchbay.rs` builds, streamed to xterm.js. Your agent, `~/.ssh/config` and
 host-key prompts all still work, because it *is* your ssh. "Open in Terminal" is on
 the context menu when you'd rather have your own terminal.
+
+## The rest of your machine
+
+Settings ▸ Devices can write your list to `~/.ssh/patchbay.conf` and add one `Include`
+line to `~/.ssh/config`. Then `ssh web-01` works in any terminal, and so do `scp`,
+`rsync`, Ansible and VS Code Remote - with the jump chains patchbay resolved, as
+`ProxyJump`. Your own config is never rewritten: one line goes in at the top, a name
+you already define is left to you, and turning it off takes the line and the file away.
+
+It goes the other way too: `patchbay://web-01` in a runbook or an alert opens that
+device. A link carries a device *name*, resolved against your own config - never an
+address, so a link can't point you at a machine you don't have.
 
 ## Folders and web UIs
 
@@ -110,7 +122,9 @@ only to your own network; a public one goes to the browser.
 
 `ssh` ships `sftp`, so patchbay uses it. Right-click a device and **Browse files**, or
 the folder button in the detail pane: a tab listing the remote side, double-click to go
-into a folder or to download a file, and drop files onto it to upload.
+into a folder or to download a file, and drop files onto it to upload. Right-click a
+file to rename or delete it, or **Edit here** to open it in whatever this machine opens
+it with - saving puts it straight back.
 
 Same connection as everything else - your agent, your `~/.ssh/config`, your jump chain.
 Repeated listings share one ssh session, so only the first one authenticates.

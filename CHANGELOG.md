@@ -10,6 +10,27 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- patchbay can write your devices into `~/.ssh/patchbay.conf` and have `~/.ssh/config`
+  include it, so `ssh web-01` in any terminal goes where Connect goes. So do `scp`,
+  `rsync` and anything else that reads that file, jump chains included. Off until
+  you turn it on in Settings ▸ Devices, and a name your own config already defines
+  is left alone.
+- A **Map** view beside the list: devices grouped by the route to them, so a bastion
+  and everything behind it sit together however you filed them. A bastion that isn't
+  answering says so once, instead of every device behind it looking broken on its own.
+- `patchbay://web-01` in a runbook or an alert opens that device. macOS for now.
+- A device still being checked has a dot that says so, rather than looking the same
+  as one nothing is checking.
+- The file browser writes as well as reads: rename, delete, and a new folder to
+  upload into, all on the right-click menu.
+- **Edit here** on a remote file opens it in whatever this machine opens it with,
+  and puts it back every time you save.
+- A forward can be a remote one or a SOCKS proxy now, not just a local port:
+  write `-R 9000:localhost:9000` or `-D 1080` in the same field. Importing an ssh
+  config brings `RemoteForward` and `DynamicForward` across too.
+- Find in a session: ⌘F, or Ctrl+Shift+F, searches that terminal's scrollback.
+- ⌘-click and shift-click pick out several devices at once, to delete them or
+  move them to another space in one go.
 - A device's forwards can be held open on their own, without a session, from the
   Forwards section of its pane.
 - Importing an ssh config brings `LocalForward` lines across as forwards.
