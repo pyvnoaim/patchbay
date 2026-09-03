@@ -59,9 +59,36 @@ fn read() -> Result<patchbay::Jacks, String> {
     patchbay::load_all(&patchbay::config_path())
 }
 
+/// Where ssh keeps its own config, and where ours goes beside it.
+fn ssh_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".ssh"))
+}
+
+/// Keep `~/.ssh/patchbay.conf` current, if it was asked for.
+///
+/// Called from `jacks` rather than from each of the eight writers: this is the one
+/// place that has already read every space, a team pull changes the list without any
+/// writer here running at all, and a generator that has to be remembered at eight call
+/// sites is a generator that goes stale. Nothing is written when the text hasn't
+/// changed, so a window focus costs a read and a compare.
+///
+/// Quiet on failure on purpose - a home directory we can't write to is not a reason to
+/// fail the device list, which is what the window actually asked for.
+fn sync_ssh_config(jacks: &patchbay::Jacks) {
+    if !config::load_settings().write_ssh_config {
+        return;
+    }
+    let Some(dir) = ssh_dir() else { return };
+    let theirs = std::fs::read_to_string(dir.join("config"))
+        .map(|s| import::host_names(&s))
+        .unwrap_or_default();
+    let _ = config::write_ssh_include(&dir, &import::to_ssh_config(jacks, &theirs));
+}
+
 #[tauri::command]
 fn jacks() -> Result<Vec<JackView>, String> {
     let jacks = read()?;
+    sync_ssh_config(&jacks);
     Ok(jacks
         .iter()
         .map(|(name, j)| JackView {
@@ -178,7 +205,7 @@ fn without_forwards(args: Vec<String>) -> Vec<String> {
     let mut out = Vec::with_capacity(args.len());
     let mut it = args.into_iter();
     while let Some(a) = it.next() {
-        if a == "-L" {
+        if patchbay::FORWARD_FLAGS.contains(&a.as_str()) {
             it.next();
         } else {
             out.push(a);
@@ -933,16 +960,21 @@ async fn open_forwards(
         let j = jacks
             .get(&resolved)
             .ok_or_else(|| format!("no jack named \"{resolved}\""))?;
-        let ports: Vec<u16> = j.forward.iter().flatten().filter_map(|f| patchbay::forward_local(f)).collect();
-        let local = *ports
-            .first()
-            .ok_or_else(|| format!("\"{resolved}\" has no forward to open"))?;
+        let forwards = j.forward.as_deref().unwrap_or_default();
+        if forwards.is_empty() {
+            return Err(format!("\"{resolved}\" has no forward to open"));
+        }
+        let ports: Vec<u16> = forwards.iter().filter_map(|f| patchbay::forward_local(f)).collect();
         // Every one of them, not just the one we watch: ExitOnForwardFailure ends ssh
         // if any single -L can't bind, so a clash on the second forward would surface
         // as the first one's twelve-second "never came up" and blame the network.
         if let Some(p) = ports.iter().copied().find(|p| rdp::port_taken(*p)) {
             return Err(format!("something is already listening on 127.0.0.1:{p}"));
         }
+        // A `-R` binds on the far end, so a device whose forwards are all remote has
+        // nothing here to connect to - `open` takes 0 and judges the tunnel by ssh
+        // still being alive instead.
+        let local = ports.first().copied().unwrap_or(0);
         // -N: no shell, just the forwards. ExitOnForwardFailure so a forward that
         // can't bind ends the tunnel instead of leaving a live ssh carrying nothing.
         let mut args = vec!["-N".to_string(), "-o".to_string(), "ExitOnForwardFailure=yes".to_string()];
@@ -1156,7 +1188,16 @@ fn set_theme(window: tauri::WebviewWindow, theme: String) -> String {
 
 #[tauri::command]
 fn save_settings(next: config::Settings) -> Result<(), String> {
-    config::save_settings(&next)
+    // Turning it off has to undo it here: `jacks` only ever writes the file, so with
+    // the switch off nothing would ever come back and take it away again.
+    let was = config::load_settings().write_ssh_config;
+    config::save_settings(&next)?;
+    if was && !next.write_ssh_config {
+        if let Some(dir) = ssh_dir() {
+            config::remove_ssh_include(&dir)?;
+        }
+    }
+    Ok(())
 }
 
 /// One call for the whole loop - every team space fetched, then pushed or adopted,
@@ -1274,6 +1315,147 @@ async fn sftp_put(name: String, local: String, remote_dir: String) -> Result<(),
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Making, renaming and removing. The other half of a file list: uploading into a
+/// folder you have no way to create is half a file browser.
+#[tauri::command]
+async fn sftp_edit(name: String, op: String, path: String, to: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || sftp::edit(&name, &op, &path, &to))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// What a remote file is saved back by. There is no "open" over sftp and the far end
+/// knows nothing about a file being edited, so this is the only signal there is.
+#[derive(Clone, Serialize)]
+struct SavedBack {
+    name: String,
+    file: String,
+    error: Option<String>,
+}
+
+/// Open a remote file in whatever this machine opens it with, and put it back each time
+/// it is saved: a download, the desktop opener, and a watch on the copy's mtime.
+///
+/// Returns where the copy is, so the window can say which file it handed over.
+#[tauri::command]
+async fn sftp_open(app: tauri::AppHandle, name: String, remote: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        // Where it goes back to. Both halves are checked where they are used - `get`
+        // and `put` refuse a path sftp's batch language can't be given safely.
+        let dir = remote.rsplit_once('/').map_or(".", |(d, _)| d).to_string();
+        let local = sftp::get(&name, &remote, &sftp::edit_dir(&name), false)?;
+        let seen = modified(&local);
+        os_open(local.as_os_str())?;
+        let at = local.display().to_string();
+        // ponytail: one thread per file opened, polling. It ends when the copy is gone
+        // or an upload is refused, and with the window otherwise; a platform watcher is
+        // the upgrade if anyone opens dozens.
+        std::thread::spawn(move || watch_edit(&app, &name, &local, &dir, seen));
+        Ok(at)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn modified(p: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(p).and_then(|m| m.modified()).ok()
+}
+
+/// The other half of `sftp_open`, on its own thread. An editor writing the file is the
+/// only thing that says a save happened, so the mtime is what is watched - and a
+/// failed upload stops the watch rather than retrying at a host that just refused it.
+fn watch_edit(
+    app: &tauri::AppHandle,
+    name: &str,
+    local: &Path,
+    dir: &str,
+    mut seen: Option<std::time::SystemTime>,
+) {
+    use tauri::Emitter;
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        // Gone: moved, or cleaned up. There is nothing left to save back.
+        let Some(now) = modified(local) else { return };
+        if Some(now) == seen {
+            continue;
+        }
+        seen = Some(now);
+        let error = sftp::put(name, local, dir).err();
+        let failed = error.is_some();
+        let _ = app.emit("sftp:saved", SavedBack {
+            name: name.to_string(),
+            file: local.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+            error,
+        });
+        if failed {
+            return;
+        }
+    }
+}
+
+/// A `patchbay://` link, as the window should act on it. What it carries is a device
+/// *name*, resolved against the config on this machine - never an address, because a
+/// link that could name a host is a link that dials a stranger's box and asks for a
+/// password. A name that isn't here is refused rather than guessed at.
+///
+/// ponytail: macOS only. The scheme is registered in `Info.plist` and arrives as
+/// `RunEvent::Opened`; Windows and Linux want a registry key or a `.desktop` file
+/// written at install time and a single-instance hand-off, which is a plugin's worth
+/// of work for the same two lines of behaviour.
+fn link_target(url: &str) -> Option<String> {
+    let jacks = read().ok()?;
+    patchbay::resolve(&link_name(url)?, &jacks).ok()
+}
+
+/// The name a link carries, or None. Split out from the lookup so the part that
+/// decides what a URL may say is testable without a config on disk.
+fn link_name(url: &str) -> Option<String> {
+    let rest = url.strip_prefix("patchbay://")?.trim_end_matches('/');
+    // The first segment and nothing else: no path, no query, no fragment.
+    let name = percent_decode(rest.split(['/', '?', '#']).next()?);
+    // Structurally not an address, rather than incidentally not one. `resolve` would
+    // refuse a host anyway by simply not finding it, but a link that cannot even be
+    // *shaped* like `user@host:22` is the property worth being able to point at.
+    let ok = !name.is_empty()
+        && !name.contains(['@', ':', ' ', '.', '\\', '/'])
+        && !name.chars().any(char::is_control);
+    ok.then_some(name)
+}
+
+/// A link is a URL, so a name with a space in it arrives percent-encoded. Only the
+/// escapes - nothing here decides anything, `resolve` does, and a name it doesn't know
+/// is refused.
+fn percent_decode(s: &str) -> String {
+    // Bytes, then one decode at the end: an escape is a *byte* of UTF-8, so `%C3%A9`
+    // is one letter and pushing each half as a char would give two of the wrong ones.
+    let mut out: Vec<u8> = Vec::with_capacity(s.len());
+    let mut it = s.bytes().enumerate();
+    while let Some((i, b)) = it.next() {
+        if b == b'%' && s.len() > i + 2 {
+            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(v);
+                it.next();
+                it.next();
+                continue;
+            }
+        }
+        out.push(b);
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// A link that arrived before the window was listening. macOS launches the app to
+/// deliver one, so the first link of a cold start lands while `boot.js` is still
+/// fetching the list - `emit` into a window with no listener yet goes nowhere.
+#[derive(Default)]
+struct PendingLink(std::sync::Mutex<Option<String>>);
+
+/// Asked for once, on boot. Anything after that arrives as the event instead.
+#[tauri::command]
+fn take_link(pending: tauri::State<'_, PendingLink>) -> Option<String> {
+    pending.0.lock().unwrap().take()
 }
 
 #[tauri::command]
@@ -1413,6 +1595,7 @@ fn main() {
         .manage(pty::Shared::default())
         .manage(rdp::SharedTunnels::default())
         .manage(rdp_session::Shared::default())
+        .manage(PendingLink::default())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {
@@ -1493,12 +1676,24 @@ fn main() {
             open_rdp, open_vnc, open_rdp_session, close_rdp_session, rdp_input,
             tunnels, close_tunnel, open_forwards,
             open_session, open_task, write_session, resize_session, close_session,
-            sftp_ls, sftp_get, sftp_put, sftp_ready, open_master, open_full_disk_access,
-            app_version, update_check, update_install, update_restart
+            sftp_ls, sftp_get, sftp_put, sftp_edit, sftp_open, sftp_ready,
+            open_master, open_full_disk_access,
+            app_version, update_check, update_install, update_restart,
+            take_link
         ])
         .build(tauri::generate_context!())
         .expect("error while building patchbay")
         .run(|handle, event| {
+            // `patchbay://web-01` from a runbook, a ticket or an alert. Held as well as
+            // emitted: a cold start delivers the link before the window is listening.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = &event {
+                use tauri::Emitter;
+                if let Some(name) = urls.iter().find_map(|u| link_target(u.as_str())) {
+                    *handle.state::<PendingLink>().0.lock().unwrap() = Some(name.clone());
+                    let _ = handle.emit("open:link", name);
+                }
+            }
             // `ssh -N -L` has no parent to hang up on, so without this a tunnel
             // outlives the window and keeps holding its forwarded port.
             if matches!(event, tauri::RunEvent::Exit) {
@@ -1532,6 +1727,32 @@ jump = "ops@edge.example"
 [jack.sneaky]
 host = "x; id"
 "#;
+
+    /// A link is the one way into this app that a *web page* can reach. So what it may
+    /// carry is a device name and nothing else: a link that could name a host would be
+    /// a link that dials a stranger's box and asks you for a password.
+    #[test]
+    fn a_link_carries_a_device_name_and_can_never_be_shaped_like_an_address() {
+        assert_eq!(super::link_name("patchbay://web-01").as_deref(), Some("web-01"));
+        assert_eq!(super::link_name("patchbay://web-01/").as_deref(), Some("web-01"));
+        // Anything after the name is not part of it.
+        assert_eq!(super::link_name("patchbay://db/etc/passwd?x=1").as_deref(), Some("db"));
+        assert_eq!(super::link_name("patchbay://a%2Db").as_deref(), Some("a-b"));
+        // An escape is a byte of UTF-8, not a character - `caf%C3%A9` is one letter.
+        assert_eq!(super::link_name("patchbay://caf%C3%A9").as_deref(), Some("café"));
+
+        for bad in [
+            "patchbay://root@evil.example",
+            "patchbay://evil.example",
+            "patchbay://10.0.0.1:22",
+            "patchbay://",
+            "patchbay://a b",
+            "https://evil.example",
+            "file:///etc/passwd",
+        ] {
+            assert_eq!(super::link_name(bad), None, "{bad:?} should carry no name");
+        }
+    }
 
     #[test]
     fn a_check_runs_here_when_it_can_and_on_the_hop_when_it_cannot() {
