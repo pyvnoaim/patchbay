@@ -74,10 +74,17 @@ body[data-os="macos"] { background: transparent; }
    form field turns its border accent instead. */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-#app { display: grid; grid-template-columns: 208px minmax(0,1fr) 272px; height: 100%; }
+/* The sidebar's width is yours - dragged by the grip on its edge, kept in [settings].
+   The fallback is the width it always was, for a config that has never said. */
+#app { display: grid; grid-template-columns: var(--side-w, 208px) minmax(0,1fr) 272px; height: 100%; }
 /* An id selector outranks the UA's [hidden] rule, so hidden needs saying again here. */
 #app[hidden] { display: none; }
-@media (max-width: 720px) { #app { grid-template-columns: 176px minmax(0,1fr); } #detail { display: none; } }
+@media (max-width: 720px) {
+  #app { grid-template-columns: 176px minmax(0,1fr); }
+  #detail { display: none; }
+  /* The width is fixed here, so the grip would drag a setting nothing shows. */
+  .grip { display: none; }
+}
 /* ── tabs & sessions ───────────────────────────────────────── */
 .tabs {
   display: flex; align-items: center; gap: 10px; flex: none;
@@ -134,7 +141,19 @@ body:not([data-os="macos"]) .tabs { height: 40px; }
 .xterm .xterm-viewport { scrollbar-width: thin; background: transparent !important; }
 
 /* ── sidebar ───────────────────────────────────────────────── */
-#side { display: flex; flex-direction: column; min-height: 0; }
+#side { display: flex; flex-direction: column; min-height: 0; position: relative; }
+/* Wider than the line it draws: a 1px target is a 1px target. */
+.grip {
+  position: absolute; top: 0; right: -3px; bottom: 0; width: 7px; z-index: 5;
+  cursor: col-resize; -webkit-app-region: no-drag;
+}
+.grip::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px;
+  background: var(--accent); opacity: 0; transition: opacity .12s ease;
+}
+.grip:hover::after, .grip.on::after { opacity: 1; }
+/* All jacks is a scope, not a space, so it does not sit in the list of them. */
+.tree-sep { height: 1px; margin: 6px 8px; background: var(--line); }
 .drag { -webkit-app-region: drag; flex: none; }
 #side .drag { height: 46px; }
 body:not([data-os="macos"]) #side .drag { height: 40px; }

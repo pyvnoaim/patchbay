@@ -52,6 +52,11 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 # features only: they are rustls, so the build stays free of an openssl dependency.
 tauri-plugin-updater = "2"
 
+# Where the window was last time. Ours would be four numbers and a debounce until the
+# monitor it was on goes away - this one already clamps a restored position back onto
+# a screen that still exists.
+tauri-plugin-window-state = "2"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.5"
 

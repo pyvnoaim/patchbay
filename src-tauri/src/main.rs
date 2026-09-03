@@ -1340,8 +1340,19 @@ fn update_restart(app: tauri::AppHandle) {
 }
 
 fn main() {
+    use tauri_plugin_window_state::StateFlags;
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // An app that forgets where it was is one you re-arrange every morning.
+        // Not DECORATIONS: the title bar is `Overlay` from tauri.conf.json, and a
+        // restored decoration state would fight it.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED | StateFlags::FULLSCREEN,
+                )
+                .build(),
+        )
         .manage(pty::Shared::default())
         .manage(rdp::SharedTunnels::default())
         .manage(rdp_session::Shared::default())

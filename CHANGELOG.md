@@ -10,6 +10,7 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- The window opens where you left it, and the sidebar is as wide as you dragged it.
 - Terminal sessions use patchbay's own colours instead of the raw VT palette, so a
   failing unit is the same red as a device that's down. Links in output are
   clickable, and they open in your browser.

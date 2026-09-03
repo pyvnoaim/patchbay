@@ -331,6 +331,10 @@ pub struct Settings {
     /// will happily lay out a session at 400px.
     #[serde(default = "font_size")]
     pub font_size: f64,
+    /// The sidebar's width in px, as you last dragged it. Clamped here too: it lands
+    /// in a grid template, and a column wider than the window leaves no list.
+    #[serde(default = "sidebar")]
+    pub sidebar: f64,
 }
 
 fn yes() -> bool {
@@ -345,6 +349,10 @@ fn font_size() -> f64 {
     12.5
 }
 
+fn sidebar() -> f64 {
+    208.0
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -354,6 +362,7 @@ impl Default for Settings {
             check_updates: true,
             theme: system(),
             font_size: font_size(),
+            sidebar: sidebar(),
         }
     }
 }
@@ -464,6 +473,7 @@ pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
         _ => "system",
     });
     t["font_size"] = value(s.font_size.clamp(8.0, 32.0));
+    t["sidebar"] = value(s.sidebar.clamp(150.0, 480.0));
     write_doc(file, &doc)
 }
 

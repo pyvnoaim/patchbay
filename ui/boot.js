@@ -186,6 +186,7 @@ async function load() {
       seeded = true;
     }
     applyTheme();
+    applySidebar(prefs.sidebar);
     render();
     refreshProbes();
     syncTeam();
@@ -227,6 +228,47 @@ async function refreshProbes() {
     render();
   } catch { /* a failed sweep just leaves the dots hollow */ }
 }
+
+// ── sidebar width ──────────────────────────────────────────────────────────
+const SIDE_DEFAULT = 208;
+
+/// Clamped here as well as in Rust: this is the one that stops you dragging your own
+/// list off the screen, and the config could always have been edited by hand.
+const applySidebar = (px) =>
+  document.documentElement.style.setProperty(
+    "--side-w", `${Math.round(Math.min(480, Math.max(150, px || SIDE_DEFAULT)))}px`);
+
+/// The width as it now stands, written once. Both ways of changing it end here.
+function keepSidebar() {
+  const px = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--side-w"));
+  // The config is a file people hand-edit, not somewhere to put sixty writes a second.
+  if (px !== prefs.sidebar) {
+    prefs = { ...prefs, sidebar: px };
+    invoke("save_settings", { next: prefs }).catch(alertish);
+  }
+  // The panes either side just changed size, and xterm sizes itself to its host.
+  dispatchEvent(new Event("resize"));
+}
+
+const grip = $("sidegrip");
+// The divider convention everywhere else: double-click puts it back.
+grip.addEventListener("dblclick", () => { applySidebar(SIDE_DEFAULT); keepSidebar(); });
+grip.addEventListener("pointerdown", (e) => {
+  // Or the pointer picks up the text either side of it on the way past.
+  e.preventDefault();
+  grip.setPointerCapture(e.pointerId);
+  grip.classList.add("on");
+  const move = (ev) => applySidebar(ev.clientX);
+  grip.addEventListener("pointermove", move);
+  // Not pointerup: a drag that crosses a web tab is a drag over an OS view above the
+  // page, which takes the pointer with it. Losing the capture is the one thing that
+  // happens either way, so it is what finishes the drag.
+  grip.addEventListener("lostpointercapture", () => {
+    grip.removeEventListener("pointermove", move);
+    grip.classList.remove("on");
+    keepSidebar();
+  }, { once: true });
+});
 
 // ── update ─────────────────────────────────────────────────────────────────
 /// Once per launch, and never in the way - see the pill in edit.js. An endpoint that
