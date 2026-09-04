@@ -11,7 +11,7 @@ user = "root"
 [jack.local]
 os = "macos"
 host = "localhost"
-user = "you"          # your own account - [defaults] root won't work here
+user = "me"                      # change to your own account; [defaults] root won't work here
 desc = "your own box, if Remote Login is on"
 
 [jack.bastion]
@@ -102,7 +102,7 @@ jump = "bastion"
 desc = "reached through the bastion - check the Tunnel row after clicking RDP"
 
 [jack.Testo]
-host = "10.0.0.26"
+host = "192.168.1.26"
 user = "Acme"
 os = "Windows"
 folders = ["Büro"]
