@@ -10,6 +10,8 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- The search palette puts the devices you opened most recently first. The list itself
+  keeps the order you filed it in.
 - **Import a Royal TS document.** Point patchbay at a `.rtsz` and it reads the lot:
   folders become folders, RDP and ssh connections and web UIs become devices with the
   way in they already had. Tick what you want; nothing else is written. Passwords stay
@@ -61,11 +63,10 @@ it back. Nothing is retyped anywhere.
   config brings `RemoteForward` and `DynamicForward` across too.
 - Find in a session: ⌘F, or Ctrl+Shift+F, searches that terminal's scrollback.
 - ⌘-click and shift-click pick out several devices at once, to delete them or
-  move them to another space in one go.
+  move them to another folder in one go.
 - A device's forwards can be held open on their own, without a session, from the
   Forwards section of its pane.
 - Importing an ssh config brings `LocalForward` lines across as forwards.
-- A space has a page of its own now, showing which file it is.
 - The window opens where you left it, and the sidebar keeps the width you drag it to.
 - Terminal sessions use patchbay's colours, not the raw VT palette. Links are clickable.
 - Clicking a device you already have open goes to that tab.

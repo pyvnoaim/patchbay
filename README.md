@@ -9,12 +9,13 @@ A connection manager that is a TOML file and a `ssh` exec. No Electron, no sync
 service, no license key, no crown.
 
 Your machines live in one file you can read, hand-edit and keep in a repo. The window
-opens them: sessions, remote desktop, a device's web UI and its files, all as tabs; a
-folder tree; and an optional shared list for a team. It stores no credentials, because
-your ssh agent and `~/.ssh/config` already hold them.
+opens them: sessions, remote desktop, a device's web UI and its files, all as tabs,
+under a folder tree. It stores no credentials, because your ssh agent and
+`~/.ssh/config` already hold them.
 
-Already have hosts in `~/.ssh/config`? Right-click the device list and import them -
-the same list with tick boxes, and nothing is written until you tick.
+Already have a list? Settings → Import reads `~/.ssh/config` or a Royal TS `.rtsz`
+document and shows what it found with tick boxes. Nothing is written until you tick,
+and passwords never come across.
 
 
 ## Install
@@ -32,10 +33,8 @@ Features.
 or wherever `$PATCHBAY_CONFIG` points. The window creates it on first run, and
 Settings → Config file opens it in your editor.
 
-That file is your own list. **A space is another one of these**, in `spaces/` beside it,
-same format, shown under its own heading in the sidebar.
-Keep a customer's machines apart from your own, or share one with a team without ever
-handing over the rest.
+That one file is the whole list. Grouping is the `folders` list on each device, and a
+folder can carry a note for whoever arrives at that customer next.
 
 ```toml
 [defaults]                       # inherited by every jack; the jack wins
@@ -54,10 +53,16 @@ jump = "bastion"                 # another jack name, or a raw user@host
 forward = ["8080:localhost:80", "-D 1080"]   # -L unless it says -R or -D
 folders = ["prod", "web"]
 desc = "main web box"
+
+[folder.prod]
+note = "change window is Tuesday 22:00; ask ops before touching bastion"
 ```
 
 Jump chains resolve by walking `jump` until it runs out, so `db → web → bastion`
 becomes one `ssh -J` list. Loops throw instead of hanging.
+
+Nothing in the file is ever executed as written. The most it can produce is an `ssh`
+command line, and the window shows it before it runs.
 
 ## Development
 
@@ -89,7 +94,7 @@ you already define is left to you, and turning it off takes the line and the fil
 
 It goes the other way too: `patchbay://web-01` in a runbook or an alert opens that
 device. A link carries a device *name*, resolved against your own config - never an
-address, so a link can't point you at a machine you don't have.
+address, so a link can't point you at a machine you don't have. macOS for now.
 
 ## Folders and web UIs
 
@@ -129,32 +134,19 @@ it with - saving puts it straight back.
 Same connection as everything else - your agent, your `~/.ssh/config`, your jump chain.
 Repeated listings share one ssh session, so only the first one authenticates.
 
-## Teams
+## In the window
 
-**A team is a space with a server behind it.** Make a space, put the devices you want
-to share in it, then Settings → Spaces → **Share with a team** - that hands you a code,
-and anyone who types it into their own window gets that space. Joining one writes a new
-file and touches nothing you already had; your own list is never read, never uploaded,
-and never replaced.
-
-Run the server yourself: `npm run server`, or the `patchbay-server` binary anywhere that
-has a disk. The window syncs when it gets focus and after every edit, in the background,
-so a dead server never holds the device list up.
-
-Two people adding two devices is not a disagreement - those merge. Only the same field
-on both sides needs an answer, and then the window asks which one wins; whichever loses
-is kept as `<space>.toml.bak`. There are no accounts: the code *is* the credential, so
-anyone who has it has that space.
-
-`/team` is plain HTTP - `GET` with an `ETag`, `PUT` with `If-Match` - so a space can
-point at any file over HTTP instead. Leave the code blank and give the address of a TOML
-file someone publishes, a raw git URL included, and you get a read-only copy of it.
-
-Three seats are free; past that everyone can still read the list, and writing asks you
-to pay. Nothing is stored anywhere unless you point patchbay at a server yourself.
-
-Nothing in a config is ever executed: whatever a colleague puts in a space, the most it
-can do here is produce an `ssh` command line. That is what makes joining one safe.
+- **Map** beside the list groups devices by the route to them, so a bastion and
+  everything behind it sit together however they are filed. A bastion that isn't
+  answering says so once.
+- **Marks.** ⌘-click and shift-click pick out several devices; a dock appears to move,
+  delete or **broadcast** to them - every ssh mark as a pane in one tab, one keystroke
+  reaching all of them.
+- **Find** in a session: ⌘F, or Ctrl+Shift+F elsewhere, searches that terminal's scrollback.
+- **Session logs**, off by default, append each session's output to `logs/` beside the config.
+- **Updates** are checked once at launch, downloaded only when you say so, and never
+  restart you: the button becomes `Restart`, a second click, because it takes your
+  sessions with it.
 
 ## What it deliberately isn't
 
