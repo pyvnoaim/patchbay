@@ -277,7 +277,7 @@
     "db-us": {
       desc: "replica, us", target: row("10.1.0.5", "root"),
       route: hops([], "root@10.1.0.5"), fwd: null,
-      reach: { ok: true, via: "this machine", ms: 63 }, cmd: "ssh root@10.1.0.5"
+      reach: { down: true }, cmd: "ssh root@10.1.0.5"
     },
     "staging-web": {
       desc: "staging", target: row("10.2.0.4", "deploy"),
@@ -287,7 +287,7 @@
     nas: {
       desc: "Synology, backups land here", target: row("10.0.0.20", "root"),
       route: hops([], "root@10.0.0.20"), fwd: null,
-      reach: { ok: true, via: "this machine", ms: 3 }, cmd: "ssh root@10.0.0.20"
+      reach: { down: true }, cmd: "ssh root@10.0.0.20"
     },
     hypervisor: {
       desc: "Proxmox host", target: row("10.0.0.30", "root"),
@@ -305,14 +305,14 @@
       reach: { down: true }, cmd: "ssh root@10.0.0.40"
     },
     "acme-app": {
-      desc: "acme's app server", target: row("10.80.0.10", "deploy"),
-      route: hops([], "deploy@10.80.0.10"), fwd: null,
-      reach: { ok: true, via: "this machine", ms: 71 }, cmd: "ssh deploy@10.80.0.10"
+      desc: "acme's app server", target: row("10.0.0.10", "deploy"),
+      route: hops([], "deploy@10.0.0.10"), fwd: null,
+      reach: { ok: true, via: "this machine", ms: 71 }, cmd: "ssh deploy@10.0.0.10"
     },
     "acme-dc": {
-      desc: "acme's domain controller", target: row("10.80.0.50", "administrator"),
-      route: hops([], "administrator@10.80.0.50"), fwd: null,
-      reach: { ok: true, via: "this machine", ms: 68 }, cmd: "ssh administrator@10.80.0.50"
+      desc: "acme's domain controller", target: row("10.0.0.50", "administrator"),
+      route: hops([], "administrator@10.0.0.50"), fwd: null,
+      reach: { ok: true, via: "this machine", ms: 68 }, cmd: "ssh administrator@10.0.0.50"
     }
   };
 
@@ -521,4 +521,217 @@
       .then(draw)
       .catch(function () { list.hidden = true; off.hidden = false; });
   }, { rootMargin: "200px" }).observe(list);
+})();
+
+/* Sections arrive rather than appear. Per element rather than per block: a headline
+   lands, then its paragraph, then the picture of the thing they describe - one beat
+   apart, so the page reads in the order it was written. The attribute is set here and
+   never in the markup, because a page that hides its own content and then waits on an
+   observer is one blocked script away from being blank. Reduced motion never gets as
+   far as setting it. */
+(function () {
+  if (!window.IntersectionObserver) return;
+  if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  var io = new IntersectionObserver(function (entries, self) {
+    entries.forEach(function (e) {
+      if (!e.isIntersecting) return;
+      e.target.classList.add("in");
+      self.unobserve(e.target);
+    });
+  // Held until the element is properly in the frame rather than a pixel over the edge,
+  // which is what makes it read as arriving rather than as a flicker at the fold.
+  }, { rootMargin: "0px 0px -12% 0px", threshold: 0.1 });
+
+  // The text column is opened up so its lines move one at a time; everything beside it
+  // is a picture and moves as one thing. A feature list is the exception worth making:
+  // its rows are the content, not a container of it.
+  function units(wrap, out) {
+    Array.prototype.forEach.call(wrap.children, function (el) {
+      if (el.matches(".body, .col")) units(el, out);
+      else if (el.matches(".spec")) units(el, out);
+      else out.push(el);
+    });
+    return out;
+  }
+
+  document.querySelectorAll(".band > .wrap, .close > .wrap").forEach(function (wrap) {
+    units(wrap, []).forEach(function (el, i) {
+      // Named rather than inferred: a spec row is an icon and two lines of text, and
+      // giving it the picture's travel makes the list wobble instead of settle.
+      var visual = el.matches(".full, .xform, .sheet, figure, img");
+      el.setAttribute("data-rise", visual ? "visual" : "");
+      // Capped: past half a dozen beats a stagger stops reading as sequence and starts
+      // reading as lag, and a spec list has eight rows.
+      el.style.setProperty("--rise-d", (Math.min(i, 6) * 70) + "ms");
+      io.observe(el);
+    });
+  });
+})();
+
+/* The patch panel. Their field on the left, ours on the right, and a lead drawn
+   between each pair - measured from where the rows actually are, so it survives a
+   resize, a late font and a language that wraps differently. One lead is left hanging
+   in the gap: the password, which patchbay has nowhere to put on purpose.
+
+   Both columns read as plain lists before this runs, and this only ever adds. */
+(function () {
+  var panel = document.querySelector(".patch");
+  var svg = panel && panel.querySelector(".cables");
+  if (!panel || !svg) return;
+
+  var PAIRS = [
+    ["folder", "folders"],
+    ["name", "jack"],
+    ["uri", "host"],
+    ["port", "rdp"],
+    ["user", "who"],
+  ];
+  var NS = "http://www.w3.org/2000/svg";
+  var slow = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var leads = [], loose = null, looseSocket = null, plug = null, timer = null, playing = false;
+
+  function pin(name) { return panel.querySelector('[data-pin="' + name + '"]'); }
+
+  /// The socket, in the panel's own coordinates: the outer edge of the row, halfway
+  /// down it. Read rather than assumed, because the two columns are different heights
+  /// and the rows are wherever the text put them.
+  function socket(el, right) {
+    var p = panel.getBoundingClientRect();
+    // The row's own height for the vertical, but the *file's* edge for the horizontal:
+    // a line runs the width of the panel, and a lead has to arrive at the panel's
+    // border rather than at wherever that line's text happens to stop.
+    var r = el.getBoundingClientRect(), f = el.closest(".file").getBoundingClientRect();
+    return { x: (right ? f.right : f.left) - p.left, y: r.top - p.top + r.height / 2 };
+  }
+
+  /// A real lead hangs. The control points are pulled well past halfway so the curve
+  /// leaves each socket horizontally, and the sag grows with the drop - a patch across
+  /// two rows droops less than one across six.
+  function curve(a, b) {
+    var pull = Math.max((b.x - a.x) * 0.55, 26);
+    var sag = Math.min(Math.abs(b.y - a.y) * 0.12 + 8, 26);
+    return "M" + a.x + " " + a.y +
+      " C" + (a.x + pull) + " " + (a.y + sag) +
+      " " + (b.x - pull) + " " + (b.y + sag) +
+      " " + b.x + " " + b.y;
+  }
+
+  function draw() {
+    var wide = panel.clientWidth > 0 && getComputedStyle(svg).display !== "none";
+    if (!wide) return;
+    svg.setAttribute("viewBox", "0 0 " + panel.clientWidth + " " + panel.clientHeight);
+    svg.setAttribute("width", panel.clientWidth);
+    svg.setAttribute("height", panel.clientHeight);
+
+    leads.forEach(function (l) {
+      var a = socket(l.from, true), b = socket(l.to, false);
+      l.path.setAttribute("d", curve(a, b));
+      l.a.setAttribute("cx", a.x); l.a.setAttribute("cy", a.y);
+      l.b.setAttribute("cx", b.x); l.b.setAttribute("cy", b.y);
+      var len = l.path.getTotalLength();
+      l.len = len;
+      l.path.style.strokeDasharray = len;
+      // Held back until it is this lead's turn, unless motion is off - then they are
+      // all simply plugged in, which is the same picture without the theatre.
+      if (!l.anim) l.path.style.strokeDashoffset = slow || l.done ? 0 : len;
+    });
+    if (loose) {
+      var a = socket(pin("pass"), true);
+      looseSocket.setAttribute("cx", a.x);
+      looseSocket.setAttribute("cy", a.y);
+      var stop = { x: a.x + Math.min(panel.clientWidth * 0.16, 90), y: a.y + 34 };
+      loose.setAttribute("d", curve(a, stop));
+      plug.setAttribute("cx", stop.x);
+      plug.setAttribute("cy", stop.y);
+    }
+  }
+
+  function dot(cls) {
+    var c = document.createElementNS(NS, "circle");
+    c.setAttribute("class", cls);
+    c.setAttribute("r", "3.5");
+    svg.appendChild(c);
+    return c;
+  }
+
+  PAIRS.forEach(function (p) {
+    var from = pin(p[0]), to = pin(p[1]);
+    if (!from || !to) return;
+    var path = document.createElementNS(NS, "path");
+    path.setAttribute("class", "lead");
+    svg.appendChild(path);
+    leads.push({ from: from, to: to, path: path, done: false, a: dot("socket"), b: dot("socket") });
+  });
+  if (pin("pass")) {
+    loose = document.createElementNS(NS, "path");
+    loose.setAttribute("class", "loose");
+    svg.appendChild(loose);
+    looseSocket = dot("socket");
+    plug = dot("plug");
+  }
+
+  function reset() {
+    leads.forEach(function (l) {
+      if (l.anim) l.anim.cancel();
+      l.anim = null;
+      l.done = false;
+      l.path.style.strokeDashoffset = l.len;
+      l.to.classList.remove("lit");
+      l.from.classList.remove("lit");
+      l.a.classList.remove("on");
+      l.b.classList.remove("on");
+    });
+  }
+
+  var at = 0;
+  function next() {
+    if (at >= leads.length) {
+      // A beat with the whole panel patched, then it starts over.
+      timer = setTimeout(function () { reset(); at = 0; next(); }, 2600);
+      return;
+    }
+    var l = leads[at++];
+    l.from.classList.add("lit");
+    l.a.classList.add("on");
+    // Animated rather than transitioned: a transition needs the browser to have seen
+    // the starting value in an earlier frame, and the first lead never got one - it
+    // was reset and told to draw inside the same batch, so it simply appeared. An
+    // animation carries its own from and to and cannot be coalesced away.
+    l.done = true;
+    l.anim = l.path.animate(
+      [{ strokeDashoffset: l.len }, { strokeDashoffset: 0 }],
+      { duration: 620, easing: "cubic-bezier(.22,.75,.28,1)", fill: "forwards" }
+    );
+    // Lit when the lead actually arrives, not when it sets off.
+    timer = setTimeout(function () {
+      l.to.classList.add("lit");
+      l.b.classList.add("on");
+      timer = setTimeout(next, 260);
+    }, 620);
+  }
+
+  new ResizeObserver(draw).observe(panel);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+  draw();
+
+  if (slow) {
+    leads.forEach(function (l) { l.from.classList.add("lit"); l.to.classList.add("lit"); });
+    return;
+  }
+  new IntersectionObserver(function (e) {
+    if (e[0].isIntersecting === playing) return;
+    playing = e[0].isIntersecting;
+    clearTimeout(timer);
+    if (playing) {
+      reset();
+      at = 0;
+      draw();
+      // A beat before the first lead. The band is still rising in when it crosses the
+      // threshold, and a cable drawing itself across a panel that has not landed yet
+      // reads as two animations fighting rather than one following the other.
+      timer = setTimeout(next, 700);
+    }
+    else reset();
+  }, { threshold: 0.25 }).observe(panel);
 })();

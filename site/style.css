@@ -124,13 +124,24 @@ h1, h2, h3 {
 h1 { font-size: clamp(40px, 5.8vw, 70px); line-height: 1.0; font-weight: 800; letter-spacing: -.04em; }
 h2 { font-size: clamp(25px, 3.1vw, 34px); line-height: 1.12; font-weight: 700; letter-spacing: -.032em; }
 h3 { font-size: 16.5px; line-height: 1.3; font-weight: 700; letter-spacing: -.022em; }
-p { margin: 0; }
+/* ── how lines break ──────────────────────────────────────────────────────
+   Three rules, and everything on the page obeys one of them.
+   · Headings and ledes `balance`: they are one or two lines read in a single glance,
+     so even lines matter more than a full first one.
+   · Every other paragraph `pretty`: it only rescues the last line, which is the one
+     that strands a single word.
+   · A term that reads as one thing never splits - `.tt` for the inline mono ones,
+     `.keep` for a pair of ordinary words like "ssh agent". */
+p { margin: 0; text-wrap: pretty; }
 a { color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
 
 .wrap { max-width: 1240px; margin: 0 auto; padding-inline: var(--pad); }
-.lede { color: var(--ink-dim); max-width: var(--measure); font-size: 17px; }
-.tt { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
+/* `pretty` rags the last lines rather than leaving one word alone, and `.keep` is for
+   the pairs that read as one term - "ssh agent" split over a break reads as two. */
+.lede { color: var(--ink-dim); max-width: var(--measure); font-size: 17px; text-wrap: balance; }
+.keep { white-space: nowrap; }
+.tt { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; white-space: nowrap; }
 .screen { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px; font-weight: 500; letter-spacing: .17em; text-transform: uppercase; color: var(--ink-faint); }
 
 /* ═══ the gutter ═══════════════════════════════════════════════════════════
@@ -381,6 +392,7 @@ a { color: inherit; }
 .c-key { color: var(--ink); }
 .c-str { color: var(--ink-dim); }
 .c-cm { color: var(--ink-faint); }
+.c-num { color: var(--ink-dim); }
 .f-chain { color: var(--from-chain); }
 .f-forward { color: var(--from-forward); }
 .f-default { color: var(--from-default); }
@@ -548,63 +560,125 @@ pre.block {
 /* Four columns, no boxes. As bordered quadrants the cells were forced to a
    common height, so every bit of slack read as a hole; unboxed, the same slack
    is just whitespace. */
+/* Ten features, so four columns leaves a row of two hanging in space. A hairline per
+   row turns that into a table with a short last row rather than a hole - and it gives
+   every cell the same top edge, which the `min-height` on the blurb was faking.
+   The icon goes beside the title: at this size a glyph on its own line is a row of
+   floating dots before you reach any words. */
 .spec {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: clamp(28px, 3.4vw, 48px);
+  gap: 0 clamp(24px, 3vw, 44px);
 }
-@media (max-width: 900px) { .spec { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 540px) { .spec { grid-template-columns: minmax(0, 1fr); } }
-.spec .r { min-width: 0; }
-.spec .gl { display: block; color: var(--accent); margin-bottom: 15px; }
-.spec .gl svg { width: 20px; height: 20px; display: block; }
-/* Reserved for two lines so a column whose blurb wraps doesn't push its own
-   .path down past the columns beside it that fit on one line. */
-.spec p { margin-top: 9px; min-height: 3.36em; color: var(--ink-dim); font-size: 14.5px; }
+.spec .r {
+  min-width: 0; display: flex; flex-direction: column;
+  padding: 22px 0 24px; border-top: 1px solid var(--hair);
+}
+/* The first row's rule sits under the lede rather than over the first four cells. */
+.spec .r:nth-child(-n+4) { border-top: 0; padding-top: 6px; }
+.spec .r h3 { display: flex; align-items: center; gap: 9px; }
+.spec .gl { display: flex; color: var(--accent); flex: none; }
+.spec .gl svg { width: 17px; height: 17px; display: block; }
+.spec p { margin-top: 7px; color: var(--ink-dim); font-size: 14.5px; }
+/* Pushed to the bottom of its cell, so the mono lines across a row share a baseline
+   however many lines the blurbs above them ran to. */
 .spec .path {
-  display: block; margin-top: 14px;
+  display: block; margin-top: auto; padding-top: 16px;
   font-family: "IBM Plex Mono", monospace; font-size: 11.5px;
   color: var(--ink-faint); overflow-wrap: anywhere;
 }
-
-.claims { display: flex; flex-direction: column; margin-top: 20px; }
-/* Two up inside a split section, so the right column stops running far past the
-   heading beside it. */
-.band.split .claims { display: grid; grid-template-columns: 1fr 1fr; gap: 0 34px; }
-.claims .c {
-  padding: 15px 14px; margin-inline: -14px;
-  border-radius: 10px;
-  font-size: 15px; line-height: 1.65;
-  transition: background .25s var(--ease);
+@media (max-width: 900px) {
+  .spec { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .spec .r:nth-child(-n+4) { border-top: 1px solid var(--hair); padding-top: 22px; }
+  .spec .r:nth-child(-n+2) { border-top: 0; padding-top: 6px; }
 }
-.claims .c:hover { background: var(--fill); }
-/* Was h3+p run inline with a bullet between them - a description longer than one
-   line wrapped flush left under the title instead of staying with its own sentence,
-   so a short blurb and a long one in the same row read as two different shapes. */
-.claims h3 { display: block; margin-bottom: 4px; font-size: 15.5px; }
-.claims p { display: block; color: var(--ink-dim); }
+@media (max-width: 540px) {
+  .spec { grid-template-columns: minmax(0, 1fr); }
+  .spec .r:nth-child(-n+2) { border-top: 1px solid var(--hair); padding-top: 22px; }
+  .spec .r:first-child { border-top: 0; padding-top: 6px; }
+}
 
-/* The directory is the argument, so it gets shown rather than described. */
-pre.block.tree { font-size: 12.6px; line-height: 2; }
+/* ═══ import ═══════════════════════════════════════════════════════════════
+   A patch panel, which is the one metaphor this app is named after: their fields on
+   the left, ours on the right, a lead patched between each pair. It explains the
+   mapping rather than illustrating it, and the one lead that goes nowhere makes the
+   point about passwords better than a sentence would.
 
-/* The same device under two folders, shown rather than asserted: this is what
-   `folders` being a list actually buys you. */
-.branches { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px; }
-@media (max-width: 620px) { .branches { grid-template-columns: minmax(0,1fr); } }
-.mini {
-  border: 1px solid var(--hair); border-radius: 12px; overflow: hidden;
+   Both columns read as plain lists before any of it runs - the leads are drawn from
+   script.js, so a blocked script costs the section its animation and nothing else. */
+.patch {
+  position: relative;
+  /* Two columns, not three: the leads are drawn on an absolutely positioned overlay,
+     so the space between the files is a gap and not a track. */
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: clamp(56px, 11vw, 190px);
+  align-items: start;
+}
+
+/* Each side is one file rather than a stack of chips - the same panel the config
+   samples use, so it reads as a document you could open. */
+.file {
+  min-width: 0; padding: 14px 0 16px;
   background: linear-gradient(180deg, var(--raise-2), var(--raise));
-  font: 400 12.5px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  border: 1px solid var(--hair); border-radius: 12px;
+  box-shadow: inset 0 1px 0 var(--lift);
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px; line-height: 1.9;
 }
-.mini .hd {
-  padding: 9px 13px; border-bottom: 1px solid var(--hair);
-  font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px;
-  color: var(--ink-faint); letter-spacing: .04em;
+.fname {
+  padding: 0 20px 12px; margin-bottom: 6px;
+  border-bottom: 1px solid var(--hair);
+  font-size: 10.5px; font-weight: 500; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--ink-faint);
 }
-.mini .rows { padding: 6px; display: flex; flex-direction: column; gap: 2px; }
-.mini .w-jack { padding: 6px 8px; }
-.mini .hit { background: color-mix(in srgb, var(--accent) 16%, transparent); }
-.mini .hit .w-name { color: var(--ink); }
 
+/* A line of the file, laid out like one: the indent is a level rather than a margin,
+   and a blank line between blocks is a gap on the line that follows rather than an
+   empty row nothing can be patched to. */
+.ln {
+  position: relative;
+  padding: 2px 20px 2px calc(20px + var(--in, 0) * 18px);
+  color: var(--ink);
+  /* Not clipped: the socket straddles the panel's border, and a line that hid its own
+     overflow would cut it in half. The lines are short enough not to need it. */
+  white-space: pre;
+  transition: background .3s var(--ease), color .3s var(--ease);
+}
+.ln.gap { margin-top: 12px; }
+/* One hierarchy on both sides: the tags and the keys are structure and stay quiet,
+   the values are the content and stay bright. Nothing recolours when a line lights -
+   the highlight is the thing that moves, so the eye follows it rather than a colour
+   change, and the two panels never read as two different schemes. */
+.ln b { font-weight: 400; color: var(--ink-faint); }
+.ln .k { display: inline-block; min-width: 8ch; color: var(--ink-faint); }
+.ln .c-tbl { color: var(--ink); font-weight: 500; }
+.ln .c-str, .ln .c-num { color: var(--ink); }
+
+.pin.lit { background: var(--glow); }
+/* The password patches nowhere, so its socket never lights and the line stays struck
+   through - the argument made in the drawing rather than in a sentence. */
+.pin.dead { color: var(--ink-faint); }
+.pin.dead b { text-decoration: line-through; }
+
+.cables { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.cables path { fill: none; stroke-linecap: round; }
+.cables .lead { stroke: var(--accent); stroke-width: 1.6; opacity: .9; }
+.cables .loose { stroke: var(--ink-faint); stroke-width: 1.6; stroke-dasharray: 3 4; opacity: .7; }
+.cables .plug { fill: var(--ink-faint); }
+/* The sockets are drawn in here rather than as a pseudo-element on the line, so they
+   and the lead that plugs into them come from one measurement. As CSS they were
+   positioned against the line's box and the lead against the panel's, and the two
+   disagreed by a few pixels however carefully either was written. */
+.cables .socket { fill: var(--ground-2); stroke: var(--line); stroke-width: 1.5; transition: fill .3s var(--ease), stroke .3s var(--ease); }
+.cables .socket.on { fill: var(--accent); stroke: var(--accent); }
+
+.patch-note { margin-top: 22px; max-width: var(--measure); }
+
+@media (max-width: 780px) {
+  /* No room to run a lead across, so it becomes two lists and the sockets go quiet. */
+  /* No room to run a lead across, so it becomes two files and the sockets go quiet. */
+  .patch { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .cables { display: none; }
+}
 
 /* ═══ close ════════════════════════════════════════════════════════════════ */
 .close { background: linear-gradient(180deg, var(--ground), var(--ground-2) clamp(90px, 12vw, 180px)); }
@@ -635,8 +709,32 @@ footer a svg { width: 15px; height: 15px; }
 .fbrand svg { width: 17px; height: 17px; }
 footer .push { margin-left: auto; }
 
+/* Sections arrive rather than appear. `data-rise` is set from script.js and never in
+   the markup, so with no JS - or no IntersectionObserver - the page is simply already
+   there rather than a column of blank bands.
+   Two profiles, because a sentence and a screenshot do not move alike: a line of text
+   rises a short distance and settles, a visual comes from further back with a little
+   scale on it. The curve is a hard decelerate, so the thing appears to have already
+   arrived and is only finishing the last pixel. */
+[data-rise] {
+  opacity: 0;
+  transform: translateY(var(--rise-y, 11px)) scale(var(--rise-s, 1));
+  --rise-out: cubic-bezier(.16, 1, .3, 1);
+}
+[data-rise="visual"] { --rise-y: 22px; --rise-s: .988; --rise-t: .95s; }
+[data-rise].in {
+  opacity: 1; transform: none;
+  transition:
+    opacity   calc(var(--rise-t, .72s) * .8) var(--rise-out),
+    transform var(--rise-t, .72s) var(--rise-out);
+  transition-delay: var(--rise-d, 0s);
+}
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .plat:hover, .btn:hover, .win:hover { transform: none; }
+  /* The observer bails out before setting the attribute, so this is belt and braces -
+     but a hidden section is the one failure here that costs the page its content. */
+  [data-rise] { opacity: 1; transform: none; }
 }
