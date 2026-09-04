@@ -1,1277 +1,2799 @@
 :root {
-  --fg:        #f0f0f4;
-  --fg-dim:    #9c9ca8;
-  --fg-faint:  #6d6d78;
-  --accent:    #4f9dfd;
-  --accent-deep: #3d7fe8;   /* the foot of the primary button's gradient */
-  --up:        #43c463;
-  --down:      #ff6b6b;
-  --down-deep: #e2504f;   /* the foot of the destructive-button gradient */
-  --panel:     rgba(28,28,32,.72);
-  --row:       rgba(255,255,255,.06);
-  --row-hover: rgba(255,255,255,.08);
-  --line:      rgba(255,255,255,.10);
-  --bg:        #17171a;   /* opaque fallback; macOS paints vibrancy behind instead */
-  --tip:       #3a3a42;
-  --tip-fg:    #f2f2f6;
-  /* The terminal's 16, read out by `theme()` in sessions.js rather than hardcoded
-     there, so a session repaints with the rest of the app when the theme changes.
-     Red, green and blue are --down, --up and --accent themselves: a failing unit in
-     `systemctl status` should be the same red as a device that is down. */
-  --a-black:   #2a2a30;  --a-bright-black:   #6d6d78;
-  --a-red:     #ff6b6b;  --a-bright-red:     #ff8f8f;
-  --a-green:   #43c463;  --a-bright-green:   #6ed98a;
-  --a-yellow:  #e8c26a;  --a-bright-yellow:  #f2d68a;
-  --a-blue:    #4f9dfd;  --a-bright-blue:    #7bb7ff;
-  --a-magenta: #c98bf0;  --a-bright-magenta: #dcaaf7;
-  --a-cyan:    #56c8d8;  --a-bright-cyan:    #7fdce8;
-  --a-white:   #d6d6de;  --a-bright-white:   #f0f0f4;
-  /* Lucide's chevron-down, as a mask - it is painted with --fg-faint at the point
-     of use, so unlike the colours above it needs no light-mode twin. */
+  --fg: #f0f0f4;
+  --fg-dim: #9c9ca8;
+  --fg-faint: #6d6d78;
+  --accent: #4f9dfd;
+  --accent-deep: #3d7fe8; /* the foot of the primary button's gradient */
+  --up: #43c463;
+  --down: #ff6b6b;
+  --down-deep: #e2504f; /* the foot of the destructive-button gradient */
+  --panel: rgba(28, 28, 32, 0.72);
+  --row: rgba(255, 255, 255, 0.06);
+  --row-hover: rgba(255, 255, 255, 0.08);
+  --line: rgba(255, 255, 255, 0.1);
+  --bg: #17171a; /* opaque fallback; macOS paints vibrancy behind instead */
+  --tip: #3a3a42;
+  --tip-fg: #f2f2f6;
+  /* The terminal's 16 colours, read by theme() in sessions.js so a session repaints with the app. */
+  --a-black: #2a2a30;
+  --a-bright-black: #6d6d78;
+  --a-red: #ff6b6b;
+  --a-bright-red: #ff8f8f;
+  --a-green: #43c463;
+  --a-bright-green: #6ed98a;
+  --a-yellow: #e8c26a;
+  --a-bright-yellow: #f2d68a;
+  --a-blue: #4f9dfd;
+  --a-bright-blue: #7bb7ff;
+  --a-magenta: #c98bf0;
+  --a-bright-magenta: #dcaaf7;
+  --a-cyan: #56c8d8;
+  --a-bright-cyan: #7fdce8;
+  --a-white: #d6d6de;
+  --a-bright-white: #f0f0f4;
+  /* Lucide's chevron-down as a mask, painted with --fg-faint at use, so no light-mode twin. */
   --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
-/* Set by theme.js before the first paint and by applyTheme() from [settings], so the
-   OS is the default rather than the rule - a pinned theme has to survive it. */
-:root[data-theme="dark"] { color-scheme: dark; }
+/* Set by theme.js before first paint and by applyTheme() from [settings]; a pinned theme wins over the OS. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
 :root[data-theme="light"] {
   color-scheme: light;
-  --fg:#16161a; --fg-dim:#5f5f6a; --fg-faint:#8b8b95;
-  --up:#1e9e46; --down:#d63c3c;
-  --panel: rgba(255,255,255,.72);
-  --row:rgba(0,0,0,.05); --row-hover:rgba(0,0,0,.07); --line:rgba(0,0,0,.10);
-  --bg:#f4f4f6;
-  --tip:#2c2c33; --tip-fg:#f6f6f8;
-  /* On a light ground "bright" means *more* contrast, so these go darker rather than
-     lighter - the pale twins that read as emphasis on black are invisible here. */
-  --a-black:   #2b2b33;  --a-bright-black:   #8b8b95;
-  --a-red:     #d63c3c;  --a-bright-red:     #b52d2d;
-  --a-green:   #1e9e46;  --a-bright-green:   #157a35;
-  --a-yellow:  #9a6b00;  --a-bright-yellow:  #7a5400;
-  --a-blue:    #2f6fd0;  --a-bright-blue:    #1f57ad;
-  --a-magenta: #9a4bbf;  --a-bright-magenta: #7d3aa0;
-  --a-cyan:    #0e7c8a;  --a-bright-cyan:    #0a6371;
-  --a-white:   #5f5f6a;  --a-bright-white:   #16161a;
+  --fg: #16161a;
+  --fg-dim: #5f5f6a;
+  --fg-faint: #8b8b95;
+  --up: #1e9e46;
+  --down: #d63c3c;
+  --panel: rgba(255, 255, 255, 0.72);
+  --row: rgba(0, 0, 0, 0.05);
+  --row-hover: rgba(0, 0, 0, 0.07);
+  --line: rgba(0, 0, 0, 0.1);
+  --bg: #f4f4f6;
+  --tip: #2c2c33;
+  --tip-fg: #f6f6f8;
+  /* On a light ground "bright" means more contrast, so these go darker. */
+  --a-black: #2b2b33;
+  --a-bright-black: #8b8b95;
+  --a-red: #d63c3c;
+  --a-bright-red: #b52d2d;
+  --a-green: #1e9e46;
+  --a-bright-green: #157a35;
+  --a-yellow: #9a6b00;
+  --a-bright-yellow: #7a5400;
+  --a-blue: #2f6fd0;
+  --a-bright-blue: #1f57ad;
+  --a-magenta: #9a4bbf;
+  --a-bright-magenta: #7d3aa0;
+  --a-cyan: #0e7c8a;
+  --a-bright-cyan: #0a6371;
+  --a-white: #5f5f6a;
+  --a-bright-white: #16161a;
 }
 
-* { box-sizing: border-box; margin: 0; }
-/* An id selector outranks the UA's [hidden] rule, so state it once, loudly, here. */
-[hidden] { display: none !important; }
-html, body { height: 100%; }
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+/* Outranked by any id selector, so #app and #palette say it again. */
+[hidden] {
+  display: none !important;
+}
+html,
+body {
+  height: 100%;
+}
 body {
   background: var(--bg);
   color: var(--fg);
-  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  font:
+    13px/1.45 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Inter,
+    system-ui,
+    sans-serif;
   overflow: hidden;
-  -webkit-user-select: none; user-select: none;
+  -webkit-user-select: none;
+  user-select: none;
   cursor: default;
 }
 /* On macOS the vibrancy layer is the background, so let it through. */
-body[data-os="macos"] { background: transparent; }
+body[data-os="macos"] {
+  background: transparent;
+}
 
-/* Keyboard focus has to be *visible* in an app people drive from the keyboard.
-   Only :focus-visible, so a click doesn't ring the thing it clicked. The two places
-   that clear the UA ring on purpose keep their own answer and outrank this by
-   specificity: the palette input is the only focusable thing in a modal box, and a
-   form field turns its border accent instead. */
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Focus must be visible in a keyboard-driven app; :focus-visible only, so a click doesn't ring.
+   The palette input and form fields clear the ring on purpose and outrank this. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
-/* The sidebar's width is yours - dragged by the grip on its edge, kept in [settings].
-   The fallback is the width it always was, for a config that has never said. */
-#app { display: grid; grid-template-columns: var(--side-w, 208px) minmax(0,1fr) 272px; height: 100%; }
+/* Sidebar width is dragged by the grip and kept in [settings]; the fallback is the original width. */
+#app {
+  display: grid;
+  grid-template-columns: var(--side-w, 208px) minmax(0, 1fr) 272px;
+  height: 100%;
+}
 /* An id selector outranks the UA's [hidden] rule, so hidden needs saying again here. */
-#app[hidden] { display: none; }
+#app[hidden] {
+  display: none;
+}
 @media (max-width: 720px) {
-  #app { grid-template-columns: 176px minmax(0,1fr); }
-  #detail { display: none; }
+  #app {
+    grid-template-columns: 176px minmax(0, 1fr);
+  }
+  #detail {
+    display: none;
+  }
   /* The width is fixed here, so the grip would drag a setting nothing shows. */
-  .grip { display: none; }
+  .grip {
+    display: none;
+  }
 }
 /* ── tabs & sessions ───────────────────────────────────────── */
-/* The space around a tab is the same on all four sides: a 27px tab in a 46px bar
-   leaves 9.5px above and below, so the sides match it rather than sitting at 12 and
-   reading as a tab pushed up against the edge. */
+/* 10px sides: a 27px tab in a 46px bar leaves 9.5px above and below, and the sides match. */
 .tabs {
-  display: flex; align-items: center; gap: 10px; flex: none;
-  padding: 0 10px; height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 0 10px;
+  height: 46px;
   border-bottom: 1px solid var(--line);
 }
 .tabstrip {
-  display: flex; align-items: center; gap: 4px;
-  flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none;
-  /* Two masks intersected, each a no-op at 0 - so the edge that has more beyond it
-     is the only one that fades, set by `markTabOverflow()` in sessions.js. */
-  --fade-l: 0px; --fade-r: 0px;
-  mask-image: linear-gradient(90deg, transparent, #000 var(--fade-l)),
-              linear-gradient(90deg, #000 calc(100% - var(--fade-r)), transparent);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* Two masks intersected, each a no-op at 0; markTabOverflow() in sessions.js sets the fades. */
+  --fade-l: 0px;
+  --fade-r: 0px;
+  mask-image:
+    linear-gradient(90deg, transparent, #000 var(--fade-l)),
+    linear-gradient(90deg, #000 calc(100% - var(--fade-r)), transparent);
   -webkit-mask-composite: source-in;
   mask-composite: intersect;
 }
-.tabstrip.more-l { --fade-l: 26px; }
-.tabstrip.more-r { --fade-r: 26px; }
-.tabstrip::-webkit-scrollbar { display: none; }
-.tabfill { flex: 1; min-width: 0; height: 100%; }
-.tabactions { display: flex; align-items: center; gap: 6px; flex: none; -webkit-app-region: no-drag; }
-body:not([data-os="macos"]) .tabs { height: 40px; }
-.pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.pane[hidden] { display: none !important; }
-/* Tabs give up label before the strip gives up tab. `flex: none` here meant a narrow
-   window scrolled the strip instead of shrinking anything, and the last tab went off
-   the edge taking its close button with it - the active tab, unclosable by mouse. */
-.tab {
-  display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;
-  height: 27px; padding: 0 10px; border-radius: 7px;
-  font-size: 12.5px; color: var(--fg-dim); max-width: 200px;
+.tabstrip.more-l {
+  --fade-l: 26px;
+}
+.tabstrip.more-r {
+  --fade-r: 26px;
+}
+.tabstrip::-webkit-scrollbar {
+  display: none;
+}
+.tabfill {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+.tabactions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
   -webkit-app-region: no-drag;
 }
-/* Only the label may shrink; an icon or the close button that shrank would just be
-   a smudge, and the close button is the one thing that has to stay hittable. */
-.tab > :not(.lbl) { flex: none; }
-.tab .lbl { min-width: 0; }
-.tab .x { margin-right: -3px; }
-.tab:hover { background: var(--row-hover); }
-.tab[aria-selected="true"] { background: var(--row); color: var(--fg); font-weight: 550; }
-.tab .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tab .n { color: var(--fg-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
-.tab[aria-selected="true"] .n { color: var(--fg-dim); }
-.tab .x { display: flex; opacity: .45; border-radius: 4px; padding: 1px; }
-.tab .x:hover { opacity: 1; background: var(--row-hover); }
-.tab .x .i { width: 11px; height: 11px; }
-.tab .dot { width: 6px; height: 6px; }
-.tab.dead .lbl { text-decoration: line-through; opacity: .6; }
-/* A broadcast chip. `.on` and the pulsing kind icon say input is fanning out - a
-   detail that reads back to the same glow around the focused pane. */
-.tab.bcast .tabkind { color: var(--fg-faint); }
-.tab.bcast.on { color: var(--accent); }
-.tab.bcast.on .tabkind { color: var(--accent); animation: bcast-pulse 1.4s ease-in-out infinite; }
-.tab.bcast[aria-selected="true"] { color: var(--fg); }
-.tab.bcast[aria-selected="true"].on { color: var(--accent); }
-.tab .bmute {
-  display: flex; align-items: center; padding: 2px; margin-right: -2px;
-  border: 0; background: none; border-radius: 5px; color: inherit; cursor: pointer; opacity: .7;
+body:not([data-os="macos"]) .tabs {
+  height: 40px;
 }
-.tab .bmute:hover { opacity: 1; background: var(--row-hover); }
-.tab .bmute .i { width: 12px; height: 12px; }
-.tab .bmute[aria-pressed="true"] { opacity: 1; color: var(--accent); }
-@keyframes bcast-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .45 } }
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.pane[hidden] {
+  display: none !important;
+}
+/* Tabs shrink before the strip scrolls, or the active tab's close button goes off the edge. */
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 27px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  max-width: 200px;
+  -webkit-app-region: no-drag;
+}
+/* Only the label shrinks; the close button has to stay hittable. */
+.tab > :not(.lbl) {
+  flex: none;
+}
+.tab .lbl {
+  min-width: 0;
+}
+.tab .x {
+  margin-right: -3px;
+}
+.tab:hover {
+  background: var(--row-hover);
+}
+.tab[aria-selected="true"] {
+  background: var(--row);
+  color: var(--fg);
+  font-weight: 550;
+}
+.tab .lbl {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tab .n {
+  color: var(--fg-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.tab[aria-selected="true"] .n {
+  color: var(--fg-dim);
+}
+.tab .x {
+  display: flex;
+  opacity: 0.45;
+  border-radius: 4px;
+  padding: 1px;
+}
+.tab .x:hover {
+  opacity: 1;
+  background: var(--row-hover);
+}
+.tab .x .i {
+  width: 11px;
+  height: 11px;
+}
+.tab .dot {
+  width: 6px;
+  height: 6px;
+}
+.tab.dead .lbl {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+/* Broadcast chip: .on and the pulsing icon say input is fanning out. */
+.tab.bcast .tabkind {
+  color: var(--fg-faint);
+}
+.tab.bcast.on {
+  color: var(--accent);
+}
+.tab.bcast.on .tabkind {
+  color: var(--accent);
+  animation: bcast-pulse 1.4s ease-in-out infinite;
+}
+.tab.bcast[aria-selected="true"] {
+  color: var(--fg);
+}
+.tab.bcast[aria-selected="true"].on {
+  color: var(--accent);
+}
+.tab .bmute {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  margin-right: -2px;
+  border: 0;
+  background: none;
+  border-radius: 5px;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.tab .bmute:hover {
+  opacity: 1;
+  background: var(--row-hover);
+}
+.tab .bmute .i {
+  width: 12px;
+  height: 12px;
+}
+.tab .bmute[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--accent);
+}
+@keyframes bcast-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
 
-.terms { flex: 1; position: relative; min-height: 0; }
-.terms[hidden] { display: none !important; }
-.termhost { position: absolute; inset: 0; padding: 8px 4px 4px 10px; }
-.termhost[hidden] { display: none !important; }
-/* Broadcast grid. Every live pane in the group shares the space, laid out on the
-   nearest-square grid `showTab` computes into `--cols` - 4 becomes 2×2 and 6 becomes
-   3×2, rather than auto-fit picking as many columns as fit and leaving the last row
-   half-empty. Rows are `1fr`, so the panes divide the terms container evenly instead
-   of one row eating all the height with content-sized siblings under it. Every
-   visible pane gets its own `fit()` in showTab / resize - a terminal only knows its
-   size once its cell has one. */
+.terms {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+.terms[hidden] {
+  display: none !important;
+}
+.termhost {
+  position: absolute;
+  inset: 0;
+  padding: 8px 4px 4px 10px;
+}
+.termhost[hidden] {
+  display: none !important;
+}
+/* Broadcast grid on the nearest-square grid showTab computes into --cols. Rows are 1fr so panes
+   divide the height evenly; every visible pane gets its own fit() once its cell has a size. */
 .terms.grid {
-  display: grid; gap: 8px; padding: 8px; height: 100%;
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  height: 100%;
   grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
   grid-auto-rows: minmax(0, 1fr);
 }
 .terms.grid .termhost {
-  position: relative; inset: auto; min-width: 0; min-height: 0;
+  position: relative;
+  inset: auto;
+  min-width: 0;
+  min-height: 0;
   padding: 6px 4px 4px 8px;
-  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
   background: var(--panel);
 }
-/* One border colour says which pane the keyboard is in. Accent when broadcasting -
-   the same signal as the tab chip - so a live grid never looks the same as a set of
-   independent terminals stacked side by side. */
-.terms.grid .termhost.focused { border-color: var(--accent); }
-.terms.grid.bcast-on .termhost { border-color: color-mix(in oklab, var(--accent) 55%, transparent); }
-.terms.grid.bcast-on .termhost.focused { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 30%, transparent); }
-/* The name of the device in this pane, floated in the top-right so a grid of twelve
-   is legible without hunting through prompts. */
+/* The border says which pane has the keyboard; accent while broadcasting, matching the tab chip. */
+.terms.grid .termhost.focused {
+  border-color: var(--accent);
+}
+.terms.grid.bcast-on .termhost {
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+}
+.terms.grid.bcast-on .termhost.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 30%, transparent);
+}
+/* The device name floated top-right, so a grid of twelve is legible. */
 .terms.grid .termhost::after {
   content: attr(data-name);
-  position: absolute; top: 4px; right: 8px;
-  font: 11px/1 ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  color: var(--fg-faint); pointer-events: none;
-  padding: 1px 5px; border-radius: 4px; background: var(--panel);
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font:
+    11px/1 ui-monospace,
+    SFMono-Regular,
+    "SF Mono",
+    Menlo,
+    monospace;
+  color: var(--fg-faint);
+  pointer-events: none;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--panel);
 }
-.xterm .xterm-viewport { scrollbar-width: thin; background: transparent !important; }
+.xterm .xterm-viewport {
+  scrollbar-width: thin;
+  background: transparent !important;
+}
 
 /* ── sidebar ───────────────────────────────────────────────── */
-#side { display: flex; flex-direction: column; min-height: 0; position: relative; }
+#side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
 /* Wider than the line it draws: a 1px target is a 1px target. */
 .grip {
-  position: absolute; top: 0; right: -3px; bottom: 0; width: 7px; z-index: 5;
-  cursor: col-resize; -webkit-app-region: no-drag;
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 7px;
+  z-index: 5;
+  cursor: col-resize;
+  -webkit-app-region: no-drag;
 }
 .grip::after {
-  content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px;
-  background: var(--accent); opacity: 0; transition: opacity .12s ease;
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.12s ease;
 }
-.grip:hover::after, .grip.on::after { opacity: 1; }
-/* All jacks is a scope, not a space, so it does not sit in the list of them. No
-   inset: #tree is padded already, and its own would sit narrower than every pill. */
-.tree-sep { height: 1px; margin: 6px 0; background: var(--line); }
-.drag { -webkit-app-region: drag; flex: none; }
-#side .drag { height: 46px; }
-body:not([data-os="macos"]) #side .drag { height: 40px; }
+.grip:hover::after,
+.grip.on::after {
+  opacity: 1;
+}
+/* All jacks is a scope, not a folder, so a rule separates it from the list. */
+.tree-sep {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--line);
+}
+.drag {
+  -webkit-app-region: drag;
+  flex: none;
+}
+#side .drag {
+  height: 46px;
+}
+body:not([data-os="macos"]) #side .drag {
+  height: 40px;
+}
 
-/* The top pads to match #list, since both scrollers hang off a bar of the same
-   height - that is what puts the first folder level with the first device. */
-#tree { flex: 1; overflow-y: auto; padding: 8px 8px 10px; scrollbar-width: thin; }
-/* Rows are rounded, so back to back they read as one long pill. In the map, a
-   .jack can back onto a nested .hop (a leaf next to a further branch) as easily
-   as onto another .jack, so both sides of that pairing need the same gap. */
-.group + .group, :is(.jack, .hop) + :is(.jack, .hop) { margin-top: 2px; }
+/* Padded to match #list, so the first folder sits level with the first device. */
+#tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 8px 10px;
+  scrollbar-width: thin;
+}
+/* Rounded rows back to back read as one pill; in the map a .jack can back onto a .hop. */
+.group + .group,
+:is(.jack, .hop) + :is(.jack, .hop) {
+  margin-top: 2px;
+}
 .group {
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 8px; border-radius: 6px;
-  font-size: 12.5px; color: var(--fg);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--fg);
   white-space: nowrap;
 }
-.group:hover { background: var(--row-hover); }
-.group[aria-current="true"] { background: var(--row); color: var(--fg); font-weight: 550; }
-.group .label { overflow: hidden; text-overflow: ellipsis; }
-/* Always laid out, painted only when a session is open under this node - that
-   way it carries the auto margin and the count never shifts. */
-.group .live { margin-left: auto; width: 6px; height: 6px; border-radius: 50%; flex: none; background: transparent; }
-.group .live.on { background: var(--accent); }
-.group[aria-current="true"] .live.on { background: var(--fg); }
-/* Right-aligned in a fixed column: without it a "1" and a "17" put the live dot
-   in two different places, one row above the other. Past 99 it nudges again. */
+.group:hover {
+  background: var(--row-hover);
+}
+.group[aria-current="true"] {
+  background: var(--row);
+  color: var(--fg);
+  font-weight: 550;
+}
+.group .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Always laid out, painted only when a session is open under this node, so the count never shifts. */
+.group .live {
+  margin-left: auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: transparent;
+}
+.group .live.on {
+  background: var(--accent);
+}
+.group[aria-current="true"] .live.on {
+  background: var(--fg);
+}
+/* Right-aligned in a fixed column, so the live dot lands in the same place on every row. */
 .group .n {
-  margin-left: 7px; min-width: 2ch; text-align: right;
-  color: var(--fg-dim); font-size: 11px; font-variant-numeric: tabular-nums;
+  margin-left: 7px;
+  min-width: 2ch;
+  text-align: right;
+  color: var(--fg-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 /* Lucide icons: 24px viewBox, currentColor stroke. See scripts/icons.mjs. */
-.i { width: 14px; height: 14px; flex: none; display: block; }
-.twist {
-  display: flex; flex: none; color: var(--fg-faint);
-  transition: transform .12s ease;
+.i {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  display: block;
 }
-.twist .i { width: 12px; height: 12px; }
-.twist.open { transform: rotate(90deg); }
-.twist.leaf { visibility: hidden; }
-.group > .gi { display: flex; flex: none; color: var(--fg-dim); }
-.group[aria-current="true"] > .gi { color: var(--accent); }
+.twist {
+  display: flex;
+  flex: none;
+  color: var(--fg-faint);
+  transition: transform 0.12s ease;
+}
+.twist .i {
+  width: 12px;
+  height: 12px;
+}
+.twist.open {
+  transform: rotate(90deg);
+}
+.twist.leaf {
+  visibility: hidden;
+}
+.group > .gi {
+  display: flex;
+  flex: none;
+  color: var(--fg-dim);
+}
+.group[aria-current="true"] > .gi {
+  color: var(--accent);
+}
 
 /* ── list ──────────────────────────────────────────────────── */
-/* Two surfaces only: the sidebar is vibrant (transparent, letting the macOS
-   material through), everything right of it is one opaque content panel. */
-#mid, #detail { background: var(--panel); }
+/* Two surfaces: the sidebar is vibrant, everything right of it is one opaque panel. */
+#mid,
+#detail {
+  background: var(--panel);
+}
 #mid {
-  /* A grid item's floor is its content, so without min-height the column grows
-     past the window and #list never gets a scrollbar - same as #side. */
-  display: flex; flex-direction: column; min-width: 0; min-height: 0;
-  border-left: 1px solid var(--line); border-right: 1px solid var(--line);
+  /* Without min-height the column grows past the window and #list never scrolls. */
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
 }
-/* The only place ⌘K is advertised - without it the palette is invisible. */
+/* The only place ⌘K is advertised. */
 .chip {
-  display: flex; align-items: center; gap: 6px; flex: none;
-  height: 27px; padding: 0 10px; border-radius: 7px;
-  /* Outlined, because a filled pill is what the open tab wears - three filled
-     pills in one strip and the actions read as two more tabs. Inset shadow
-     rather than a border so it can't change the height. */
-  background: transparent; box-shadow: inset 0 0 0 1px var(--line);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 27px;
+  padding: 0 10px;
+  border-radius: 7px;
+  /* Outlined, because a filled pill is what the open tab wears. Inset shadow so the height stays. */
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
   color: var(--fg-dim);
-  font-size: 12px; font-weight: 450;
+  font-size: 12px;
+  font-weight: 450;
 }
-.chip:hover { background: var(--row-hover); color: var(--fg); }
+.chip:hover {
+  background: var(--row-hover);
+  color: var(--fg);
+}
 .chip kbd {
-  background: transparent; padding: 0 0 0 3px; color: var(--fg-faint);
-  font: inherit; font-size: 11px;
+  background: transparent;
+  padding: 0 0 0 3px;
+  color: var(--fg-faint);
+  font: inherit;
+  font-size: 11px;
 }
 
-.search { position: relative; display: flex; align-items: center; }
-.search > span { position: absolute; left: 10px; display: flex; color: var(--fg-faint); pointer-events: none; }
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.search > span {
+  position: absolute;
+  left: 10px;
+  display: flex;
+  color: var(--fg-faint);
+  pointer-events: none;
+}
 
-#list { flex: 1; overflow-y: auto; padding: 8px; scrollbar-width: thin; }
-/* Bulk actions, floated up so a marked-and-forgotten selection can be cleared and
-   the actions themselves are discoverable without knowing the chord. Same shape as
-   #find and #uptoast so all three floating pills read as one family - panel colour,
-   thin border, the app's soft drop shadow. */
-#browse { position: relative; }
+#list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  scrollbar-width: thin;
+}
+/* Bulk actions for marked rows. Same shape as #find and #uptoast, so the floating pills read as one family. */
+#browse {
+  position: relative;
+}
 #dock {
-  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
-  z-index: 3; display: flex; align-items: center; gap: 3px;
-  /* The context menu's shape, not the notice pill's: this is a list of actions you
-     operate, and `.pill` is a sentence that talks at you. 12px outside, 7px on the
-     buttons, so the nested rounding stays concentric against the 7px of padding. */
-  padding: 7px; border-radius: 12px;
-  /* Capped by the pane it's centred in, `#browse`, not the viewport - a viewport-wide
-     cap let the pill size itself past a narrow pane (sidebar open, detail pane open)
-     and `overflow: hidden` sliced the last button clean off, which is what happened
-     to Delete here. Scrolling instead of clipping means a bulk pick with a lot of
-     buttons (several spaces, broadcast, delete) is still reachable rather than lost. */
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  /* The context menu's shape: 12px outside, 7px on the buttons, so the rounding stays concentric. */
+  padding: 7px;
+  border-radius: 12px;
+  /* Capped by #browse, not the viewport, and scrolls rather than clips, so the last button stays reachable. */
   max-width: calc(100% - 24px);
-  overflow-x: auto; scrollbar-width: none;
-  background: var(--panel); backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
-  border: 1px solid var(--line); box-shadow: 0 10px 28px rgba(0,0,0,.34);
-  font-size: 12.5px; color: var(--fg-dim);
-  animation: dock-in .18s cubic-bezier(.2,.8,.3,1) both;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--panel);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  animation: dock-in 0.18s cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
-#dock[hidden] { display: none !important; }
-#dock::-webkit-scrollbar { display: none; }
-/* A count that reads as one word rather than a two-line label - the number carries
-   the meaning, "selected" is context, so the number is the emphasised half. Kept
-   inside its own inline block so nothing wraps at a narrow pane. */
+#dock[hidden] {
+  display: none !important;
+}
+#dock::-webkit-scrollbar {
+  display: none;
+}
+/* The number is the emphasised half; inline block so nothing wraps in a narrow pane. */
 #dock .count {
-  display: inline-flex; align-items: center; gap: 4px; flex: none;
-  padding: 0 12px 0 10px; margin-right: 4px;
-  border-right: 1px solid var(--line); align-self: stretch;
-  color: var(--fg-faint); white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 0 12px 0 10px;
+  margin-right: 4px;
+  border-right: 1px solid var(--line);
+  align-self: stretch;
+  color: var(--fg-faint);
+  white-space: nowrap;
 }
 #dock .count b {
-  color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
-/* The action buttons match .ctx-item's fill-on-hover, which is the app's idiom for
-   an action list. Same accent for a normal one, --down for a destructive one - the
-   two rules the context menu already uses, applied to the dock so the two feel like
-   one control. */
+/* Same fill-on-hover as .ctx-item, so the dock and the menu feel like one control. */
 #dock button {
-  display: inline-flex; align-items: center; gap: 7px; flex: none;
-  height: 28px; padding: 0 12px; border: 0; border-radius: 7px;
-  background-color: transparent; background-image: none;
-  color: var(--fg-dim); font: inherit; font-size: 12.5px; white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background-color: transparent;
+  background-image: none;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
 }
-/* Icons ride currentColor, so the one transition on `color` above eases both text
-   and glyph together. `opacity` gives the dim-glyph look without a second colour to
-   override on hover; on hover it goes to 1, and the button's color takes the icon
-   to white with it. `translateZ(0)` promotes the icon to its own compositor layer,
-   which stops it wobbling by half a pixel while the currentColor transition
-   re-rasterises the stroke - a small svg has too few pixels to hide that under
-   anti-aliasing. */
+/* translateZ(0) gives the icon its own layer, which stops it wobbling by half a pixel
+   while the currentColor transition re-rasterises the stroke. */
 #dock button .i {
-  width: 13px; height: 13px; opacity: .7;
+  width: 13px;
+  height: 13px;
+  opacity: 0.7;
   transform: translateZ(0);
-  transition: opacity .18s cubic-bezier(.2,.8,.3,1);
+  transition: opacity 0.18s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
-/* Same button.primary shape as the Connect button - so an ordinary action reads as
-   an ordinary primary decision. `background-color` stays as the base --accent so the
-   transition into the gradient is colour to colour, not transparent to colour. */
+/* button.primary's shape. background-color stays --accent so the transition is colour to colour. */
 #dock button:hover {
   background-color: var(--accent);
   background-image: linear-gradient(180deg, var(--accent), var(--accent-deep));
   color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
-#dock button:hover .i { opacity: 1; }
-#dock button:active { filter: brightness(.94); }
-#dock button[data-danger] { color: var(--down); }
-/* Same shape as button.primary, with the red pair - so Delete reads as the same kind
-   of decision as Connect, only destructive. `background-image` is what fades in;
-   `background-color` stays as the base --down so the transition to the gradient is
-   colour to colour, not transparent to colour. */
+#dock button:hover .i {
+  opacity: 1;
+}
+#dock button:active {
+  filter: brightness(0.94);
+}
+#dock button[data-danger] {
+  color: var(--down);
+}
+/* The same shape with the red pair, so Delete reads as the same kind of decision, only destructive. */
 #dock button[data-danger]:hover {
   background-color: var(--down);
   background-image: linear-gradient(180deg, var(--down), var(--down-deep));
   color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
-#dock button[data-danger]:hover .i { opacity: 1; }
-#dock button[data-danger]:active { filter: brightness(.94); }
+#dock button[data-danger]:hover .i {
+  opacity: 1;
+}
+#dock button[data-danger]:active {
+  filter: brightness(0.94);
+}
 @keyframes dock-in {
-  from { opacity: 0; transform: translate(-50%, 8px); }
-  to   { opacity: 1; transform: translate(-50%, 0); }
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 .jack {
-  display: flex; align-items: baseline; gap: 8px;
-  padding: 7px 9px; border-radius: 7px; white-space: nowrap;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  white-space: nowrap;
 }
-.jack:hover { background: var(--row-hover); }
-/* The map. A branch is a hop and everything reached through it; the rail down the
-   left is the route, so a device four columns in is four hops away and looks it.
-   --rail is one colour shared by the trunk and every row's elbow off it, so a
-   blocked branch recolours both without the two ever drifting out of sync. */
+.jack:hover {
+  background: var(--row-hover);
+}
+/* The map: the rail down the left is the route. --rail is shared by the trunk and every elbow,
+   so a blocked branch recolours both together. */
 .hop {
-  position: relative; padding-left: 0;
+  position: relative;
+  padding-left: 0;
   --rail: color-mix(in oklab, var(--fg-faint) 65%, transparent);
 }
 .hop::before {
-  content: ""; position: absolute; left: 9px; top: 34px; bottom: 4px;
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 34px;
+  bottom: 4px;
   border-left: 1.5px solid var(--rail);
 }
-/* Behind a hop that isn't answering, so the branch explains itself once rather than
-   leaving every row under it showing a dot that looks like its own problem - the
-   trunk and the chip it feeds both turn the same colour. */
-.hop.blocked { --rail: color-mix(in oklab, var(--down) 55%, transparent); }
-.hop.blocked > .jack { opacity: .55; }
-/* The elbow off the trunk into a nested row - `left` is fixed because a step is
-   always exactly one .hop's worth (18px in, rail at 9px), never a multiple of depth. */
-.jack.arm { position: relative; }
+/* A hop that isn't answering explains the branch once, rather than every row under it. */
+.hop.blocked {
+  --rail: color-mix(in oklab, var(--down) 55%, transparent);
+}
+.hop.blocked > .jack {
+  opacity: 0.55;
+}
+/* The elbow into a nested row. left is fixed: a step is always one .hop's worth. */
+.jack.arm {
+  position: relative;
+}
 .jack.arm::before {
-  content: ""; position: absolute; left: -9px; top: 50%;
-  width: 9px; height: 1.5px; background: var(--rail);
+  content: "";
+  position: absolute;
+  left: -9px;
+  top: 50%;
+  width: 9px;
+  height: 1.5px;
+  background: var(--rail);
 }
-/* A row heading a branch is a junction, not an endpoint, so it keeps a fill even
-   at rest - the eye can tell which rows are hubs before reading a single label. */
-.jack.hub { background: var(--row); }
-.jack.hub:hover { background: var(--row-hover); }
-/* The count that used to be its own faint line now rides on the hub row itself. */
+/* A row heading a branch keeps a fill at rest, so hubs are visible before reading a label. */
+.jack.hub {
+  background: var(--row);
+}
+.jack.hub:hover {
+  background: var(--row-hover);
+}
 .behind {
-  display: inline-flex; align-items: center; gap: 4px; flex: none; align-self: center; margin-left: auto;
-  padding: 1px 8px 1px 6px; border-radius: 20px; font-size: 11px;
-  background: var(--row-hover); color: var(--fg-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  align-self: center;
+  margin-left: auto;
+  padding: 1px 8px 1px 6px;
+  border-radius: 20px;
+  font-size: 11px;
+  background: var(--row-hover);
+  color: var(--fg-dim);
 }
-.behind .i { width: 10px; height: 10px; }
-.behind.down { background: color-mix(in oklab, var(--down) 22%, transparent); color: var(--down); }
-.jack[aria-selected="true"] .behind { background: rgba(255,255,255,.2); color: rgba(255,255,255,.82); }
-/* A jump host that isn't one of your devices - a raw user@host in someone's config. */
-.jack.hopraw { cursor: default; }
+.behind .i {
+  width: 10px;
+  height: 10px;
+}
+.behind.down {
+  background: color-mix(in oklab, var(--down) 22%, transparent);
+  color: var(--down);
+}
+.jack[aria-selected="true"] .behind {
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.82);
+}
+/* A jump host that isn't one of your devices: a raw user@host. */
+.jack.hopraw {
+  cursor: default;
+}
 
-/* Picked out with ⌘-click or a shift-drag, for an action about several devices at
-   once. Not the same thing as the selected row, which is where the keyboard is - so
-   a faint accent tint rather than the plain hover shade, and both can be true of one
-   row. `color-mix` follows the row's `border-radius`, so the whole row is tinted with
-   no protruding bar at the corners. */
-.jack.marked { background: color-mix(in oklab, var(--accent) 14%, transparent); }
-.jack.marked:not([aria-selected="true"]):hover { background: color-mix(in oklab, var(--accent) 22%, transparent); }
-/* Selected wins over marked - the accent gradient carries both, and layering a
-   hover tint on top of it left a milky overlay on the row you were already on. */
+/* Marked with ⌘-click or shift-click, for a bulk action. Not the selected row, which is where the
+   keyboard is, so a faint accent tint; both can be true of one row. */
+.jack.marked {
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+.jack.marked:not([aria-selected="true"]):hover {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+}
+/* Selected wins over marked. */
 .jack[aria-selected="true"].marked,
-.jack[aria-selected="true"].marked:hover { background: linear-gradient(180deg, var(--accent), var(--accent-deep)); }
-/* Same gradient and inner highlight as button.primary, so the selected row and
-   the Connect button it points at read as one object. */
+.jack[aria-selected="true"].marked:hover {
+  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
+}
+/* Same gradient as button.primary, so the selected row and the Connect button read as one object. */
 .jack[aria-selected="true"] {
   background: linear-gradient(180deg, var(--accent), var(--accent-deep));
   color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
-.jack[aria-selected="true"] .host, .jack[aria-selected="true"] .folder { color: rgba(255,255,255,.82); }
-/* The dot keeps its own colour here: it is the only piece of state in the row, and
-   the accent underneath is what it needs separating from, not replacing with. */
-.jack[aria-selected="true"] .dot { box-shadow: 0 0 0 1.5px rgba(255,255,255,.55); }
-.jack[aria-selected="true"] .folder { background: rgba(255,255,255,.2); }
-/* A probe answering is news, and news that arrives as an instant colour swap reads
-   as a glitch. Long enough to catch the eye, short enough to be over by the time
-   you look. */
+.jack[aria-selected="true"] .host,
+.jack[aria-selected="true"] .folder {
+  color: rgba(255, 255, 255, 0.82);
+}
+/* The dot keeps its own colour: it is the only state in the row. */
+.jack[aria-selected="true"] .dot {
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.55);
+}
+.jack[aria-selected="true"] .folder {
+  background: rgba(255, 255, 255, 0.2);
+}
+/* A probe answering fades in; an instant swap reads as a glitch. */
 .dot {
-  width: 7px; height: 7px; border-radius: 50%; flex: none;
-  background: var(--fg-faint); align-self: center;
-  transition: background-color .22s ease, box-shadow .22s ease;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--fg-faint);
+  align-self: center;
+  transition:
+    background-color 0.22s ease,
+    box-shadow 0.22s ease;
 }
-.dot.up { background: var(--up); }
-.dot.down { background: var(--down); }
-.dot.unknown { background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg-faint); }
-/* Nothing has come back for this one yet. Deliberately not the same as `unknown`,
-   which is what every device wears when reachability checks are switched off: that dot
-   is waiting for nothing, and one that breathes forever would be promising an answer
-   that is never coming. Opacity only, so it survives reduced motion the way the other
-   colour fades here do - and so it can't jitter the row it sits in. */
+.dot.up {
+  background: var(--up);
+}
+.dot.down {
+  background: var(--down);
+}
+.dot.unknown {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--fg-faint);
+}
+/* Waiting for an answer. Not the same as unknown, which every device wears when checks are off.
+   Opacity only, so it survives reduced motion and can't jitter the row. */
 .dot.checking {
-  background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg-dim);
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--fg-dim);
   animation: dot-wait 1.5s ease-in-out infinite;
 }
-@keyframes dot-wait { 50% { opacity: .25; } }
-.name { font-weight: 560; letter-spacing: -.005em; }
-.host { color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; }
-.folders { margin-left: auto; display: flex; gap: 4px; flex: none; }
-.folder { background: var(--row); color: var(--fg-dim); padding: 1px 7px; border-radius: 20px; font-size: 11px; }
+@keyframes dot-wait {
+  50% {
+    opacity: 0.25;
+  }
+}
+.name {
+  font-weight: 560;
+  letter-spacing: -0.005em;
+}
+.host {
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.folders {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+.folder {
+  background: var(--row);
+  color: var(--fg-dim);
+  padding: 1px 7px;
+  border-radius: 20px;
+  font-size: 11px;
+}
 
 /* ── detail ────────────────────────────────────────────────── */
-#detail { display: flex; flex-direction: column; min-width: 0; overflow-y: auto; scrollbar-width: thin; }
-#detail .drag { height: 46px; border-bottom: 1px solid var(--line); }
-/* The strip was 46px of nothing. Actions live here now, so they stay put instead
-   of sitting after a body whose length depends on how much the device has. */
-/* Same 10px as the tab strip, and for the same reason: a 27px button in a 46px bar
-   leaves 9.5px above and below, so 12 at the sides read as a button shoved at the edge. */
-.dbar { display: flex; align-items: center; padding: 0 10px; }
-.dactions { display: flex; align-items: center; gap: 6px; -webkit-app-region: no-drag; }
-.dactions button { flex: none; height: 27px; padding: 0 11px; border-radius: 7px; }
-.dactions button.ghost { padding: 0 8px; }
-.dactions:empty { display: none; }
-body:not([data-os="macos"]) #detail .drag { height: 40px; }
-.d-body { padding: 14px 16px 16px; }
-.d-name { font-size: 16px; font-weight: 650; letter-spacing: -.015em; }
-.d-desc { color: var(--fg-dim); margin-bottom: 14px; }
+#detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+#detail .drag {
+  height: 46px;
+  border-bottom: 1px solid var(--line);
+}
+/* Actions live in the header strip so they stay put whatever the body's length. */
+/* 10px sides, for the tab strip's reason. */
+.dbar {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+}
+.dactions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+.dactions button {
+  flex: none;
+  height: 27px;
+  padding: 0 11px;
+  border-radius: 7px;
+}
+.dactions button.ghost {
+  padding: 0 8px;
+}
+.dactions:empty {
+  display: none;
+}
+body:not([data-os="macos"]) #detail .drag {
+  height: 40px;
+}
+.d-body {
+  padding: 14px 16px 16px;
+}
+.d-name {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+.d-desc {
+  color: var(--fg-dim);
+  margin-bottom: 14px;
+}
 .d-sec {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 10.5px; font-weight: 650; letter-spacing: .06em;
-  text-transform: uppercase; color: var(--fg-faint); margin: 14px 0 5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  margin: 14px 0 5px;
 }
-.d-sec .i { width: 12px; height: 12px; }
-button { display: flex; align-items: center; justify-content: center; gap: 6px; }
-/* The body is `cursor: default` because this is an app, not a page - but anything
-   you actually click should still say so. */
-button, .tab, .tab .x, .chip, .ctx-item, .how-opt, .crumb .drop,
-.group, .jack, .twist, .opt, .setnav button, [data-act], [data-a] { cursor: pointer; }
-button:disabled { cursor: default; }
-/* Hover is the app answering, and an instant swap reads as a flicker rather than a
-   reply. One curve for every clickable thing so the whole window feels consistent
-   under the pointer - the sheets' own ease-out (.2, .8, .3, 1), a touch slower than
-   an instant, quick enough that a press still lands promptly. Box-shadow and
-   background-image ride along too, so the destructive gradient on Delete fades in
-   rather than snapping. */
-button, .tab, .tab .x, .chip, .ctx-item, .how-opt, .crumb .drop,
-.group, .jack, .frow, .imp-row, .sw .reset, .setnav button {
+.d-sec .i {
+  width: 12px;
+  height: 12px;
+}
+button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+/* The body is cursor: default because this is an app; anything clickable still says so. */
+button,
+.tab,
+.tab .x,
+.chip,
+.ctx-item,
+.how-opt,
+.crumb .drop,
+.group,
+.jack,
+.twist,
+.opt,
+.setnav button,
+[data-act],
+[data-a] {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+}
+/* One hover curve for every clickable thing, the sheets' ease-out. Box-shadow and
+   background-image ride along so Delete's gradient fades in rather than snapping. */
+button,
+.tab,
+.tab .x,
+.chip,
+.ctx-item,
+.how-opt,
+.crumb .drop,
+.group,
+.jack,
+.frow,
+.imp-row,
+.sw .reset,
+.setnav button {
   transition:
-    background-color .18s cubic-bezier(.2,.8,.3,1),
-    background-image .18s cubic-bezier(.2,.8,.3,1),
-    box-shadow      .18s cubic-bezier(.2,.8,.3,1),
-    color           .18s cubic-bezier(.2,.8,.3,1),
-    opacity         .18s cubic-bezier(.2,.8,.3,1);
+    background-color 0.18s cubic-bezier(0.2, 0.8, 0.3, 1),
+    background-image 0.18s cubic-bezier(0.2, 0.8, 0.3, 1),
+    box-shadow 0.18s cubic-bezier(0.2, 0.8, 0.3, 1),
+    color 0.18s cubic-bezier(0.2, 0.8, 0.3, 1),
+    opacity 0.18s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
-/* A press is not a hover: it wants to land the instant the mouse goes down, so the
-   transition that softens the hover is what makes a click feel late. */
-.group:active, .jack:active, .frow:active, .tab:active {
+/* A press lands the instant the mouse goes down; the hover transition would make it feel late. */
+.group:active,
+.jack:active,
+.frow:active,
+.tab:active {
   background: color-mix(in srgb, var(--fg) 13%, transparent);
   transition: none;
 }
 /* The selected row is already the accent gradient, so it darkens instead. */
-.jack[aria-selected="true"]:active { background: linear-gradient(180deg, var(--accent), var(--accent-deep)); filter: brightness(.94); }
-/* A folder's note - the thing people keep a README in the tree for. Written where the
-   folder is rather than in a sheet, because it is read far more often than edited. */
-.d-note {
-  width: 100%; margin-top: 2px; padding: 7px 9px; resize: vertical;
-  border: 1px solid var(--line); border-radius: 7px;
-  background: var(--row); color: var(--fg);
-  font: inherit; font-size: 12.5px; line-height: 1.5; outline: none;
-  -webkit-user-select: text; user-select: text;
+.jack[aria-selected="true"]:active {
+  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
+  filter: brightness(0.94);
 }
-.d-note:focus { border-color: var(--accent); }
-.d-note::placeholder { color: var(--fg-faint); }
+/* A folder's note, edited where the folder is because it is read far more than edited. */
+.d-note {
+  width: 100%;
+  margin-top: 2px;
+  padding: 7px 9px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--row);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.d-note:focus {
+  border-color: var(--accent);
+}
+.d-note::placeholder {
+  color: var(--fg-faint);
+}
 
-.d-row { display: flex; gap: 10px; padding: 2px 0; font-size: 12.5px; }
-.d-row dt { color: var(--fg-faint); width: 42px; flex: none; }
-.d-row dd { margin: 0; overflow: hidden; text-overflow: ellipsis; -webkit-user-select: text; user-select: text; }
-.route { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
-.route span { display: flex; align-items: center; gap: 7px; }
-.route .pip { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-faint); flex: none; }
-.route .last .pip { background: var(--accent); }
-.route .arm { color: var(--fg-faint); margin-left: 2px; font-size: 11px; }
+.d-row {
+  display: flex;
+  gap: 10px;
+  padding: 2px 0;
+  font-size: 12.5px;
+}
+.d-row dt {
+  color: var(--fg-faint);
+  width: 42px;
+  flex: none;
+}
+.d-row dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.route {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+}
+.route span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.route .pip {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+  flex: none;
+}
+.route .last .pip {
+  background: var(--accent);
+}
+.route .arm {
+  color: var(--fg-faint);
+  margin-left: 2px;
+  font-size: 11px;
+}
 .mono {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: 11px; line-height: 1.5;
-  background: var(--row); border-radius: 6px; padding: 8px 9px;
-  word-break: break-all; white-space: pre-wrap;
-  -webkit-user-select: text; user-select: text;
+  font-size: 11px;
+  line-height: 1.5;
+  background: var(--row);
+  border-radius: 6px;
+  padding: 8px 9px;
+  word-break: break-all;
+  white-space: pre-wrap;
+  -webkit-user-select: text;
+  user-select: text;
 }
-.mono.err { color: var(--down); }
-/* The copy sits on the box it copies rather than in the header strip, which at
-   272px was running out of room. */
-.d-cmd { position: relative; }
-.d-cmd .mono { padding-right: 32px; }
-.d-copy { position: absolute; top: 3px; right: 3px; color: var(--fg-faint); }
-/* Buttons stretch by default, which is right in a footer and wrong in a row of two
-   where only one is `.ghost` - the odd one out grows and reads as the accident it is. */
-.btns { display: flex; gap: 6px; margin-top: 10px; }
-.btns button { flex: none; padding: 7px 14px; }
+.mono.err {
+  color: var(--down);
+}
+/* The copy button sits on the box it copies. */
+.d-cmd {
+  position: relative;
+}
+.d-cmd .mono {
+  padding-right: 32px;
+}
+.d-copy {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  color: var(--fg-faint);
+}
+/* Buttons stretch by default, which is wrong in a row of two where one is .ghost. */
+.btns {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+.btns button {
+  flex: none;
+  padding: 7px 14px;
+}
 button {
-  flex: 1; padding: 7px 10px; border: 0; border-radius: 7px;
-  background: var(--row); color: var(--fg); font: inherit; font-weight: 550;
+  flex: 1;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--row);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 550;
 }
-button:hover { background: var(--row-hover); }
-/* A flat fill reads as a coloured rectangle; the gradient and the one-pixel
-   inner highlight are what make it read as a raised control. */
+button:hover {
+  background: var(--row-hover);
+}
+/* The gradient and inner highlight make it read as a raised control. */
 button.primary {
   background: linear-gradient(180deg, var(--accent), var(--accent-deep));
   color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
-button.primary:hover { filter: brightness(1.08); }
-button.primary:active { filter: brightness(.94); }
-button.ghost { flex: none; }
+button.primary:hover {
+  filter: brightness(1.08);
+}
+button.primary:active {
+  filter: brightness(0.94);
+}
+button.ghost {
+  flex: none;
+}
 
 /* ── palette ───────────────────────────────────────────────── */
-/* Every overlay dims *and* blurs what's behind it - dimming alone leaves the device
-   list legible through the sheet, which reads as two things competing for attention
-   rather than one on top of the other. Listed together so a new overlay inherits it. */
-#palette, #sheetwrap, #askwrap, #importwrap, #setwrap {
-  background: rgba(0,0,0,.34);
-  backdrop-filter: blur(6px) saturate(.9);
-  -webkit-backdrop-filter: blur(6px) saturate(.9);
-  transition: opacity .13s ease;
+/* Every overlay dims and blurs what's behind it. Listed together so a new overlay inherits it. */
+#palette,
+#sheetwrap,
+#askwrap,
+#importwrap,
+#setwrap {
+  background: rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(6px) saturate(0.9);
+  -webkit-backdrop-filter: blur(6px) saturate(0.9);
+  transition: opacity 0.13s ease;
 }
-/* Overlays arrive rather than appear. Entrance only: `@starting-style` is what an
-   element gets on its first frame out of `display: none`, and the exit stays instant
-   because a dismissal that lingers is one you are waiting on. 130ms is under the
-   threshold where it reads as a wait, and enough that the eye follows the box in. */
+/* Overlays arrive rather than appear. Entrance only: @starting-style is the first frame out of
+   display: none, and the exit stays instant. */
 @starting-style {
-  #palette, #sheetwrap, #askwrap, #importwrap, #setwrap { opacity: 0; }
-  .pal, .sheet { opacity: 0; transform: scale(.97) translateY(4px); }
+  #palette,
+  #sheetwrap,
+  #askwrap,
+  #importwrap,
+  #setwrap {
+    opacity: 0;
+  }
+  .pal,
+  .sheet {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
 }
-.pal, .sheet { transition: opacity .13s ease, transform .13s cubic-bezier(.2,.8,.3,1); }
+.pal,
+.sheet {
+  transition:
+    opacity 0.13s ease,
+    transform 0.13s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
 #palette {
-  position: fixed; inset: 0; z-index: 10;
-  display: flex; justify-content: center; align-items: center; padding: 5vh 16px;
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 5vh 16px;
 }
 /* An id selector outranks the UA's [hidden] rule, so hidden needs saying again here. */
-#palette[hidden] { display: none; }
-.pal-search > span { left: 15px; }
-.pal-search #pq { padding-left: 40px; }
+#palette[hidden] {
+  display: none;
+}
+.pal-search > span {
+  left: 15px;
+}
+.pal-search #pq {
+  padding-left: 40px;
+}
 .pal {
-  width: min(460px, 84vw); height: fit-content; max-height: 60vh;
-  display: flex; flex-direction: column;
-  background: var(--panel); backdrop-filter: blur(28px);
-  border: 1px solid var(--line); border-radius: 12px;
-  box-shadow: 0 22px 60px rgba(0,0,0,.45);
+  width: min(460px, 84vw);
+  height: fit-content;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  backdrop-filter: blur(28px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.45);
   overflow: hidden;
 }
 #pq {
-  padding: 13px 15px; border: 0; border-bottom: 1px solid var(--line);
-  background: transparent; color: var(--fg); font: inherit; font-size: 15px; outline: none;
-  -webkit-user-select: text; user-select: text;
+  padding: 13px 15px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
 }
-#presults { overflow-y: auto; padding: 6px; scrollbar-width: thin; }
+#presults {
+  overflow-y: auto;
+  padding: 6px;
+  scrollbar-width: thin;
+}
 
 /* ── sidebar footer ────────────────────────────────────────── */
-.side-foot { display: flex; gap: 4px; padding: 6px 10px 10px; flex: none; }
-.side-foot .flat.warn { color: var(--down); }
-#settings { margin-left: auto; }   /* bottom-right of the sidebar */
-button.flat {
-  flex: none; padding: 5px; border-radius: 6px;
-  background: transparent; color: var(--fg-faint);
+.side-foot {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px 10px;
+  flex: none;
 }
-button.flat:hover { background: var(--row-hover); color: var(--fg); }
+.side-foot .flat.warn {
+  color: var(--down);
+}
+#settings {
+  margin-left: auto;
+} /* bottom-right of the sidebar */
+button.flat {
+  flex: none;
+  padding: 5px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-faint);
+}
+button.flat:hover {
+  background: var(--row-hover);
+  color: var(--fg);
+}
 
 /* ── context menu ──────────────────────────────────────────── */
 #ctx {
-  position: fixed; z-index: 30; min-width: 168px;
-  background: var(--panel); backdrop-filter: blur(28px);
-  border: 1px solid var(--line); border-radius: 9px;
-  box-shadow: 0 14px 40px rgba(0,0,0,.45);
+  position: fixed;
+  z-index: 30;
+  min-width: 168px;
+  background: var(--panel);
+  backdrop-filter: blur(28px);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
   padding: 5px;
 }
 .ctx-item {
-  display: flex; align-items: center; gap: 9px;
-  padding: 6px 9px; border-radius: 6px; font-size: 12.5px; white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  white-space: nowrap;
 }
-/* The same gradient and inner highlight as button.primary and the dock's hover: a
-   flat fill reads as a coloured rectangle laid over the menu, the gradient reads as
-   the row itself lifting. */
-.ctx-item:hover, .ctx-item.on {
+/* Same gradient as button.primary and the dock's hover: the row itself lifting. */
+.ctx-item:hover,
+.ctx-item.on {
   background: linear-gradient(180deg, var(--accent), var(--accent-deep));
   color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
-.ctx-item.danger { color: var(--down); }
-.ctx-item.danger:hover, .ctx-item.danger.on {
+.ctx-item.danger {
+  color: var(--down);
+}
+.ctx-item.danger:hover,
+.ctx-item.danger.on {
   background: linear-gradient(180deg, var(--down), var(--down-deep));
   color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
-/* A menu item is always hovered by the time it is pressed, so it darkens its own
-   accent the way a selected row does - the neutral press fill would paint grey over
-   the gradient underneath it. */
-.ctx-item:active { filter: brightness(.94); transition: none; }
+/* Already hovered when pressed, so it darkens its own accent rather than painting grey over it. */
+.ctx-item:active {
+  filter: brightness(0.94);
+  transition: none;
+}
 .ctx-item kbd {
-  margin-left: auto; padding-left: 16px;
-  background: transparent; color: var(--fg-faint); font: inherit; font-size: 11px;
+  margin-left: auto;
+  padding-left: 16px;
+  background: transparent;
+  color: var(--fg-faint);
+  font: inherit;
+  font-size: 11px;
 }
-.ctx-item:hover kbd, .ctx-item.on kbd { color: rgba(255,255,255,.75); }
-.ctx-sep { height: 1px; background: var(--line); margin: 5px 4px; }
+.ctx-item:hover kbd,
+.ctx-item.on kbd {
+  color: rgba(255, 255, 255, 0.75);
+}
+.ctx-sep {
+  height: 1px;
+  background: var(--line);
+  margin: 5px 4px;
+}
 .ctx-head {
-  display: flex; align-items: center; gap: 7px;
-  padding: 5px 9px 6px; font-size: 11px; color: var(--fg-faint); max-width: 240px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px 6px;
+  font-size: 11px;
+  color: var(--fg-faint);
+  max-width: 240px;
 }
 /* The name is its own item, or the ellipsis has no block to work on. */
-.ctx-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.ctx-os { display: flex; flex: none; color: var(--fg-faint); }
-.ctx-os .i { width: 13px; height: 13px; }
+.ctx-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.ctx-os {
+  display: flex;
+  flex: none;
+  color: var(--fg-faint);
+}
+.ctx-os .i {
+  width: 13px;
+  height: 13px;
+}
 
 /* ── sheets (add/edit) ─────────────────────────────────────── */
-/* Every overlay belongs here. One left out sits in normal flow at the end of
-   <body>, escaping the window and stretching the layout behind it. */
-#sheetwrap, #askwrap, #importwrap {
-  position: fixed; inset: 0; z-index: 20;
-  display: flex; justify-content: center; align-items: center;
-  padding: 5vh 16px;   /* keeps a tall sheet off the window edges */
+/* Every overlay belongs here. One left out sits in normal flow and stretches the layout behind it. */
+#sheetwrap,
+#askwrap,
+#importwrap {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 5vh 16px; /* keeps a tall sheet off the window edges */
 }
 .sheet {
-  width: min(480px, 88vw); max-height: 82vh; display: flex; flex-direction: column;
-  background: var(--panel); backdrop-filter: blur(28px);
-  border: 1px solid var(--line); border-radius: 12px;
-  box-shadow: 0 22px 60px rgba(0,0,0,.45);
+  width: min(480px, 88vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  backdrop-filter: blur(28px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.45);
   overflow: hidden;
 }
-.sheet.small { width: min(380px, 88vw); }
-.sheet-head {
-  padding: 13px 16px; border-bottom: 1px solid var(--line);
-  font-size: 14px; font-weight: 620; letter-spacing: -.01em;
+.sheet.small {
+  width: min(380px, 88vw);
 }
-/* An ask can carry a command for the user to read before it runs, and a command that
-   silently lost its line breaks is one nobody checks. Monospace only for that body. */
-#ask-title { white-space: pre-line; }
+.sheet-head {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+}
+/* An ask can carry a command to read before it runs; its line breaks have to survive. */
+#ask-title {
+  white-space: pre-line;
+}
 #ask-title .cmd {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: 11.5px; font-weight: 450;
+  font-size: 11.5px;
+  font-weight: 450;
 }
 .sheet-body {
-  padding: 14px 16px; overflow-y: auto; scrollbar-width: thin;
-  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  padding: 14px 16px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
-.sheet.small .sheet-body { display: block; }
-/* An import is a list, and a real document brings a hundred of them - so this sheet
-   is wider than the rest and its rows are a grid rather than a flex run, or a long
-   name pushes the address off the end and wraps itself over four lines. */
-.sheet.imp { width: min(820px, 94vw); max-height: 86vh; }
-.sheet.imp .sheet-body { display: block; padding-top: 0; }
-.imp-top { padding: 0 16px 10px; display: flex; flex-direction: column; gap: 8px; }
-.imp-note { font-size: 12px; line-height: 1.5; color: var(--fg-dim); }
-.imp-note b { color: var(--fg); font-weight: 550; }
-/* Notes, not errors: they say what the document had that patchbay hasn't taken, and
-   painting them red made an ordinary import look like it had gone wrong. */
+.sheet.small .sheet-body {
+  display: block;
+}
+/* An import is a list of a hundred rows, so the sheet is wider and rows are a grid. */
+.sheet.imp {
+  width: min(820px, 94vw);
+  max-height: 86vh;
+}
+.sheet.imp .sheet-body {
+  display: block;
+  padding-top: 0;
+}
+.imp-top {
+  padding: 0 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.imp-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+.imp-note b {
+  color: var(--fg);
+  font-weight: 550;
+}
+/* Notes, not errors: what the document had that wasn't taken. Red made an ordinary import look wrong. */
 .imp-note .warn {
-  display: block; position: relative; margin-top: 4px; padding-left: 13px;
+  display: block;
+  position: relative;
+  margin-top: 4px;
+  padding-left: 13px;
   color: var(--fg-faint);
 }
 .imp-note .warn::before {
-  content: ""; position: absolute; left: 3px; top: .58em;
-  width: 3px; height: 3px; border-radius: 50%; background: currentColor;
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0.58em;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
 }
 .imp-find {
-  width: 100%; padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px;
-  background: var(--row); color: var(--fg); font: inherit; font-size: 12.5px; outline: none;
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--row);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
 }
-.imp-find:focus { border-color: var(--accent); }
+.imp-find:focus {
+  border-color: var(--accent);
+}
 
-.imp-list { display: flex; flex-direction: column; }
-/* The folder a device came out of, as a heading rather than a column repeated forty
-   times - a Royal TS document is a customer per folder, and this is how you find one. */
+.imp-list {
+  display: flex;
+  flex-direction: column;
+}
+/* The folder a device came from, as a heading rather than a column repeated forty times. */
 .imp-head {
-  display: flex; align-items: center; gap: 8px;
-  position: sticky; top: 0; z-index: 1;
-  margin-top: 10px; padding: 6px 7px;
-  background: var(--panel); backdrop-filter: blur(28px);
-  font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--fg-dim);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin-top: 10px;
+  padding: 6px 7px;
+  background: var(--panel);
+  backdrop-filter: blur(28px);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--fg-dim);
 }
-.imp-head:first-child { margin-top: 0; }
-.imp-head .n { color: var(--fg-faint); font-weight: 400; }
+.imp-head:first-child {
+  margin-top: 0;
+}
+.imp-head .n {
+  color: var(--fg-faint);
+  font-weight: 400;
+}
 .imp-head button {
-  margin-left: auto; flex: none; padding: 2px 8px; font-size: 11px;
-  background: none; color: var(--fg-faint); border-radius: 5px;
+  margin-left: auto;
+  flex: none;
+  padding: 2px 8px;
+  font-size: 11px;
+  background: none;
+  color: var(--fg-faint);
+  border-radius: 5px;
 }
-.imp-head button:hover { background: var(--row-hover); color: var(--fg); }
+.imp-head button:hover {
+  background: var(--row-hover);
+  color: var(--fg);
+}
 
 .imp-row {
-  display: grid; grid-template-columns: auto minmax(0, 1.1fr) minmax(0, 1.4fr) auto;
-  align-items: center; gap: 10px; padding: 5px 7px; border-radius: 6px; font-size: 12.5px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1.1fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 7px;
+  border-radius: 6px;
+  font-size: 12.5px;
 }
-.imp-row:hover { background: var(--row-hover); }
-.imp-row input { flex: none; accent-color: var(--accent); }
-.imp-row.gone, .imp-head.gone { display: none; }
-/* Every cell clips rather than wraps: one line per device is what makes a hundred of
-   them scannable, and the full value is in the tooltip. */
-.imp-name, .imp-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.imp-name { font-weight: 550; }
-.imp-host { color: var(--fg-dim); font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+.imp-row:hover {
+  background: var(--row-hover);
+}
+.imp-row input {
+  flex: none;
+  accent-color: var(--accent);
+}
+.imp-row.gone,
+.imp-head.gone {
+  display: none;
+}
+/* One line per device is what makes a hundred scannable; the full value is in the tooltip. */
+.imp-name,
+.imp-host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.imp-name {
+  font-weight: 550;
+}
+.imp-host {
+  color: var(--fg-dim);
+  font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
 .imp-tag {
-  flex: none; justify-self: end; min-width: 42px; text-align: right;
-  color: var(--fg-faint); font-size: 11px;
+  flex: none;
+  justify-self: end;
+  min-width: 42px;
+  text-align: right;
+  color: var(--fg-faint);
+  font-size: 11px;
 }
-.imp-row input:disabled ~ .imp-name { color: var(--fg-faint); font-weight: 400; }
-.sheet.small .f + .f { margin-top: 10px; }
-/* `pointer-events` here because the field wraps its input in a <label>, which makes
-   the whole box a hit target - so a click in the empty space beside "Team server"
-   put a caret in the field. The association is what a screen reader announces the
-   input by and it stays; only the label's dead space stops taking clicks, while the
-   words and the control keep theirs - the half of a label anybody aims at. */
-.f { display: flex; flex-direction: column; gap: 4px; min-width: 0; pointer-events: none; }
-.f > * { pointer-events: auto; }
-.f.wide { grid-column: 1 / -1; }
-.f > span { font-size: 11px; color: var(--fg-faint); font-weight: 550; width: fit-content; }
+.imp-row input:disabled ~ .imp-name {
+  color: var(--fg-faint);
+  font-weight: 400;
+}
+.sheet.small .f + .f {
+  margin-top: 10px;
+}
+/* The field wraps its input in a <label>, so only the words and the control take clicks,
+   not the dead space beside them. The association stays for screen readers. */
+.f {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  pointer-events: none;
+}
+.f > * {
+  pointer-events: auto;
+}
+.f.wide {
+  grid-column: 1 / -1;
+}
+.f > span {
+  font-size: 11px;
+  color: var(--fg-faint);
+  font-weight: 550;
+  width: fit-content;
+}
 /* Required, and only where saving actually refuses without it. */
-.f.req > span:first-child::after { content: "*"; color: var(--down); margin-left: 3px; }
-/* One box for both, or they drift: WebKit's native `menulist` select ignores the
-   padding below and sizes itself, which is why Space sat shorter than every field
-   around it. `appearance: none` is what makes a select take these metrics at all. */
-.f input, .f select {
-  width: 100%; padding: 7px 10px;
-  background: var(--row); color: var(--fg);
-  border: 1px solid transparent; border-radius: 7px;
-  font: inherit; outline: none;
-  -webkit-user-select: text; user-select: text;
+.f.req > span:first-child::after {
+  content: "*";
+  color: var(--down);
+  margin-left: 3px;
 }
-.f input:focus, .f select:focus { border-color: var(--accent); }
-.f input::placeholder { color: var(--fg-faint); }
-/* Which costs us the native chevron, so draw one. A mask rather than an image, so
-   the colour is still a token and light mode needs no second copy. */
-.f select { -webkit-appearance: none; appearance: none; padding-right: 28px; }
-.f:has(select) { position: relative; }
+/* One box for both: WebKit's native select ignores the padding and sizes itself.
+   appearance: none makes a select take these metrics at all. */
+.f input,
+.f select {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--row);
+  color: var(--fg);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font: inherit;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.f input:focus,
+.f select:focus {
+  border-color: var(--accent);
+}
+.f input::placeholder {
+  color: var(--fg-faint);
+}
+/* appearance: none loses the native chevron, so draw one as a mask; the colour stays a token. */
+.f select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 28px;
+}
+.f:has(select) {
+  position: relative;
+}
 .f:has(select)::after {
-  content: ""; position: absolute; right: 10px; pointer-events: none;
-  /* The control's own padding + border, so the box lands exactly on its text line
-     and the mask centres itself in it - nothing here to re-tune if that changes. */
-  bottom: 8px; width: 12px; height: 17px; height: 1lh;
+  content: "";
+  position: absolute;
+  right: 10px;
+  pointer-events: none;
+  /* The control's own padding and border, so the box lands on its text line. */
+  bottom: 8px;
+  width: 12px;
+  height: 17px;
+  height: 1lh;
   background: var(--fg-faint);
   -webkit-mask: var(--chevron) center / 12px no-repeat;
   mask: var(--chevron) center / 12px no-repeat;
 }
 .sheet-err {
-  margin: 0 16px 10px; padding: 7px 10px; border-radius: 7px;
+  margin: 0 16px 10px;
+  padding: 7px 10px;
+  border-radius: 7px;
   background: color-mix(in srgb, var(--down) 16%, transparent);
-  color: var(--down); font-size: 12px;
+  color: var(--down);
+  font-size: 12px;
 }
-/* A settings pane indents its own contents, so the sheet's inset would put the
-   message to the right of the fields it is about. */
-.pane .sheet-err { margin: 12px 0 0; }
+/* A settings pane indents its own contents, so the sheet's inset would misplace the message. */
+.pane .sheet-err {
+  margin: 12px 0 0;
+}
 .sheet-foot {
-  display: flex; align-items: center; gap: 7px;
-  padding: 11px 16px; border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 16px;
+  border-top: 1px solid var(--line);
 }
-.sheet-foot button { flex: none; padding: 7px 14px; }
-button.danger { background: transparent; color: var(--down); }
-button.danger:hover { background: color-mix(in srgb, var(--down) 18%, transparent); }
+.sheet-foot button {
+  flex: none;
+  padding: 7px 14px;
+}
+button.danger {
+  background: transparent;
+  color: var(--down);
+}
+button.danger:hover {
+  background: color-mix(in srgb, var(--down) 18%, transparent);
+}
 
-.empty { padding: 26px 14px; color: var(--fg-faint); text-align: center; font-size: 12.5px; }
-.empty code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--fg-dim); }
+.empty {
+  padding: 26px 14px;
+  color: var(--fg-faint);
+  text-align: center;
+  font-size: 12.5px;
+}
+.empty code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--fg-dim);
+}
 
 /* OS / appliance marks: brand paths are filled, Lucide fallbacks are stroked. */
-.jack .os, .d-os { display: flex; flex: none; color: var(--fg-faint); align-self: center; }
-.jack[aria-selected="true"] .os { color: rgba(255,255,255,.9); }
-.d-name { display: flex; align-items: center; gap: 8px; }
-.d-os .i { width: 15px; height: 15px; }
-.i.brand { stroke: none; }
+.jack .os,
+.d-os {
+  display: flex;
+  flex: none;
+  color: var(--fg-faint);
+  align-self: center;
+}
+.jack[aria-selected="true"] .os {
+  color: rgba(255, 255, 255, 0.9);
+}
+.d-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.d-os .i {
+  width: 15px;
+  height: 15px;
+}
+.i.brand {
+  stroke: none;
+}
 
-/* A device with a web UI gets a globe beside its tags. */
-/* No `margin-left: auto` here: `.folders` already has one, and two auto margins split
-   the free space between them, so the globe floated to a different spot on every row
-   depending on how many folder tags it was sharing with. It belongs with the address
-   it describes, not adrift in the gap. */
-/* How the device is reached, and - when it also has a web UI it isn't reached by -
-   the globe beside it. Faint on purpose: it is there to be found in a scan down the
-   column, not to compete with the name. */
-.jack .web, .jack .kind { display: flex; flex: none; align-self: center; color: var(--fg-faint); margin-left: 6px; }
-.jack[aria-selected="true"] .web, .jack[aria-selected="true"] .kind { color: rgba(255,255,255,.8); }
-.jack .web .i, .jack .kind .i { width: 12px; height: 12px; }
+/* How the device is reached, and the globe when it also has a web UI. Faint on purpose.
+   No margin-left: auto: .folders has one, and two auto margins split the space. */
+.jack .web,
+.jack .kind {
+  display: flex;
+  flex: none;
+  align-self: center;
+  color: var(--fg-faint);
+  margin-left: 6px;
+}
+.jack[aria-selected="true"] .web,
+.jack[aria-selected="true"] .kind {
+  color: rgba(255, 255, 255, 0.8);
+}
+.jack .web .i,
+.jack .kind .i {
+  width: 12px;
+  height: 12px;
+}
 
-.hint { grid-column: 1 / -1; margin: 8px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--fg-faint); }
+.hint {
+  grid-column: 1 / -1;
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--fg-faint);
+}
 
 /* Folder overview tallies in the detail pane. */
-.tallies { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12.5px; }
-.tallies span { display: flex; align-items: center; gap: 6px; }
-button.ghost.danger { color: var(--down); }
-button:disabled { opacity: .5; }
+.tallies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12.5px;
+}
+.tallies span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+button.ghost.danger {
+  color: var(--down);
+}
+button:disabled {
+  opacity: 0.5;
+}
 
 /* Settings + option rows. */
-#setwrap { position: fixed; inset: 0; z-index: 20;
-           display: flex; justify-content: center; align-items: center; padding: 5vh 16px; }
-/* The desktop keeps its aspect ratio and sits on black, the way every remote
-   desktop client letterboxes a session that doesn't match the window. */
-/* Nothing is drawn in here - the child webview is an OS view sitting exactly over it,
-   and this div exists only to be measured. The padding the terminal wants would put
-   the page off-centre from its own tab, so it goes. */
-.webhost { padding: 0; background: var(--bg); }
-/* Shown in place of a tab that can't show what it was opened for - a blank pane
-   explains nothing, and this is the only chance to say what went wrong. */
+#setwrap {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 5vh 16px;
+}
+/* Nothing is drawn here: the child webview is an OS view over it, and this div exists to be measured. */
+.webhost {
+  padding: 0;
+  background: var(--bg);
+}
+/* Shown in place of a tab that can't show what it was opened for. */
 .panefail {
-  max-width: 460px; margin: 0 auto; padding: 18vh 20px 0;
-  display: flex; flex-direction: column; gap: 10px;
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 18vh 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 /* ssh writes its errors in lines, so keep them. */
-.panefail .why { margin: 0; font-size: 13px; line-height: 1.5; color: var(--fg); white-space: pre-wrap; }
-.panefail .fix { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--fg-dim); }
-.panefail .btns { justify-content: flex-start; }
-/* sftp browser. Ordinary HTML in our own webview, so it inherits everything. */
-.filehost { padding: 0; overflow: hidden; }
-.files { display: flex; flex-direction: column; height: 100%; }
+.panefail .why {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg);
+  white-space: pre-wrap;
+}
+.panefail .fix {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+.panefail .btns {
+  justify-content: flex-start;
+}
+/* sftp browser: ordinary HTML in our own webview. */
+.filehost {
+  padding: 0;
+  overflow: hidden;
+}
+.files {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
 .fpath {
-  display: flex; align-items: center; gap: 8px; flex: none;
-  padding: 8px 10px; border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
 }
-.fpath .flat .i { transform: rotate(180deg); }
-.fpath .mono { background: none; padding: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.fnote { flex: none; color: var(--fg-dim); font-size: 11.5px; }
-.fnote.bad { color: var(--down); }
-.fhint { display: flex; align-items: center; gap: 5px; flex: none; color: var(--fg-faint); font-size: 11.5px; }
-.fhint .i { width: 12px; height: 12px; }
-.flist { flex: 1; overflow-y: auto; padding: 6px; scrollbar-width: thin; }
+.fpath .flat .i {
+  transform: rotate(180deg);
+}
+.fpath .mono {
+  background: none;
+  padding: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fnote {
+  flex: none;
+  color: var(--fg-dim);
+  font-size: 11.5px;
+}
+.fnote.bad {
+  color: var(--down);
+}
+.fhint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  color: var(--fg-faint);
+  font-size: 11.5px;
+}
+.fhint .i {
+  width: 12px;
+  height: 12px;
+}
+.flist {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+  scrollbar-width: thin;
+}
 .frow {
-  display: flex; align-items: center; gap: 8px;
-  padding: 5px 8px; border-radius: 6px; font-size: 12.5px; white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  white-space: nowrap;
 }
-.frow:hover { background: var(--row-hover); }
-.frow .i { color: var(--fg-faint); }
-.frow[data-dir="true"] .i { color: var(--accent); }
-.frow .fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.frow .fsize, .frow .fwhen {
-  flex: none; color: var(--fg-faint); font-size: 11.5px; font-variant-numeric: tabular-nums;
+.frow:hover {
+  background: var(--row-hover);
 }
-.frow .fsize { width: 70px; text-align: right; }
-.frow .fwhen { width: 96px; text-align: right; }
-.fempty { margin: 0; padding: 18px 14px; color: var(--fg-dim); font-size: 12.5px; line-height: 1.5; }
-.fempty b { color: var(--fg); font-weight: 550; }
-.flist .btns { padding: 0 14px; }
-.files .loading { padding: 18px 14px; color: var(--fg-dim); font-size: 12.5px; }
-/* Find in a session. Floats over the terminal in the corner a scrollbar isn't, the
-   way every editor's find box does - it is not a sheet, so the pane behind it stays
-   live and the shell keeps its size. */
+.frow .i {
+  color: var(--fg-faint);
+}
+.frow[data-dir="true"] .i {
+  color: var(--accent);
+}
+.frow .fname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.frow .fsize,
+.frow .fwhen {
+  flex: none;
+  color: var(--fg-faint);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.frow .fsize {
+  width: 70px;
+  text-align: right;
+}
+.frow .fwhen {
+  width: 96px;
+  text-align: right;
+}
+.fempty {
+  margin: 0;
+  padding: 18px 14px;
+  color: var(--fg-dim);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.fempty b {
+  color: var(--fg);
+  font-weight: 550;
+}
+.flist .btns {
+  padding: 0 14px;
+}
+.files .loading {
+  padding: 18px 14px;
+  color: var(--fg-dim);
+  font-size: 12.5px;
+}
+/* Find in a session floats over the terminal; not a sheet, so the pane stays live and keeps its size. */
 #find {
-  position: absolute; top: 12px; right: 18px; z-index: 5;
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 6px 5px 10px; border-radius: 10px;
-  background: var(--panel); backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
-  border: 1px solid var(--line); box-shadow: 0 10px 28px rgba(0,0,0,.34);
+  position: absolute;
+  top: 12px;
+  right: 18px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 10px;
+  border-radius: 10px;
+  background: var(--panel);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
 }
-#find[hidden] { display: none !important; }
-#find .fi { display: flex; color: var(--fg-faint); }
-#find .fi .i { width: 13px; height: 13px; }
+#find[hidden] {
+  display: none !important;
+}
+#find .fi {
+  display: flex;
+  color: var(--fg-faint);
+}
+#find .fi .i {
+  width: 13px;
+  height: 13px;
+}
 #find input {
-  width: 180px; padding: 0; border: 0; background: none;
-  color: var(--fg); font: inherit; font-size: 12.5px; outline: none;
+  width: 180px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
 }
-#find #find-n { flex: none; color: var(--fg-faint); font-size: 11.5px; }
-#find .flat .i { width: 14px; height: 14px; }
+#find #find-n {
+  flex: none;
+  color: var(--fg-faint);
+  font-size: 11.5px;
+}
+#find .flat .i {
+  width: 14px;
+  height: 14px;
+}
 
-.rdphost { display: grid; place-items: center; background: #000; overflow: hidden; }
-.rdphost canvas { max-width: 100%; max-height: 100%; outline: none; }
-.tabkind { display: inline-flex; opacity: .55; }
-.tabkind svg { width: 12px; height: 12px; }
+.rdphost {
+  display: grid;
+  place-items: center;
+  background: #000;
+  overflow: hidden;
+}
+.rdphost canvas {
+  max-width: 100%;
+  max-height: 100%;
+  outline: none;
+}
+.tabkind {
+  display: inline-flex;
+  opacity: 0.55;
+}
+.tabkind svg {
+  width: 12px;
+  height: 12px;
+}
 
 /* ── settings: a nav rail, not one long scroll ─────────────── */
-.sheet.set { width: min(860px, 94vw); max-height: 88vh; }
+.sheet.set {
+  width: min(860px, 94vw);
+  max-height: 88vh;
+}
 /* The scroll lives on the panes, so the rail stays put while a pane moves. */
-.sheet.set .sheet-body { display: flex; padding: 0; overflow: hidden; }
+.sheet.set .sheet-body {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
 .setnav {
-  width: 176px; flex: none; display: flex; flex-direction: column; gap: 2px;
-  padding: 12px 10px; border-right: 1px solid var(--line);
+  width: 176px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 10px;
+  border-right: 1px solid var(--line);
 }
 .setnav button {
-  flex: none; justify-content: flex-start; gap: 8px; padding: 7px 9px;
-  background: transparent; color: var(--fg-dim); font-weight: 500;
+  flex: none;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 7px 9px;
+  background: transparent;
+  color: var(--fg-dim);
+  font-weight: 500;
 }
-.setnav button:hover { background: var(--row); color: var(--fg); }
-.setnav button.on { background: var(--row); color: var(--fg); font-weight: 600; }
-.setnav .i { width: 14px; height: 14px; flex: none; }
-/* The pane it lands on is the one that needs answering, so say which. */
-.setnav button.warn { color: var(--down); }
-/* One height for every pane, so the sheet doesn't jump size as you move between a
-   short pane and a tall one - the rail would move under the cursor that just
-   clicked it. A pane taller than that (spaces, once you have a few) scrolls. */
-.setpanes { flex: 1; min-width: 0; height: 420px; padding: 16px 20px; overflow-y: auto; scrollbar-width: thin; }
-/* The pane's own heading is its title - nothing above it to be spaced away from. */
-.pane > .d-sec:first-child { margin-top: 0; }
+.setnav button:hover {
+  background: var(--row);
+  color: var(--fg);
+}
+.setnav button.on {
+  background: var(--row);
+  color: var(--fg);
+  font-weight: 600;
+}
+.setnav .i {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+/* The pane that needs answering says so. */
+.setnav button.warn {
+  color: var(--down);
+}
+/* One height for every pane, so the sheet doesn't jump size between panes. A taller pane scrolls. */
+.setpanes {
+  flex: 1;
+  min-width: 0;
+  height: 420px;
+  padding: 16px 20px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+/* The pane's own heading is its title. */
+.pane > .d-sec:first-child {
+  margin-top: 0;
+}
 /* The settings sheet is a single column, so a row of fields needs its own grid. */
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
-/* Where a list comes from. Two cards, so the whole thing is the target rather than a
-   word at the end of a sentence, and they read as one pair rather than two paragraphs.
-   The state lives on the card: idle, reading, then a tick - because a 200-device
-   document takes long enough that a button which does nothing visible reads as broken. */
-.sources { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 10px; }
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 8px;
+}
+/* Where a list comes from: two cards, with the state on the card because a 200-device
+   document takes long enough that a silent button reads as broken. */
+.sources {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
 .source {
-  position: relative; overflow: hidden;
-  /* One of the two is a <button>, and a button's UA rules set `justify-content: center`
-     - which centres the whole grid *track*, not the items inside it. That is why
-     `justify-items` and `text-align` both looked like they had no effect and one card
-     kept reading centred while its twin read left. */
-  -webkit-appearance: none; appearance: none;
-  display: grid; gap: 2px; padding: 13px 14px;
-  justify-content: start; justify-items: start; text-align: left;
-  border: 1px solid var(--line); border-radius: 10px; background: var(--row);
-  color: var(--fg); font: inherit;
-  transition: background .18s cubic-bezier(.2,.8,.3,1), border-color .18s cubic-bezier(.2,.8,.3,1);
+  position: relative;
+  overflow: hidden;
+  /* One of the two is a <button>, whose UA rules centre the grid track; hence justify-content too. */
+  -webkit-appearance: none;
+  appearance: none;
+  display: grid;
+  gap: 2px;
+  padding: 13px 14px;
+  justify-content: start;
+  justify-items: start;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--row);
+  color: var(--fg);
+  font: inherit;
+  transition:
+    background 0.18s cubic-bezier(0.2, 0.8, 0.3, 1),
+    border-color 0.18s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
-.source:hover { background: var(--row-hover); border-color: var(--fg-faint); }
-.source:active { filter: brightness(.96); }
-.source .si { display: flex; color: var(--fg-faint); margin-bottom: 7px; }
-.source .si .i { width: 15px; height: 15px; }
-.source:hover .si { color: var(--accent); }
-.source b { font-weight: 600; font-size: 13px; }
-.source > span:not(.si):not(.go) { font-size: 12px; color: var(--fg-dim); }
-/* The action reads as one, and it is where the state gets written. */
+.source:hover {
+  background: var(--row-hover);
+  border-color: var(--fg-faint);
+}
+.source:active {
+  filter: brightness(0.96);
+}
+.source .si {
+  display: flex;
+  color: var(--fg-faint);
+  margin-bottom: 7px;
+}
+.source .si .i {
+  width: 15px;
+  height: 15px;
+}
+.source:hover .si {
+  color: var(--accent);
+}
+.source b {
+  font-weight: 600;
+  font-size: 13px;
+}
+.source > span:not(.si):not(.go) {
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+/* The action line, where the state gets written. */
 .source .go {
-  display: flex; align-items: center; gap: 6px;
-  margin-top: 9px; font-size: 12px; font-weight: 600; color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
 }
-.source .go .i { width: 13px; height: 13px; }
-.source[data-state="busy"] { border-color: color-mix(in oklab, var(--accent) 45%, transparent); }
-.source[data-state="busy"] .go { color: var(--fg-dim); }
-.source[data-state="done"] .go { color: var(--up); }
-/* A line of light crossing the card while the file is read - the same idea as the
-   update pill's indeterminate bar, at the size this needs. */
+.source .go .i {
+  width: 13px;
+  height: 13px;
+}
+.source[data-state="busy"] {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+.source[data-state="busy"] .go {
+  color: var(--fg-dim);
+}
+.source[data-state="done"] .go {
+  color: var(--up);
+}
+/* A line of light crossing the card while the file is read. */
 .source[data-state="busy"]::after {
-  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  animation: source-scan 1.1s cubic-bezier(.4,0,.6,1) infinite;
+  animation: source-scan 1.1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
-@keyframes source-scan { from { transform: translateX(-100%) } to { transform: translateX(100%) } }
+@keyframes source-scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
 
-.opt { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; }
-.opt input { margin: 2px 0 0; flex: none; accent-color: var(--accent); }
-/* Block, not a flex column: the title and the line under it are the only two things
-   here, and as flex items every inline `code` or `b` in that line became a row of its
-   own. Ordinary flow is what a sentence with a word in it wants. */
-.opt span { display: block; font-size: 12.5px; line-height: 1.45; color: var(--fg-dim); }
-.opt b { display: block; margin-bottom: 2px; font-weight: 550; color: var(--fg); }
-.opt code, .page-note code {
+.opt {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 7px 0;
+}
+.opt input {
+  margin: 2px 0 0;
+  flex: none;
+  accent-color: var(--accent);
+}
+/* Block, not flex: as flex items every inline code or b became a row of its own. */
+.opt span {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--fg-dim);
+}
+.opt b {
+  display: block;
+  margin-bottom: 2px;
+  font-weight: 550;
+  color: var(--fg);
+}
+.opt code,
+.page-note code {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: 11.5px; color: var(--fg);
+  font-size: 11.5px;
+  color: var(--fg);
 }
-.page-note { margin: 2px 0 8px; font-size: 12px; line-height: 1.5; color: var(--fg-dim); }
-/* An answer that sits beside the button that asked for it - the update check's shape,
-   used again by the team pane. `#notices` is under every overlay, so a pill fired from
-   inside a sheet is behind that sheet's blur and reads as broken rather than as quiet. */
-.btns .page-note { margin: 0; align-self: center; }
+.page-note {
+  margin: 2px 0 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+/* An answer beside the button that asked. #notices is under every overlay, so a pill fired
+   from inside a sheet would sit behind its blur. */
+.btns .page-note {
+  margin: 0;
+  align-self: center;
+}
 
-/* One block per space in the settings sheet: what it is, where it syncs, what you
-   can do about it. */
+/* One block per space in the settings sheet. */
 .space-row {
-  padding: 10px 12px; margin-bottom: 8px;
-  border: 1px solid var(--line); border-radius: 9px; background: var(--row);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--row);
 }
 .space-row .space-name {
-  display: flex; align-items: center; gap: 7px;
-  font-size: 13px; font-weight: 550; color: var(--fg);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--fg);
 }
-.space-row .space-name .i { width: 14px; height: 14px; color: var(--fg-dim); }
-/* How much is in it, at the end of the name it belongs to. */
-.space-row .space-count { margin-left: auto; flex: none; color: var(--fg-faint); font-size: 11.5px; font-weight: 450; font-variant-numeric: tabular-nums; }
-/* An errand you run once, folded away until you are running it. The browser owns the
-   open/closed state, so there is no JS here and nothing to get out of step. */
-.drop { margin-top: 14px; }
-/* Outlined and only as wide as its label - filled and full width it was a third card
-   in the list above, and read as a space called "Join a team". Same reasoning as the
-   .chip: a filled pill is what the things in the list are wearing. */
-.drop > summary { display: flex; align-items: center; gap: 8px; width: fit-content;
-                  padding: 6px 12px; border-radius: 7px;
-                  background: transparent; box-shadow: inset 0 0 0 1px var(--line);
-                  color: var(--fg-dim); font-size: 12.5px; font-weight: 500;
-                  cursor: pointer; list-style: none; }
-.drop > summary::-webkit-details-marker { display: none; }
-.drop > summary:hover { background: var(--row-hover); color: var(--fg); }
-.drop[open] > summary { margin-bottom: 10px; }
+.space-row .space-name .i {
+  width: 14px;
+  height: 14px;
+  color: var(--fg-dim);
+}
+/* The count, at the end of the name it belongs to. */
+.space-row .space-count {
+  margin-left: auto;
+  flex: none;
+  color: var(--fg-faint);
+  font-size: 11.5px;
+  font-weight: 450;
+  font-variant-numeric: tabular-nums;
+}
+/* Folded away until needed. The browser owns the open state, so no JS. */
+.drop {
+  margin-top: 14px;
+}
+/* Outlined and only as wide as its label, so it doesn't read as a third card in the list above. */
+.drop > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 6px 12px;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--fg-dim);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+.drop > summary::-webkit-details-marker {
+  display: none;
+}
+.drop > summary:hover {
+  background: var(--row-hover);
+  color: var(--fg);
+}
+.drop[open] > summary {
+  margin-bottom: 10px;
+}
 /* The same chevron the selects draw, pointing the way it will move. */
 .drop > summary::after {
-  content: ""; width: 12px; height: 12px;
-  background: var(--fg-faint); transition: transform .12s ease; transform: rotate(-90deg);
+  content: "";
+  width: 12px;
+  height: 12px;
+  background: var(--fg-faint);
+  transition: transform 0.12s ease;
+  transform: rotate(-90deg);
   -webkit-mask: var(--chevron) center / 12px no-repeat;
   mask: var(--chevron) center / 12px no-repeat;
 }
-.drop[open] > summary::after { transform: none; }
-/* The check belongs to the version beside it, at the far end of its row. */
-.space-row .space-name button { margin-left: auto; flex: none; height: 25px; padding: 0 10px; font-size: 12px; }
-.space-row .space-note { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--fg-dim); }
-.space-row .mono { margin-top: 6px; }
-.space-row .btns { margin-top: 8px; }
-
-/* Tooltips. Native `title` is unreliable in a webview, and a ::after tooltip
-   cannot escape an overflow:hidden ancestor - inside a sheet it gets clipped.
-   So there is one element at body level, positioned in JS. */
-#tip {
-  position: fixed; z-index: 60; top: 0; left: 0;
-  padding: 4px 8px; border-radius: 6px;
-  background: var(--tip); color: var(--tip-fg);
-  font-size: 11.5px; font-weight: 450; line-height: 1.35;
-  max-width: 260px; white-space: nowrap;
-  box-shadow: 0 6px 20px rgba(0,0,0,.35);
-  pointer-events: none; opacity: 0;
-  transition: opacity .1s ease;
+.drop[open] > summary::after {
+  transform: none;
 }
-#tip.on { opacity: 1; }
+/* The check belongs to the version beside it, at the far end of its row. */
+.space-row .space-name button {
+  margin-left: auto;
+  flex: none;
+  height: 25px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.space-row .space-note {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+.space-row .mono {
+  margin-top: 6px;
+}
+.space-row .btns {
+  margin-top: 8px;
+}
+
+/* Tooltips: one element at body level, positioned in JS. Native title is unreliable in a webview,
+   and a ::after tooltip can't escape an overflow: hidden ancestor. */
+#tip {
+  position: fixed;
+  z-index: 60;
+  top: 0;
+  left: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--tip);
+  color: var(--tip-fg);
+  font-size: 11.5px;
+  font-weight: 450;
+  line-height: 1.35;
+  max-width: 260px;
+  white-space: nowrap;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+#tip.on {
+  opacity: 1;
+}
 
 /* Per-OS colour swatches in settings. */
-.swatches { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px 26px; }
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 2px 26px;
+}
 .sw {
-  display: flex; align-items: center; gap: 6px; position: relative;
-  padding: 3px 8px 3px 4px; border-radius: 20px;
-  background: var(--row); color: var(--fg-dim); font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  padding: 3px 8px 3px 4px;
+  border-radius: 20px;
+  background: var(--row);
+  color: var(--fg-dim);
+  font-size: 11.5px;
 }
-.sw input[type=color] {
-  width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%;
-  background: none; cursor: pointer; flex: none;
+.sw input[type="color"] {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  flex: none;
 }
-.sw input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
-.sw input[type=color]::-webkit-color-swatch { border: 1px solid var(--line); border-radius: 50%; }
-.sw .mark { display: flex; }
-.sw .mark .i { width: 12px; height: 12px; }
-.sw .reset { display: flex; opacity: .5; margin-left: 1px; }
-.sw .reset:hover { opacity: 1; }
-.sw .reset .i { width: 10px; height: 10px; }
+.sw input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.sw input[type="color"]::-webkit-color-swatch {
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+.sw .mark {
+  display: flex;
+}
+.sw .mark .i {
+  width: 12px;
+  height: 12px;
+}
+.sw .reset {
+  display: flex;
+  opacity: 0.5;
+  margin-left: 1px;
+}
+.sw .reset:hover {
+  opacity: 1;
+}
+.sw .reset .i {
+  width: 10px;
+  height: 10px;
+}
 
 /* First run: no config yet. */
-.firstrun { max-width: 380px; margin: 12vh auto 0; text-align: center; color: var(--fg-dim); }
-.fr-mark { display: flex; justify-content: center; color: var(--fg-faint); margin-bottom: 12px; }
-.fr-mark .i { width: 30px; height: 30px; }
-.firstrun h3 { margin: 0 0 6px; font-size: 15px; font-weight: 620; color: var(--fg); }
-.firstrun p { margin: 0 0 14px; font-size: 12.5px; line-height: 1.55; }
-.firstrun .mono { text-align: left; margin-bottom: 14px; }
-.firstrun .btns { justify-content: center; }
+.firstrun {
+  max-width: 380px;
+  margin: 12vh auto 0;
+  text-align: center;
+  color: var(--fg-dim);
+}
+.fr-mark {
+  display: flex;
+  justify-content: center;
+  color: var(--fg-faint);
+  margin-bottom: 12px;
+}
+.fr-mark .i {
+  width: 30px;
+  height: 30px;
+}
+.firstrun h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 620;
+  color: var(--fg);
+}
+.firstrun p {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.firstrun .mono {
+  text-align: left;
+  margin-bottom: 14px;
+}
+.firstrun .btns {
+  justify-content: center;
+}
 
-/* "How do you reach it?" - the form only shows the fields that answer follows. */
-/* The question on its own line and the options as one wrapping row beneath. Inline,
-   the label ate the width of one option and pushed the last one onto a second line by
-   itself, which read as a separate question. */
+/* "How do you reach it?": the form shows only the fields that answer needs. */
+/* The question on its own line and the options wrapping beneath it. */
 .how {
-  grid-column: 1 / -1; display: flex; flex-direction: column; align-items: stretch; gap: 7px;
-  padding-bottom: 10px; margin-bottom: 2px; border-bottom: 1px solid var(--line);
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+  padding-bottom: 10px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--line);
 }
-.how-q { font-size: 11px; color: var(--fg-faint); font-weight: 550; }
-.how-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.how-q {
+  font-size: 11px;
+  color: var(--fg-faint);
+  font-weight: 550;
+}
+.how-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .how-opt {
-  display: flex; align-items: center; gap: 6px; flex: 1 1 auto; justify-content: center;
-  padding: 5px 10px; border-radius: 20px;
-  background: var(--row); color: var(--fg-dim); font-size: 12px; white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  justify-content: center;
+  padding: 5px 10px;
+  border-radius: 20px;
+  background: var(--row);
+  color: var(--fg-dim);
+  font-size: 12px;
+  white-space: nowrap;
 }
-.how-opt:hover { background: var(--row-hover); }
-.how-opt input { accent-color: var(--accent); margin: 0; }
-.how-opt:has(input:checked) { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--fg); }
-.f[hidden] { display: none !important; }
+.how-opt:hover {
+  background: var(--row-hover);
+}
+.how-opt input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.how-opt:has(input:checked) {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--fg);
+}
+.f[hidden] {
+  display: none !important;
+}
 /* A confirmation has nothing to type, so the body goes with the field. */
-.sheet-body[hidden] { display: none; }
+.sheet-body[hidden] {
+  display: none;
+}
 
 /* A fixed scheme rather than something to mistype. */
-.withprefix { display: flex; align-items: stretch; }
+.withprefix {
+  display: flex;
+  align-items: stretch;
+}
 .withprefix .prefix {
-  flex: none; padding: 0 9px; border-radius: 7px 0 0 7px;
-  background: var(--row-hover); color: var(--fg-dim);
-  font: inherit; font-size: 12px;
+  flex: none;
+  padding: 0 9px;
+  border-radius: 7px 0 0 7px;
+  background: var(--row-hover);
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: 12px;
   border-right: 1px solid var(--line);
 }
-.withprefix .prefix:hover { color: var(--fg); }
-.withprefix input { border-radius: 0 7px 7px 0; }
-
-/* What you have actually entered, as paths. Nothing when the field is empty,
-   so it costs no room until it has something to say. */
-.crumbs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; margin: -2px 0 2px; }
-.crumbs:empty { display: none; }
-.crumb {
-  display: flex; align-items: center; gap: 1px;
-  padding: 2px 4px 2px 9px; border-radius: 20px;
-  background: var(--row); color: var(--fg-dim); font-size: 11.5px;
+.withprefix .prefix:hover {
+  color: var(--fg);
 }
-.crumb .sep { color: var(--fg-faint); margin: 0 2px; }
-.crumb .leafname { color: var(--fg); font-weight: 550; }
-.crumb .drop { display: flex; padding: 2px; border-radius: 50%; opacity: .5; }
-.crumb .drop:hover { opacity: 1; background: var(--row-hover); }
-.crumb .drop .i { width: 10px; height: 10px; }
+.withprefix input {
+  border-radius: 0 7px 7px 0;
+}
 
+/* What you have entered, as paths. Nothing when the field is empty. */
+.crumbs {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: -2px 0 2px;
+}
+.crumbs:empty {
+  display: none;
+}
+.crumb {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 4px 2px 9px;
+  border-radius: 20px;
+  background: var(--row);
+  color: var(--fg-dim);
+  font-size: 11.5px;
+}
+.crumb .sep {
+  color: var(--fg-faint);
+  margin: 0 2px;
+}
+.crumb .leafname {
+  color: var(--fg);
+  font-weight: 550;
+}
+.crumb .drop {
+  display: flex;
+  padding: 2px;
+  border-radius: 50%;
+  opacity: 0.5;
+}
+.crumb .drop:hover {
+  opacity: 1;
+  background: var(--row-hover);
+}
+.crumb .drop .i {
+  width: 10px;
+  height: 10px;
+}
 
 /* ── pills ─────────────────────────────────────────────────────────────────
-   News, not questions: a new version, and whatever just went wrong. They float at
-   the foot of the window instead of standing in front of it, and are deliberately
-   *not* in OVERLAYS() - listing them makes modalOpen() true and hands every chord
-   to a thing with one button. Like a tooltip they can land under a web tab, which
-   is an OS view above the page.
-   Under every overlay, palette included: a pill on top of a dimmed window is two
-   things asking at once. */
+   News, not questions. Deliberately not in OVERLAYS(): listing them makes modalOpen() true and
+   hands every chord to a thing with one button. Under every overlay, and can land under a web tab. */
 #notices {
-  position: fixed; z-index: 9; left: 50%; bottom: 20px; transform: translateX(-50%);
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  position: fixed;
+  z-index: 9;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 .pill {
   max-width: min(520px, calc(100vw - 40px));
-  padding: 6px 6px 6px 14px; border-radius: 999px;
-  background: var(--panel); backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
-  border: 1px solid var(--line); box-shadow: 0 14px 38px rgba(0,0,0,.42);
-  font-size: 12.5px; white-space: nowrap;
-  animation: up-in .3s backwards cubic-bezier(.2,.8,.3,1);
+  padding: 6px 6px 6px 14px;
+  border-radius: 999px;
+  background: var(--panel);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid var(--line);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
+  font-size: 12.5px;
+  white-space: nowrap;
+  animation: up-in 0.3s backwards cubic-bezier(0.2, 0.8, 0.3, 1);
 }
-/* Only while the window is still assembling itself: an offer that arrives from a
-   check *you* asked for should not sit invisible for 400ms first. */
-body.intro #uptoast { animation-delay: .4s; }
+/* Only while the window is assembling itself; an offer you asked for shouldn't wait 400ms. */
+body.intro #uptoast {
+  animation-delay: 0.4s;
+}
 /* What went wrong is not the same news as a new version. */
-#msg.bad #msg-text { color: var(--down); }
-/* A message is a sentence someone else's error wrote, so it wraps - and a 999px
-   radius around two lines of text bows in and clips them, the same reason the update
-   pill squares off when its notes are open. */
-#msg { border-radius: 16px; }
-#msg-text { white-space: normal; }
-.pill-row { display: flex; align-items: center; gap: 8px; }
-/* The text takes the slack so the buttons sit at the right edge. Collapsed, the pill
-   is only as wide as its contents and this changes nothing; open, the notes set the
-   width and without it the row's buttons bunch at the left of a wide pill.
-   Basis `auto`, not the `flex: 1` shorthand's 0%: the pill is sized by its content,
-   and a 0% basis offers it the *longest word* as the width to shrink to - which is
-   how a short message ended up spread over three lines. */
-#up-text, #msg-text { flex: 1 1 auto; }
-/* Open, it is no longer a pill: a 999px radius around a paragraph of text bows in
-   at the corners and clips the first and last line. */
-#uptoast.open { border-radius: 16px; padding-bottom: 10px; }
-/* The ssh-config leftover pill shares the update pill's shape - its "Show" body
-   grows the same way. #notices already stacks its children with a column gap, so no
-   positioning here. */
-#ssh-leftover.open { border-radius: 16px; padding-bottom: 10px; }
-#ssh-leftover .quiet { padding: 4px 6px; color: var(--fg-faint); border-radius: 6px; }
-#ssh-leftover .quiet:hover { color: var(--fg); background: var(--row-hover); }
-#ssh-leftover .primary { padding: 5px 12px; border-radius: 999px; font-size: 12px; }
-#sl-list {
-  margin: 8px 4px 0 0; padding-top: 8px; border-top: 1px solid var(--line);
-  color: var(--fg-dim); font-size: 12px; line-height: 1.5; white-space: normal;
+#msg.bad #msg-text {
+  color: var(--down);
 }
-#sl-list[hidden] { display: none !important; }
-#sl-list .sl-paths { margin: 0; padding-left: 16px; }
-#sl-list .sl-paths li + li { margin-top: 5px; }
+/* A message wraps, and a 999px radius around two lines clips them. */
+#msg {
+  border-radius: 16px;
+}
+#msg-text {
+  white-space: normal;
+}
+.pill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* The text takes the slack so the buttons sit at the right edge. Basis auto, not 0%: a 0% basis
+   offers the longest word as the width to shrink to. */
+#up-text,
+#msg-text {
+  flex: 1 1 auto;
+}
+/* Open, a 999px radius around a paragraph clips the first and last line. */
+#uptoast.open {
+  border-radius: 16px;
+  padding-bottom: 10px;
+}
+/* The ssh-config leftover pill shares the update pill's shape. */
+#ssh-leftover.open {
+  border-radius: 16px;
+  padding-bottom: 10px;
+}
+#ssh-leftover .quiet {
+  padding: 4px 6px;
+  color: var(--fg-faint);
+  border-radius: 6px;
+}
+#ssh-leftover .quiet:hover {
+  color: var(--fg);
+  background: var(--row-hover);
+}
+#ssh-leftover .primary {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+#sl-list {
+  margin: 8px 4px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--fg-dim);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+}
+#sl-list[hidden] {
+  display: none !important;
+}
+#sl-list .sl-paths {
+  margin: 0;
+  padding-left: 16px;
+}
+#sl-list .sl-paths li + li {
+  margin-top: 5px;
+}
 #sl-list code {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: 11px; background: var(--row); border-radius: 4px; padding: 1px 4px;
+  font-size: 11px;
+  background: var(--row);
+  border-radius: 4px;
+  padding: 1px 4px;
 }
 #up-notes {
-  margin: 8px 4px 0 0; padding-top: 8px; border-top: 1px solid var(--line);
-  max-height: 168px; overflow-y: auto; scrollbar-width: thin;
-  color: var(--fg-dim); font-size: 12px; line-height: 1.5;
-  white-space: normal;   /* the row is nowrap; a release note is a paragraph */
+  margin: 8px 4px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  max-height: 168px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  color: var(--fg-dim);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal; /* the row is nowrap; a release note is a paragraph */
 }
-#up-notes ul { margin: 0; padding-left: 16px; }
-#up-notes li + li { margin-top: 5px; }
+#up-notes ul {
+  margin: 0;
+  padding-left: 16px;
+}
+#up-notes li + li {
+  margin-top: 5px;
+}
 #up-notes code {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: 11px; background: var(--row); border-radius: 4px; padding: 1px 4px;
+  font-size: 11px;
+  background: var(--row);
+  border-radius: 4px;
+  padding: 1px 4px;
 }
 /* A third button in a row of two would read as a third choice, so it's a link. */
 #uptoast .quiet {
-  flex: none; background: none; padding: 5px 2px;
-  color: var(--fg-dim); font-weight: 500; text-decoration: underline;
-  text-underline-offset: 2px; text-decoration-color: var(--line);
+  flex: none;
+  background: none;
+  padding: 5px 2px;
+  color: var(--fg-dim);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--line);
 }
-#uptoast .quiet:hover { color: var(--fg); }
-/* Every pill's buttons, not just the update's: `button` defaults to `flex: 1`, so
-   the message pill's close button stretched across the slack and its 50% radius
-   drew an ellipse. */
-.pill button { flex: none; }
-#uptoast .primary { padding: 5px 12px; border-radius: 999px; font-size: 12px; }
-/* Downloading: the button becomes its own progress bar, filling from the left as
-   `--p` climbs. `background-size` rather than a child element, so the fill is
-   clipped by the pill's own radius and there is nothing extra in the DOM. */
+#uptoast .quiet:hover {
+  color: var(--fg);
+}
+/* button defaults to flex: 1, which stretched the close button into an ellipse. */
+.pill button {
+  flex: none;
+}
+#uptoast .primary {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+/* Downloading: the button is its own progress bar, filled through --p. background-size rather
+   than a child, so the fill is clipped by the pill's radius. */
 #uptoast.busy .primary {
   background: var(--row);
   background-image: linear-gradient(90deg, var(--accent), var(--accent-deep));
   background-repeat: no-repeat;
   background-size: var(--p, 0%) 100%;
-  transition: background-size .25s ease-out;
-  opacity: 1;   /* :disabled dims it, and a dimmed bar reads as a stalled one */
+  transition: background-size 0.25s ease-out;
+  opacity: 1; /* :disabled dims it, and a dimmed bar reads as a stalled one */
   animation: up-wait 1.6s ease-in-out infinite;
 }
 /* A one-off message takes itself away again. */
-.pill.leaving { animation: up-out .28s forwards cubic-bezier(.4,0,1,1); }
-@keyframes up-out { to { opacity: 0; transform: translateY(10px); } }
+.pill.leaving {
+  animation: up-out 0.28s forwards cubic-bezier(0.4, 0, 1, 1);
+}
+@keyframes up-out {
+  to {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
 /* The pulse is the indeterminate state, so the first real percent ends it. */
-#uptoast.busy.determinate .primary { animation: none; }
-@keyframes up-wait { 50% { filter: brightness(1.25); } }
+#uptoast.busy.determinate .primary {
+  animation: none;
+}
+@keyframes up-wait {
+  50% {
+    filter: brightness(1.25);
+  }
+}
 /* Sized rather than padded, so the circle is a circle whatever sits inside it. */
-.pill .x { width: 23px; height: 23px; padding: 0; border-radius: 50%; background: transparent; opacity: .5; }
-.pill .x:hover { opacity: 1; background: var(--row-hover); }
-.pill .x .i { width: 13px; height: 13px; }
+.pill .x {
+  width: 23px;
+  height: 23px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  opacity: 0.5;
+}
+.pill .x:hover {
+  opacity: 1;
+  background: var(--row-hover);
+}
+.pill .x .i {
+  width: 13px;
+  height: 13px;
+}
 /* Late enough to arrive after the window has finished assembling itself. */
-@keyframes up-in { from { opacity: 0; transform: translateY(12px); } }
+@keyframes up-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
 
 /* ── intro ─────────────────────────────────────────────────────────────────
-   No splash: the app assembles itself. Sidebar in from the left, tab bar down,
-   detail pane in from the right, then the list settles row by row. Driven by
-   `body.intro`, which reveal() adds when the first load() lands and removes when
-   it has played - see the comment there for why it can't simply stay on. */
-body.intro #side   { animation: intro-l .26s both cubic-bezier(.2,.8,.3,1); }
-body.intro .tabs   { animation: intro-d .26s .06s both cubic-bezier(.2,.8,.3,1); }
-body.intro #detail { animation: intro-r .26s .12s both cubic-bezier(.2,.8,.3,1); }
-body.intro .jack   { animation: intro-u .22s both cubic-bezier(.2,.8,.3,1); }
-body.intro .jack:nth-child(1)  { animation-delay: .14s; }
-body.intro .jack:nth-child(2)  { animation-delay: .16s; }
-body.intro .jack:nth-child(3)  { animation-delay: .18s; }
-body.intro .jack:nth-child(4)  { animation-delay: .20s; }
-body.intro .jack:nth-child(5)  { animation-delay: .22s; }
-body.intro .jack:nth-child(6)  { animation-delay: .24s; }
-body.intro .jack:nth-child(7)  { animation-delay: .26s; }
-body.intro .jack:nth-child(8)  { animation-delay: .28s; }
-body.intro .jack:nth-child(9)  { animation-delay: .30s; }
-body.intro .jack:nth-child(10) { animation-delay: .32s; }
-body.intro .jack:nth-child(11) { animation-delay: .34s; }
-body.intro .jack:nth-child(12) { animation-delay: .36s; }
-/* Everything past a screenful lands together - it's below the fold anyway, and a
-   long list shouldn't leave the last row still arriving a second in. */
-body.intro .jack:nth-child(n+13) { animation-delay: .38s; }
+   No splash: the app assembles itself. Driven by body.intro, which reveal() adds on the first
+   load() and removes once played. */
+body.intro #side {
+  animation: intro-l 0.26s both cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+body.intro .tabs {
+  animation: intro-d 0.26s 0.06s both cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+body.intro #detail {
+  animation: intro-r 0.26s 0.12s both cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+body.intro .jack {
+  animation: intro-u 0.22s both cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+body.intro .jack:nth-child(1) {
+  animation-delay: 0.14s;
+}
+body.intro .jack:nth-child(2) {
+  animation-delay: 0.16s;
+}
+body.intro .jack:nth-child(3) {
+  animation-delay: 0.18s;
+}
+body.intro .jack:nth-child(4) {
+  animation-delay: 0.2s;
+}
+body.intro .jack:nth-child(5) {
+  animation-delay: 0.22s;
+}
+body.intro .jack:nth-child(6) {
+  animation-delay: 0.24s;
+}
+body.intro .jack:nth-child(7) {
+  animation-delay: 0.26s;
+}
+body.intro .jack:nth-child(8) {
+  animation-delay: 0.28s;
+}
+body.intro .jack:nth-child(9) {
+  animation-delay: 0.3s;
+}
+body.intro .jack:nth-child(10) {
+  animation-delay: 0.32s;
+}
+body.intro .jack:nth-child(11) {
+  animation-delay: 0.34s;
+}
+body.intro .jack:nth-child(12) {
+  animation-delay: 0.36s;
+}
+/* Everything past a screenful lands together. */
+body.intro .jack:nth-child(n + 13) {
+  animation-delay: 0.38s;
+}
 
-@keyframes intro-l { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
-@keyframes intro-r { from { opacity: 0; transform: translateX(8px); }  to { opacity: 1; transform: none; } }
-@keyframes intro-d { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
-@keyframes intro-u { from { opacity: 0; transform: translateY(6px); }  to { opacity: 1; transform: none; } }
+@keyframes intro-l {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes intro-r {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes intro-d {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes intro-u {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  body.intro *, .pill, .pill * { animation: none; }
-  /* The colour fades stay - they are not motion. The box travelling is. */
-  .pal, .sheet { transition: opacity .13s ease; }
+  body.intro *,
+  .pill,
+  .pill * {
+    animation: none;
+  }
+  /* The colour fades stay; they are not motion. */
+  .pal,
+  .sheet {
+    transition: opacity 0.13s ease;
+  }
 }

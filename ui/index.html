@@ -1,333 +1,449 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<title>patchbay</title>
-<link rel="stylesheet" href="vendor/xterm.css">
-<link rel="stylesheet" href="app.css">
-<script src="theme.js"></script>
-</head>
-<body>
-  <div id="app" hidden>
-    <aside id="side">
-      <div class="drag" data-tauri-drag-region></div>
-      <nav id="tree"></nav>
-      <div class="side-foot">
-        <button class="flat" id="newgroup"></button>
-        <button class="flat" id="settings"></button>
-        <button class="flat" id="editcfg"></button>
-      </div>
-      <!-- The sidebar's right edge, as something you can grab. Sits over the drag
-           region at the top, so it has to opt out of it. -->
-      <div class="grip" id="sidegrip"></div>
-    </aside>
-
-    <section id="mid">
-      <div class="tabs" data-tauri-drag-region>
-        <div class="tabstrip" id="tabs"></div>
-        <!-- Takes whatever width the tab strip doesn't need. A drag region inside an
-             overflow-x:auto element is inert (WebKit won't arm it), so the strip stays
-             plain and this sibling - which never scrolls - carries the drag. -->
-        <div class="tabfill" data-tauri-drag-region></div>
-        <div class="tabactions">
-          <button class="chip" id="viewmode"></button>
-          <button class="chip" id="searchbtn"></button>
-          <button class="chip" id="newjack"></button>
+  <head>
+    <meta charset="utf-8" />
+    <title>patchbay</title>
+    <link rel="stylesheet" href="vendor/xterm.css" />
+    <link rel="stylesheet" href="app.css" />
+    <script src="theme.js"></script>
+  </head>
+  <body>
+    <div id="app" hidden>
+      <aside id="side">
+        <div class="drag" data-tauri-drag-region></div>
+        <nav id="tree"></nav>
+        <div class="side-foot">
+          <button class="flat" id="newgroup"></button>
+          <button class="flat" id="settings"></button>
+          <button class="flat" id="editcfg"></button>
         </div>
-      </div>
-      <div class="pane" id="browse">
-        <main id="list"></main>
-        <!-- Floats up when more than one device is marked. Every bulk action the
-             ⌘-right-click menu offers is here too, so the gesture is discoverable
-             without knowing the chord. Rendered by renderDock() in browse.js. -->
-        <div id="dock" hidden></div>
-      </div>
-      <div class="terms" id="terms" hidden>
-        <!-- Over the session, not a sheet: a terminal keeps the keyboard, and this is
-             one input. Deliberately not in OVERLAYS() for the same reason the update
-             pill isn't - modalOpen() would hand the window's chords to a find box, and
-             shrink the web tab away every time you looked for something in a shell. -->
-        <div id="find" hidden>
-          <span id="find-icon" class="fi"></span>
-          <input id="find-q" placeholder="Find in session" spellcheck="false" autocomplete="off">
-          <span id="find-n"></span>
-          <button type="button" id="find-prev" class="flat" data-tip="Previous"></button>
-          <button type="button" id="find-next" class="flat" data-tip="Next"></button>
-          <button type="button" id="find-x" class="flat" data-tip="Close"></button>
-        </div>
-      </div>
-    </section>
+        <!-- The sidebar's resize grip. Sits over the drag region, so it opts out of it. -->
+        <div class="grip" id="sidegrip"></div>
+      </aside>
 
-    <aside id="detail">
-      <div class="drag dbar" data-tauri-drag-region><div class="dactions" id="d-actions"></div></div>
-      <div class="d-body" id="d-body"></div>
-    </aside>
-  </div>
-
-  <!-- right-click menu; replaces the webview's own Reload/Inspect one -->
-  <div id="ctx" hidden></div>
-  <div id="tip"></div>
-
-  <div id="sheetwrap" hidden>
-    <form class="sheet" id="jackform" autocomplete="off">
-      <div class="sheet-head" id="sheet-title"></div>
-      <div class="sheet-body">
-        <div class="how">
-          <span class="how-q">How do you reach it?</span>
-          <div class="how-row">
-            <label class="how-opt"><input type="radio" name="reach" value="ssh" checked><span>Terminal</span></label>
-            <label class="how-opt"><input type="radio" name="reach" value="rdp"><span>Remote desktop</span></label>
-            <label class="how-opt"><input type="radio" name="reach" value="vnc"><span>VNC</span></label>
-            <label class="how-opt"><input type="radio" name="reach" value="web"><span>Web UI</span></label>
-            <label class="how-opt"><input type="radio" name="reach" value="sftp"><span>SFTP</span></label>
+      <section id="mid">
+        <div class="tabs" data-tauri-drag-region>
+          <div class="tabstrip" id="tabs"></div>
+          <!-- Carries the window drag: a drag region inside an overflow-x: auto element is inert in WebKit,
+             so the strip stays plain and this never-scrolling sibling takes it. -->
+          <div class="tabfill" data-tauri-drag-region></div>
+          <div class="tabactions">
+            <button class="chip" id="viewmode"></button>
+            <button class="chip" id="searchbtn"></button>
+            <button class="chip" id="newjack"></button>
           </div>
         </div>
-        <label class="f wide req"><span>Name</span><input name="name" spellcheck="false" placeholder="prod-web"></label>
-        <label class="f wide req"><span>Host</span><input name="host" spellcheck="false" placeholder="10.0.0.4"></label>
-        <label class="f" data-need="ssh sftp rdp vnc"><span>User</span><input name="user" spellcheck="false" placeholder="inherits [defaults]"></label>
-        <label class="f" data-need="ssh sftp"><span>SSH port</span><input name="port" inputmode="numeric" placeholder="22"></label>
-        <label class="f wide" data-need="ssh sftp"><span>Private key file</span><input name="key" spellcheck="false" list="sshkeys" placeholder="only if it isn't your default"></label>
-        <label class="f wide" data-need="ssh sftp"><span>Jump host</span><input name="jump" spellcheck="false" list="jacknames" placeholder="another device, or user@host"></label>
-        <label class="f wide" data-need="ssh"><span>Port forwards</span><input name="forward" spellcheck="false" placeholder="8080:localhost:80, -R 9000:localhost:9000, -D 1080"></label>
-        <label class="f req" data-need="rdp"><span>RDP port</span><input name="rdp" inputmode="numeric" placeholder="3389"></label>
-        <label class="f req" data-need="vnc"><span>VNC port</span><input name="vnc" inputmode="numeric" placeholder="5900"></label>
-        <label class="f wide" data-need="web"><span>URL</span>
-          <span class="withprefix">
-            <button type="button" class="prefix" id="url-scheme" data-tip="Switch to http://">https://</button>
-            <input name="url" spellcheck="false" placeholder="10.0.0.20:5001">
-          </span></label>
-        <label class="f wide"><span>OS / kind</span><input name="os" spellcheck="false" list="oschoices" placeholder="ubuntu, synology, proxmox…"></label>
-        <datalist id="oschoices"></datalist>
-        <label class="f wide"><span>Folders</span>
-          <input name="folders" spellcheck="false" list="folderlist" placeholder="prod/eu/web, customer-facing">
-          <datalist id="folderlist"></datalist></label>
-        <div class="crumbs" id="crumbs"></div>
-        <label class="f wide"><span>Description</span><input name="desc" placeholder="optional"></label>
-        <datalist id="jacknames"></datalist>
-        <datalist id="sshkeys"></datalist>
+        <div class="pane" id="browse">
+          <main id="list"></main>
+          <!-- The dock for bulk actions on marked rows, rendered by renderDock() in browse.js. Every action
+             the context menu offers is here too, so the gesture is discoverable. -->
+          <div id="dock" hidden></div>
+        </div>
+        <div class="terms" id="terms" hidden>
+          <!-- Find in a session. Over the terminal, not a sheet, and deliberately not in OVERLAYS():
+             modalOpen() would take the window's chords and shrink a web tab away. -->
+          <div id="find" hidden>
+            <span id="find-icon" class="fi"></span>
+            <input
+              id="find-q"
+              placeholder="Find in session"
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <span id="find-n"></span>
+            <button type="button" id="find-prev" class="flat" data-tip="Previous"></button>
+            <button type="button" id="find-next" class="flat" data-tip="Next"></button>
+            <button type="button" id="find-x" class="flat" data-tip="Close"></button>
+          </div>
+        </div>
+      </section>
+
+      <aside id="detail">
+        <div class="drag dbar" data-tauri-drag-region>
+          <div class="dactions" id="d-actions"></div>
+        </div>
+        <div class="d-body" id="d-body"></div>
+      </aside>
+    </div>
+
+    <!-- right-click menu; replaces the webview's own Reload/Inspect one -->
+    <div id="ctx" hidden></div>
+    <div id="tip"></div>
+
+    <div id="sheetwrap" hidden>
+      <form class="sheet" id="jackform" autocomplete="off">
+        <div class="sheet-head" id="sheet-title"></div>
+        <div class="sheet-body">
+          <div class="how">
+            <span class="how-q">How do you reach it?</span>
+            <div class="how-row">
+              <label class="how-opt"
+                ><input type="radio" name="reach" value="ssh" checked /><span>Terminal</span></label
+              >
+              <label class="how-opt"
+                ><input type="radio" name="reach" value="rdp" /><span>Remote desktop</span></label
+              >
+              <label class="how-opt"
+                ><input type="radio" name="reach" value="vnc" /><span>VNC</span></label
+              >
+              <label class="how-opt"
+                ><input type="radio" name="reach" value="web" /><span>Web UI</span></label
+              >
+              <label class="how-opt"
+                ><input type="radio" name="reach" value="sftp" /><span>SFTP</span></label
+              >
+            </div>
+          </div>
+          <label class="f wide req"
+            ><span>Name</span><input name="name" spellcheck="false" placeholder="prod-web"
+          /></label>
+          <label class="f wide req"
+            ><span>Host</span><input name="host" spellcheck="false" placeholder="10.0.0.4"
+          /></label>
+          <label class="f" data-need="ssh sftp rdp vnc"
+            ><span>User</span
+            ><input name="user" spellcheck="false" placeholder="inherits [defaults]"
+          /></label>
+          <label class="f" data-need="ssh sftp"
+            ><span>SSH port</span><input name="port" inputmode="numeric" placeholder="22"
+          /></label>
+          <label class="f wide" data-need="ssh sftp"
+            ><span>Private key file</span
+            ><input
+              name="key"
+              spellcheck="false"
+              list="sshkeys"
+              placeholder="only if it isn't your default"
+          /></label>
+          <label class="f wide" data-need="ssh sftp"
+            ><span>Jump host</span
+            ><input
+              name="jump"
+              spellcheck="false"
+              list="jacknames"
+              placeholder="another device, or user@host"
+          /></label>
+          <label class="f wide" data-need="ssh"
+            ><span>Port forwards</span
+            ><input
+              name="forward"
+              spellcheck="false"
+              placeholder="8080:localhost:80, -R 9000:localhost:9000, -D 1080"
+          /></label>
+          <label class="f req" data-need="rdp"
+            ><span>RDP port</span><input name="rdp" inputmode="numeric" placeholder="3389"
+          /></label>
+          <label class="f req" data-need="vnc"
+            ><span>VNC port</span><input name="vnc" inputmode="numeric" placeholder="5900"
+          /></label>
+          <label class="f wide" data-need="web"
+            ><span>URL</span>
+            <span class="withprefix">
+              <button type="button" class="prefix" id="url-scheme" data-tip="Switch to http://">
+                https://
+              </button>
+              <input name="url" spellcheck="false" placeholder="10.0.0.20:5001" /> </span
+          ></label>
+          <label class="f wide"
+            ><span>OS / kind</span
+            ><input
+              name="os"
+              spellcheck="false"
+              list="oschoices"
+              placeholder="ubuntu, synology, proxmox…"
+          /></label>
+          <datalist id="oschoices"></datalist>
+          <label class="f wide"
+            ><span>Folders</span>
+            <input
+              name="folders"
+              spellcheck="false"
+              list="folderlist"
+              placeholder="prod/eu/web, customer-facing" />
+            <datalist id="folderlist"></datalist
+          ></label>
+          <div class="crumbs" id="crumbs"></div>
+          <label class="f wide"
+            ><span>Description</span><input name="desc" placeholder="optional"
+          /></label>
+          <datalist id="jacknames"></datalist>
+          <datalist id="sshkeys"></datalist>
+        </div>
+        <p class="sheet-err" id="jf-err" hidden></p>
+        <div class="sheet-foot">
+          <button type="button" class="danger" id="jf-delete" hidden></button>
+          <span style="flex: 1"></span>
+          <button type="button" id="jf-cancel">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="setwrap" hidden>
+      <form class="sheet set" id="setform" autocomplete="off">
+        <div class="sheet-head">Settings</div>
+        <div class="sheet-body">
+          <nav class="setnav" id="setnav">
+            <button type="button" data-pane="devices" data-icon="server">Devices</button>
+            <button type="button" data-pane="defaults" data-icon="layers">Defaults</button>
+            <button type="button" data-pane="appearance" data-icon="monitor">Appearance</button>
+            <button type="button" data-pane="import" data-icon="download">Import</button>
+            <button type="button" data-pane="updates" data-icon="rotate-cw">Updates</button>
+            <button type="button" data-pane="config" data-icon="file-pen-line">Config file</button>
+          </nav>
+          <div class="setpanes">
+            <section class="pane" data-pane="devices">
+              <div class="d-sec">Devices</div>
+              <label class="opt"
+                ><input type="checkbox" name="probe" />
+                <span
+                  ><b>Check reachability</b> Opens a TCP connection to each device's first hop every
+                  30 seconds to drive the status dots. Nothing is sent; the socket is opened and
+                  dropped.</span
+                ></label
+              >
+              <label class="opt"
+                ><input type="checkbox" name="connect_in_terminal" />
+                <span
+                  ><b>Connect in the system terminal</b> Hands the ssh command to Terminal / Windows
+                  Terminal instead of opening a tab here.</span
+                ></label
+              >
+              <label class="opt"
+                ><input type="checkbox" name="write_ssh_config" />
+                <span
+                  ><b>Add these devices to your ssh config</b> So <code>ssh web-01</code> works in
+                  any terminal, jump chains and all, and so do scp and rsync. Writes its own file
+                  plus one <code>Include</code> line; hosts you defined yourself are left
+                  alone.</span
+                ></label
+              >
+              <label class="opt"
+                ><input type="checkbox" name="log_sessions" />
+                <span
+                  ><b>Log sessions to a file</b> Appends each session's terminal output to
+                  <code>logs/</code> beside the config, one file per session. Off by default: it's a
+                  record you may not want kept.</span
+                ></label
+              >
+            </section>
+
+            <section class="pane" data-pane="defaults" hidden>
+              <div class="d-sec">Inherited by every device</div>
+              <p class="page-note">
+                Left empty, nothing is inherited and each device stands on its own. Anything set
+                here applies to every device that doesn't override it - and your
+                <code>~/.ssh/config</code> still applies underneath either way.
+              </p>
+              <div class="grid2">
+                <label class="f"
+                  ><span>User</span><input name="def_user" spellcheck="false" placeholder="none"
+                /></label>
+                <label class="f"
+                  ><span>SSH port</span><input name="def_port" inputmode="numeric" placeholder="22"
+                /></label>
+                <label class="f"
+                  ><span>Private key file</span
+                  ><input name="def_key" spellcheck="false" list="sshkeys" placeholder="none"
+                /></label>
+                <label class="f"
+                  ><span>Jump host</span
+                  ><input name="def_jump" spellcheck="false" list="jacknames" placeholder="none"
+                /></label>
+              </div>
+            </section>
+
+            <section class="pane" data-pane="appearance" hidden>
+              <div class="d-sec">Appearance</div>
+              <div class="grid2">
+                <label class="f"
+                  ><span>Theme</span
+                  ><select name="theme">
+                    <option value="system">Follow the system</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                  </select></label
+                >
+                <label class="f"
+                  ><span>Terminal font size</span>
+                  <input name="font_size" inputmode="decimal" placeholder="12.5"
+                /></label>
+              </div>
+              <label class="opt"
+                ><input type="checkbox" name="os_colors" />
+                <span
+                  ><b>Colour device icons by OS</b> Each brand's own colour, adjusted to stay
+                  readable here. Override any below.</span
+                ></label
+              >
+              <div class="swatches" id="swatches"></div>
+            </section>
+
+            <section class="pane" data-pane="import" hidden>
+              <div class="d-sec">Import</div>
+              <div class="sources">
+                <!-- The file is read in the window and handed to Rust as text: no dialog plugin, no new
+                 capability. `.rtsz` is XML despite the z. -->
+                <label class="source">
+                  <input type="file" id="imp-royal" accept=".rtsz,.rts,.xml" hidden />
+                  <span class="si" data-icon="file-pen-line"></span>
+                  <b>Royal TS</b>
+                  <span>a <code>.rtsz</code> document</span>
+                  <span class="go" data-idle="Choose a file…">Choose a file…</span>
+                </label>
+                <button type="button" class="source" id="imp-ssh">
+                  <span class="si" data-icon="square-terminal"></span>
+                  <b>ssh config</b>
+                  <span><code>~/.ssh/config</code></span>
+                  <span class="go" data-idle="Read it">Read it</span>
+                </button>
+              </div>
+              <p class="page-note">You tick what comes across. Passwords never do.</p>
+              <p class="sheet-err" id="imp-perr" hidden></p>
+            </section>
+
+            <section class="pane" data-pane="updates" hidden>
+              <div class="d-sec">Updates</div>
+              <!-- Version first, because that is what the pane is opened to read. -->
+              <div class="space-row">
+                <div class="space-name">
+                  <span id="appversion">patchbay</span>
+                  <button type="button" class="ghost" id="page-checkupdate"></button>
+                </div>
+                <p class="space-note" id="update-said"></p>
+              </div>
+              <label class="opt"
+                ><input type="checkbox" name="check_updates" />
+                <span
+                  ><b>Check on launch</b> Untick it and the button above becomes the only
+                  check.</span
+                ></label
+              >
+              <p class="page-note">
+                patchbay's only outbound request. What comes back is verified against a key built
+                into this app, and nothing installs until you say so.
+              </p>
+            </section>
+
+            <section class="pane" data-pane="config" hidden>
+              <div class="d-sec">Config file</div>
+              <p class="page-note">
+                Everything here is stored in this file. It's plain TOML - edit it by hand whenever
+                you prefer; patchbay keeps your comments and formatting.
+              </p>
+              <div class="mono" id="cfgpath"></div>
+              <div class="btns">
+                <button type="button" class="ghost" id="page-openconfig"></button>
+              </div>
+            </section>
+          </div>
+        </div>
+        <p class="sheet-err" id="set-err" hidden></p>
+        <div class="sheet-foot">
+          <span style="flex: 1"></span>
+          <button type="button" id="set-cancel">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="askwrap" hidden>
+      <form class="sheet small" id="askform" autocomplete="off">
+        <div class="sheet-head" id="ask-title"></div>
+        <div class="sheet-body">
+          <label class="f wide" id="ask-user-field" hidden
+            ><span>Username</span><input id="ask-user" spellcheck="false"
+          /></label>
+          <label class="f wide"
+            ><span id="ask-label" hidden></span><input name="v" id="ask-input" spellcheck="false"
+          /></label>
+        </div>
+        <p class="sheet-err" id="ask-err" hidden></p>
+        <div class="sheet-foot">
+          <span style="flex: 1"></span>
+          <button type="button" id="ask-cancel">Cancel</button>
+          <button type="submit" class="primary" id="ask-ok">OK</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="importwrap" hidden>
+      <form class="sheet imp" id="importform" autocomplete="off">
+        <div class="sheet-head" id="imp-title">Import</div>
+        <div class="imp-top">
+          <p class="imp-note" id="imp-note"></p>
+          <input
+            id="imp-find"
+            class="imp-find"
+            spellcheck="false"
+            placeholder="Filter by name, address or folder"
+          />
+        </div>
+        <div class="sheet-body">
+          <div class="imp-list" id="imp-list"></div>
+        </div>
+        <p class="sheet-err" id="imp-err" hidden></p>
+        <div class="sheet-foot">
+          <button type="button" class="flat" id="imp-all">Select all</button>
+          <span style="flex: 1"></span>
+          <button type="button" id="imp-cancel">Cancel</button>
+          <button type="submit" class="primary" id="imp-ok">Import</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="palette" hidden>
+      <div class="pal">
+        <div class="search pal-search">
+          <span id="pq-icon"></span
+          ><input id="pq" placeholder="Connect to…" spellcheck="false" autocomplete="off" />
+        </div>
+        <div id="presults"></div>
       </div>
-      <p class="sheet-err" id="jf-err" hidden></p>
-      <div class="sheet-foot">
-        <button type="button" class="danger" id="jf-delete" hidden></button>
-        <span style="flex:1"></span>
-        <button type="button" id="jf-cancel">Cancel</button>
-        <button type="submit" class="primary">Save</button>
-      </div>
-    </form>
-  </div>
+    </div>
 
-  <div id="setwrap" hidden>
-    <form class="sheet set" id="setform" autocomplete="off">
-      <div class="sheet-head">Settings</div>
-      <div class="sheet-body">
-        <nav class="setnav" id="setnav">
-          <button type="button" data-pane="devices" data-icon="server">Devices</button>
-          <button type="button" data-pane="defaults" data-icon="layers">Defaults</button>
-          <button type="button" data-pane="appearance" data-icon="monitor">Appearance</button>
-          <button type="button" data-pane="import" data-icon="download">Import</button>
-          <button type="button" data-pane="updates" data-icon="rotate-cw">Updates</button>
-          <button type="button" data-pane="config" data-icon="file-pen-line">Config file</button>
-        </nav>
-        <div class="setpanes">
-        <section class="pane" data-pane="devices">
-          <div class="d-sec">Devices</div>
-          <label class="opt"><input type="checkbox" name="probe">
-            <span><b>Check reachability</b>
-            Opens a TCP connection to each device's first hop every 30 seconds to drive the status dots.
-            Nothing is sent; the socket is opened and dropped.</span></label>
-          <label class="opt"><input type="checkbox" name="connect_in_terminal">
-            <span><b>Connect in the system terminal</b>
-            Hands the ssh command to Terminal / Windows Terminal instead of opening a tab here.</span></label>
-          <label class="opt"><input type="checkbox" name="write_ssh_config">
-            <span><b>Add these devices to your ssh config</b>
-            So <code>ssh web-01</code> works in any terminal, jump chains and all, and so do
-            scp and rsync. Writes its own file plus one <code>Include</code> line; hosts you
-            defined yourself are left alone.</span></label>
-          <label class="opt"><input type="checkbox" name="log_sessions">
-            <span><b>Log sessions to a file</b>
-            Appends each session's terminal output to <code>logs/</code> beside the config,
-            one file per session. Off by default: it's a record you may not want kept.</span></label>
-        </section>
-
-        <section class="pane" data-pane="defaults" hidden>
-          <div class="d-sec">Inherited by every device</div>
-          <p class="page-note">Left empty, nothing is inherited and each device stands on its own.
-          Anything set here applies to every device that doesn't override it - and your
-          <code>~/.ssh/config</code> still applies underneath either way.</p>
-          <div class="grid2">
-            <label class="f"><span>User</span><input name="def_user" spellcheck="false" placeholder="none"></label>
-            <label class="f"><span>SSH port</span><input name="def_port" inputmode="numeric" placeholder="22"></label>
-            <label class="f"><span>Private key file</span><input name="def_key" spellcheck="false" list="sshkeys" placeholder="none"></label>
-            <label class="f"><span>Jump host</span><input name="def_jump" spellcheck="false" list="jacknames" placeholder="none"></label>
-          </div>
-        </section>
-
-        <section class="pane" data-pane="appearance" hidden>
-          <div class="d-sec">Appearance</div>
-          <div class="grid2">
-            <label class="f"><span>Theme</span><select name="theme">
-              <option value="system">Follow the system</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select></label>
-            <label class="f"><span>Terminal font size</span>
-              <input name="font_size" inputmode="decimal" placeholder="12.5"></label>
-          </div>
-          <label class="opt"><input type="checkbox" name="os_colors">
-            <span><b>Colour device icons by OS</b>
-            Each brand's own colour, adjusted to stay readable here. Override any below.</span></label>
-          <div class="swatches" id="swatches"></div>
-        </section>
-
-        <section class="pane" data-pane="import" hidden>
-          <div class="d-sec">Import</div>
-          <div class="sources">
-            <!-- The file is read in the window and handed to Rust as text: no dialog
-                 plugin, no new capability, and the app only ever sees a document
-                 somebody chose. `.rtsz` is XML despite the z. -->
-            <label class="source">
-              <input type="file" id="imp-royal" accept=".rtsz,.rts,.xml" hidden>
-              <span class="si" data-icon="file-pen-line"></span>
-              <b>Royal TS</b>
-              <span>a <code>.rtsz</code> document</span>
-              <span class="go" data-idle="Choose a file…">Choose a file…</span>
-            </label>
-            <button type="button" class="source" id="imp-ssh">
-              <span class="si" data-icon="square-terminal"></span>
-              <b>ssh config</b>
-              <span><code>~/.ssh/config</code></span>
-              <span class="go" data-idle="Read it">Read it</span>
-            </button>
-          </div>
-          <p class="page-note">You tick what comes across. Passwords never do.</p>
-          <p class="sheet-err" id="imp-perr" hidden></p>
-        </section>
-
-        <section class="pane" data-pane="updates" hidden>
-          <div class="d-sec">Updates</div>
-          <!-- What you have, what you can do about it, and what came of it last time -
-               in that order, because the version is what the pane is opened to read. -->
-          <div class="space-row">
-            <div class="space-name"><span id="appversion">patchbay</span>
-              <button type="button" class="ghost" id="page-checkupdate"></button></div>
-            <p class="space-note" id="update-said"></p>
-          </div>
-          <label class="opt"><input type="checkbox" name="check_updates">
-            <span><b>Check on launch</b>
-            Untick it and the button above becomes the only check.</span></label>
-          <p class="page-note">patchbay's only outbound request. What comes back is verified
-          against a key built into this app, and nothing installs until you say so.</p>
-        </section>
-
-        <section class="pane" data-pane="config" hidden>
-          <div class="d-sec">Config file</div>
-          <p class="page-note">Everything here is stored in this file. It's plain TOML - edit it by hand
-          whenever you prefer; patchbay keeps your comments and formatting.</p>
-          <div class="mono" id="cfgpath"></div>
-          <div class="btns"><button type="button" class="ghost" id="page-openconfig"></button></div>
-        </section>
+    <!-- News, not questions: they float over the list, take no keyboard, and are not in OVERLAYS().
+       Two pills, so an error arriving mid-download doesn't take the update's button off screen. -->
+    <div id="notices">
+      <div id="msg" class="pill" role="alert" hidden>
+        <div class="pill-row">
+          <span id="msg-text"></span>
+          <button type="button" id="msg-close" class="x" aria-label="Dismiss"></button>
         </div>
       </div>
-      <p class="sheet-err" id="set-err" hidden></p>
-      <div class="sheet-foot">
-        <span style="flex:1"></span>
-        <button type="button" id="set-cancel">Cancel</button>
-        <button type="submit" class="primary">Save</button>
+      <!-- Shown once per launch when a previous install left `~/.ssh/patchbay.conf` or the Include line. -->
+      <div id="ssh-leftover" class="pill" role="status" hidden>
+        <div class="pill-row">
+          <span id="sl-text"></span>
+          <button type="button" id="sl-more" class="quiet">Show</button>
+          <button id="sl-clean" class="primary">Remove</button>
+          <button id="sl-close" class="x" aria-label="Dismiss"></button>
+        </div>
+        <div id="sl-list" hidden></div>
       </div>
-    </form>
-  </div>
-
-
-  <div id="askwrap" hidden>
-    <form class="sheet small" id="askform" autocomplete="off">
-      <div class="sheet-head" id="ask-title"></div>
-      <div class="sheet-body">
-        <label class="f wide" id="ask-user-field" hidden><span>Username</span><input id="ask-user" spellcheck="false"></label>
-        <label class="f wide"><span id="ask-label" hidden></span><input name="v" id="ask-input" spellcheck="false"></label>
+      <div id="uptoast" class="pill" role="status" hidden>
+        <div class="pill-row">
+          <span id="up-text"></span>
+          <button type="button" id="up-more" class="quiet" hidden>What's new</button>
+          <button id="up-install" class="primary">Install</button>
+          <button id="up-close" class="x" aria-label="Dismiss"></button>
+        </div>
+        <div id="up-notes" hidden></div>
       </div>
-      <p class="sheet-err" id="ask-err" hidden></p>
-      <div class="sheet-foot">
-        <span style="flex:1"></span>
-        <button type="button" id="ask-cancel">Cancel</button>
-        <button type="submit" class="primary" id="ask-ok">OK</button>
-      </div>
-    </form>
-  </div>
-
-  <div id="importwrap" hidden>
-    <form class="sheet imp" id="importform" autocomplete="off">
-      <div class="sheet-head" id="imp-title">Import</div>
-      <div class="imp-top">
-        <p class="imp-note" id="imp-note"></p>
-        <input id="imp-find" class="imp-find" spellcheck="false" placeholder="Filter by name, address or folder">
-      </div>
-      <div class="sheet-body">
-        <div class="imp-list" id="imp-list"></div>
-      </div>
-      <p class="sheet-err" id="imp-err" hidden></p>
-      <div class="sheet-foot">
-        <button type="button" class="flat" id="imp-all">Select all</button>
-        <span style="flex:1"></span>
-        <button type="button" id="imp-cancel">Cancel</button>
-        <button type="submit" class="primary" id="imp-ok">Import</button>
-      </div>
-    </form>
-  </div>
-
-  <div id="palette" hidden>
-    <div class="pal">
-      <div class="search pal-search"><span id="pq-icon"></span><input id="pq" placeholder="Connect to…" spellcheck="false" autocomplete="off"></div>
-      <div id="presults"></div>
     </div>
-  </div>
 
-  <!-- News, not questions: these float over the list, take no keyboard, and are
-       deliberately not among the OVERLAYS. Two pills rather than one element doing
-       both jobs - an error arriving mid-download must not take the update's own
-       button off the screen. -->
-  <div id="notices">
-  <div id="msg" class="pill" role="alert" hidden>
-    <div class="pill-row">
-      <span id="msg-text"></span>
-      <button type="button" id="msg-close" class="x" aria-label="Dismiss"></button>
-    </div>
-  </div>
-  <!-- Shown once per launch when a previous install left `~/.ssh/patchbay.conf` and/or
-       the Include line behind. Dismissed for the session by the X, cleaned out by
-       "Remove". Same pill family as #uptoast so the two never fight for the bottom. -->
-  <div id="ssh-leftover" class="pill" role="status" hidden>
-    <div class="pill-row">
-      <span id="sl-text"></span>
-      <button type="button" id="sl-more" class="quiet">Show</button>
-      <button id="sl-clean" class="primary">Remove</button>
-      <button id="sl-close" class="x" aria-label="Dismiss"></button>
-    </div>
-    <div id="sl-list" hidden></div>
-  </div>
-  <div id="uptoast" class="pill" role="status" hidden>
-    <div class="pill-row">
-      <span id="up-text"></span>
-      <button type="button" id="up-more" class="quiet" hidden>What's new</button>
-      <button id="up-install" class="primary">Install</button>
-      <button id="up-close" class="x" aria-label="Dismiss"></button>
-    </div>
-    <div id="up-notes" hidden></div>
-  </div>
-  </div>
-
-<!-- Classic scripts sharing one global scope, so load order is load-bearing:
-     third-party, then generated data, then core helpers, then features,
-     then boot last (it runs, everything above only declares). -->
-<script src="vendor/xterm.js"></script>
-<script src="vendor/addon-fit.js"></script>
-<script src="vendor/addon-web-links.js"></script>
-<script src="vendor/addon-search.js"></script>
-<script src="gen/icons.js"></script>
-<script src="gen/brands.js"></script>
-<script src="core.js"></script>
-<script src="browse.js"></script>
-<script src="sessions.js"></script>
-<script src="edit.js"></script>
-<script src="boot.js"></script>
-</body>
+    <!-- Classic scripts sharing one global scope, so load order matters: third-party, generated data,
+     core helpers, features, then boot last (it runs, everything above only declares). -->
+    <script src="vendor/xterm.js"></script>
+    <script src="vendor/addon-fit.js"></script>
+    <script src="vendor/addon-web-links.js"></script>
+    <script src="vendor/addon-search.js"></script>
+    <script src="gen/icons.js"></script>
+    <script src="gen/brands.js"></script>
+    <script src="core.js"></script>
+    <script src="browse.js"></script>
+    <script src="sessions.js"></script>
+    <script src="edit.js"></script>
+    <script src="boot.js"></script>
+  </body>
 </html>

@@ -6,20 +6,37 @@ import * as si from "simple-icons";
 
 // key in the config  ->  simple-icons slug
 const BRANDS = {
-  ubuntu: "Ubuntu", debian: "Debian", linux: "Linux", alpine: "Alpinelinux",
-  arch: "Archlinux", fedora: "Fedora", redhat: "Redhat", centos: "Centos",
-  freebsd: "Freebsd", macos: "Apple", raspberrypi: "Raspberrypi",
-  synology: "Synology", qnap: "Qnap", unraid: "Unraid", truenas: "Truenas",
-  proxmox: "Proxmox", docker: "Docker", kubernetes: "Kubernetes",
-  openwrt: "Openwrt", pfsense: "Pfsense", opnsense: "Opnsense",
-  mikrotik: "Mikrotik", ubiquiti: "Ubiquiti", netgear: "Netgear",
-  homeassistant: "Homeassistant", nextcloud: "Nextcloud",
-  postgres: "Postgresql", gitlab: "Gitlab",
+  ubuntu: "Ubuntu",
+  debian: "Debian",
+  linux: "Linux",
+  alpine: "Alpinelinux",
+  arch: "Archlinux",
+  fedora: "Fedora",
+  redhat: "Redhat",
+  centos: "Centos",
+  freebsd: "Freebsd",
+  macos: "Apple",
+  raspberrypi: "Raspberrypi",
+  synology: "Synology",
+  qnap: "Qnap",
+  unraid: "Unraid",
+  truenas: "Truenas",
+  proxmox: "Proxmox",
+  docker: "Docker",
+  kubernetes: "Kubernetes",
+  openwrt: "Openwrt",
+  pfsense: "Pfsense",
+  opnsense: "Opnsense",
+  mikrotik: "Mikrotik",
+  ubiquiti: "Ubiquiti",
+  netgear: "Netgear",
+  homeassistant: "Homeassistant",
+  nextcloud: "Nextcloud",
+  postgres: "Postgresql",
+  gitlab: "Gitlab",
 };
 
-// Marks simple-icons won't ship. Microsoft asked for its logos to be removed over
-// trademark, so the four-pane flag is drawn here instead - nominative use, the same
-// way every connection manager labels a Windows box.
+// simple-icons dropped Microsoft's logos over trademark, so the Windows flag is drawn here.
 const CUSTOM = {
   windows:
     "M0 3.449 9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699" +
@@ -38,20 +55,24 @@ const FALLBACKS = {
   server: "server",
 };
 
-// simple-icons carries each brand's official colour, so "Synology is blue" needs
-// no configuration - it is just the mark's own hex. Overridable in [colors].
+// simple-icons carries each brand's official colour; [colors] can override it.
 const CUSTOM_COLORS = { windows: "#0078D4" };
 const CUSTOM_LABELS = { windows: "Windows", macos: "macOS" };
 // Generic kinds aren't brands, so their casing is ours to pick.
 const FALLBACK_LABELS = {
-  router: "Router", switch: "Switch", nas: "NAS", vm: "VM",
-  container: "Container", printer: "Printer", camera: "Camera", server: "Server",
+  router: "Router",
+  switch: "Switch",
+  nas: "NAS",
+  vm: "VM",
+  container: "Container",
+  printer: "Printer",
+  camera: "Camera",
+  server: "Server",
 };
 
 const brands = { ...CUSTOM };
 const colors = { ...CUSTOM_COLORS };
-// simple-icons knows how each brand writes its own name - "OPNsense", "TrueNAS",
-// "Raspberry Pi" - so the suggestions read properly instead of being flattened.
+// simple-icons knows how each brand writes its own name, so the suggestions read properly.
 const labels = { ...CUSTOM_LABELS };
 for (const [key, slug] of Object.entries(BRANDS)) {
   const entry = si[`si${slug}`];
@@ -76,4 +97,6 @@ writeFileSync(
         .sort((a, b) => a.localeCompare(b)),
     )};\n`,
 );
-console.log(`wrote ui/gen/brands.js (${Object.keys(brands).length} marks, ${Object.keys(FALLBACKS).length} fallbacks)`);
+console.log(
+  `wrote ui/gen/brands.js (${Object.keys(brands).length} marks, ${Object.keys(FALLBACKS).length} fallbacks)`,
+);

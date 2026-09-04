@@ -1,19 +1,24 @@
-// Classic script, no bundler - see the load order in ui/index.html.
 // The device browser: folder tree, list, detail pane, command palette.
+// Classic script sharing one global scope; see the load order in ui/index.html.
 
 // ── sidebar tree ───────────────────────────────────────────────────────────
-// A tag of "prod/eu/web" nests three deep; a jack counts toward every ancestor,
-// and toward more than one branch if it carries more than one tag.
+// "prod/eu/web" nests three deep; a jack counts toward every ancestor and every
+// branch it is filed in.
 function buildTree(jacks) {
   const root = new Map();
   const placed = jacks.flatMap((j) => j.folders.map((f) => [j, f]));
   for (const p of pending.values()) placed.push([null, p.path]);
   for (const [j, folder] of placed) {
     {
-      let level = root, path = "";
-      for (const part of folder.split("/").map((p) => p.trim()).filter(Boolean)) {
+      let level = root,
+        path = "";
+      for (const part of folder
+        .split("/")
+        .map((p) => p.trim())
+        .filter(Boolean)) {
         path = path ? `${path}/${part}` : part;
-        if (!level.has(part)) level.set(part, { name: part, path, members: new Set(), children: new Map() });
+        if (!level.has(part))
+          level.set(part, { name: part, path, members: new Set(), children: new Map() });
         const node = level.get(part);
         if (j) node.members.add(j.name);
         level = node.children;
@@ -23,9 +28,6 @@ function buildTree(jacks) {
   return root;
 }
 
-// Nested folders sort ahead of flat ones so a hierarchy doesn't get buried among
-// alphabetically-interleaved single names. They are the same kind of thing either
-// way - a folder is just a string a device carries.
 function renderTree() {
   const live = new Set([...sessions.values()].filter((s) => !s.dead).map((s) => s.name));
   const names = (js) => new Set(js.map((j) => j.name));
@@ -40,8 +42,7 @@ function renderTree() {
     }
   };
 
-  // Nesting sorts ahead of flat, so a hierarchy isn't buried among alphabetically
-  // interleaved single names. They are the same kind of thing either way.
+  // Nested folders sort ahead of flat ones so a hierarchy isn't buried among them.
   const tree = buildTree(all);
   const roots = [...tree.values()].sort(
     (a, b) => (b.children.size > 0) - (a.children.size > 0) || a.name.localeCompare(b.name),
@@ -59,8 +60,7 @@ function row(node, depth, glyph, live, id) {
   const kids = node.children.size > 0;
   const open = expanded.has(gkey(id));
   const g = glyph ?? (kids && open ? "folder-open" : "folder");
-  // The dot is always in the layout so it can carry the auto margin; it is only
-  // painted when something under this node has a session open.
+  // The dot is always in the layout for its auto margin; painted only with a live session.
   const on = live && [...node.members].some((n) => live.has(n));
   return `<div class="group" data-path="${esc(id?.path ?? "")}"
        data-group="${id ? "1" : ""}" data-has-kids="${kids}"
@@ -73,12 +73,8 @@ function row(node, depth, glyph, live, id) {
   </div>`;
 }
 
-// Something nested under it makes it a folder; a flat one is just a label. Same
-// test the sidebar splits Folders from Tags on, so the wording matches the tree.
-/// What the status dot says. "checking" and "unknown" are two different answers: one
-/// is waiting on a sweep that is running, the other is a device nothing is ever going
-/// to ask about because reachability checks are off. Here rather than in the three
-/// places that draw a dot, because a fourth copy is how they start disagreeing.
+// What the status dot says. "checking" waits on a running sweep; "unknown" means
+// reachability checks are off. One decider, so the dot, the pane and the tally agree.
 function dotState(name) {
   if (prefs.probe === false) return "unknown";
   const p = probes.get(name);
@@ -86,24 +82,25 @@ function dotState(name) {
 }
 
 const inGroup = (j) =>
-  group === null ? true
-  : group.path === null ? true
-  : j.folders.some((f) => f === group.path || f.startsWith(group.path + "/"));
+  group === null
+    ? true
+    : group.path === null
+      ? true
+      : j.folders.some((f) => f === group.path || f.startsWith(group.path + "/"));
 
 // ── list ───────────────────────────────────────────────────────────────────
 function render() {
   renderTree();
   shown = all.filter(inGroup);
-  // Both the device sheet and the settings sheet suggest jump targets, so it's
-  // filled here rather than by whichever one happens to open first.
+  // Both the device sheet and the settings sheet suggest jump targets.
   $("jacknames").innerHTML = all.map((x) => `<option value="${esc(x.name)}">`).join("");
   $("sshkeys").innerHTML = sshKeys.map((k) => `<option value="${esc(k)}">`).join("");
 
   renderTabs();
   searchBtn.innerHTML = `${icon("search")}Search<kbd>${chord("k")}</kbd>`;
   $("viewmode").innerHTML = listMode === "map" ? `${icon("list")}List` : `${icon("share-2")}Map`;
-  $("viewmode").dataset.tip = listMode === "map"
-    ? "Back to the flat list" : "Group by the route to each device";
+  $("viewmode").dataset.tip =
+    listMode === "map" ? "Back to the flat list" : "Group by the route to each device";
   $("newjack").innerHTML = `${icon("plus")}Device<kbd>${chord("n")}</kbd>`;
   $("newgroup").innerHTML = icon("folder-plus");
   $("newgroup").dataset.tip = "New folder";
@@ -126,7 +123,7 @@ function render() {
             <button class="ghost" data-first="cfg">${icon("file-pen-line")}Open config file</button>
           </div>
         </div>`;
-    renderDetail();   // a session tab still has something to describe
+    renderDetail(); // a session tab still has something to describe
     return;
   }
   sel = Math.min(sel, shown.length - 1);
@@ -136,54 +133,52 @@ function render() {
   listEl.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
 }
 
-/// One row, drawn the same whichever way the column is listing - so selection, the
-/// double-click and the whole context menu keep working in the map without knowing it
-/// exists. `i` indexes `shown`, which is what every handler reads.
-/// `hub` and `behind` are the map's own: a row heading a branch gets a fill so it
-/// reads as a junction rather than another endpoint, and the count that used to be
-/// its own faint line underneath rides along as a chip instead - one row per device,
-/// not two.
-/// How a device is reached, as one glyph. `primary` arrives already resolved from
-/// `primary()` in Rust, so a config pointing at something the device no longer has has
-/// fallen back to a real answer before it gets here - there is no sixth case.
+// How a device is reached, as one glyph. `primary` arrives resolved from Rust, so
+// there is no sixth case.
 const KIND = {
-  ssh:  ["square-terminal", "SSH"],
+  ssh: ["square-terminal", "SSH"],
   sftp: ["folder", "Files over SSH"],
-  rdp:  ["monitor", "Remote desktop"],
-  vnc:  ["screen-share", "VNC"],
-  web:  ["globe", "Web UI"],
+  rdp: ["monitor", "Remote desktop"],
+  vnc: ["screen-share", "VNC"],
+  web: ["globe", "Web UI"],
 };
 
+// One row, the same in the list and the map, so selection, double-click and the
+// context menu work in both. `i` indexes `shown`. `hub` and `behind` are the map's:
+// a row heading a branch, and the chip counting what sits behind it.
 function jackRow(j, i, { nested = false, indent = nested, hub = false, behind = null } = {}) {
   const state = dotState(j.name);
-  // `readable()` nudges a brand hex against the *panel*, but the selected row is a
-  // solid block of accent - Synology's navy clears 3:1 there and vanishes here. So
-  // the row's own white wins on that one row, the way .host and .folder already do.
+  // A brand colour is tuned against the panel, not the accent block of a selected row.
   const tint = i === sel ? null : osColor(j.os);
   return `<div class="jack${nested ? " arm" : ""}${hub ? " hub" : ""}" data-i="${i}" aria-selected="${i === sel}"${
-    indent ? ` style="margin-left:18px"` : ""}>
+    indent ? ` style="margin-left:18px"` : ""
+  }>
     <span class="dot ${state}"></span>
     <span class="os"${j.os ? ` data-tip="${esc(j.os)}"` : ""}${
-      tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(j.os)}</span>
+      tint ? ` style="color:${esc(tint)}"` : ""
+    }>${osIcon(j.os)}</span>
     <span class="name">${esc(j.name)}</span>
     <span class="host">${esc(j.user ? j.user + "@" + j.host : j.host)}${j.port ? ":" + j.port : ""}</span>
-    <span class="kind" data-tip="${esc((KIND[j.primary] ?? KIND.ssh)[1])}">${
-      icon((KIND[j.primary] ?? KIND.ssh)[0])}</span>
-    ${j.url && j.primary !== "web"
-      ? `<span class="web" data-tip="${esc(j.url)}" data-tip-at="right">${icon("globe")}</span>` : ""}
+    <span class="kind" data-tip="${esc((KIND[j.primary] ?? KIND.ssh)[1])}">${icon(
+      (KIND[j.primary] ?? KIND.ssh)[0],
+    )}</span>
+    ${
+      j.url && j.primary !== "web"
+        ? `<span class="web" data-tip="${esc(j.url)}" data-tip-at="right">${icon("globe")}</span>`
+        : ""
+    }
     ${behind ?? `<span class="folders">${j.folders.map((f) => `<span class="folder">${esc(f.split("/").pop())}</span>`).join("")}</span>`}
   </div>`;
 }
 
-const behindChip = (n, down) => `<span class="behind${down ? " down" : ""}">${icon("share-2")}${n} behind</span>`;
+const behindChip = (n, down) =>
+  `<span class="behind${down ? " down" : ""}">${icon("share-2")}${n} behind</span>`;
 
 // ── map ────────────────────────────────────────────────────────────────────
-// The same rows, grouped by the route to them instead of by the folder they were
-// filed in. A bastion and the six machines behind it are one branch here even when
-// those six live in six different folders - which is the thing a name tree can't show
-// and nothing else in this category draws, because nothing else resolves the chain.
+// The same rows, grouped by the route to them instead of by folder: a bastion and
+// everything behind it are one branch, however they are filed.
 
-/// A jack's chain is a path, never a graph, so this is a tree and not a diagram.
+// A jack's chain is a path, never a graph, so this is a tree.
 function chainTree(js) {
   const root = { kids: new Map(), leaves: [] };
   for (const j of js) {
@@ -202,8 +197,7 @@ function mapHtml() {
   const tree = chainTree(shown);
 
   const walk = (node, depth, blocked) => {
-    // A hop that is itself a device is drawn as its own row heading the branch, not
-    // repeated below it as one of the things reached directly.
+    // A hop that is itself a device heads its branch rather than repeating under it.
     const rows = node.leaves
       .filter((j) => !node.kids.has(j.name))
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -212,23 +206,21 @@ function mapHtml() {
     for (const kid of [...node.kids.values()].sort((a, b) => a.name.localeCompare(b.name))) {
       const via = shown.find((j) => j.name === kid.name);
       const p = probes.get(kid.name);
-      // The one thing the chain buys us: a bastion that isn't answering explains
-      // everything behind it, so the branch says so once instead of every row
-      // underneath it showing its own unrelated-looking dot.
+      // A bastion that isn't answering explains everything behind it; say so once.
       const down = blocked || (p && p.ms == null);
       const behind = kid.leaves.length + kid.kids.size;
       const chip = behindChip(behind, down);
-      // Depth only ever earns this branch one more step off its *own* .hop - the
-      // nesting is what stacks the indent, so margin is never depth*18. A leaf two
-      // levels down would otherwise inherit both its ancestors' steps and drift
-      // further right than the branch it's actually one hop inside of.
+      // One step off its own .hop; the nesting stacks the indent, so never depth*18.
       rows.push(`<div class="hop ${down ? "blocked" : ""}"${depth ? ` style="margin-left:18px"` : ""}>
-        ${via ? jackRow(via, at(via), { nested: depth > 0, indent: false, hub: true, behind: chip })
-          : `<div class="jack hopraw hub${depth > 0 ? " arm" : ""}">
+        ${
+          via
+            ? jackRow(via, at(via), { nested: depth > 0, indent: false, hub: true, behind: chip })
+            : `<div class="jack hopraw hub${depth > 0 ? " arm" : ""}">
           <span class="dot unknown"></span><span class="os">${icon("waypoints")}</span>
           <span class="name">${esc(kid.name)}</span>
           <span class="host">not in your list</span>
-          ${chip}</div>`}
+          ${chip}</div>`
+        }
         ${walk(kid, depth + 1, down)}
       </div>`);
     }
@@ -240,94 +232,124 @@ function mapHtml() {
 }
 
 function renderDetail() {
-  // Anything in here that is being typed into wins over a redraw. The probe sweep
-  // re-renders every thirty seconds, and it used to take a half-written folder note
-  // with it - the pane is rebuilt with innerHTML, so the field and its contents go.
+  // A pane being typed into is never redrawn: the probe sweep re-renders every
+  // thirty seconds, and innerHTML would take a half-written note with it.
   if (detailEl.contains(document.activeElement)) return;
-  // A live session tab wins: the pane describes what you're typing into.
+  // A live session tab wins: the pane describes what you are typing into.
   const live = activeId !== null ? sessions.get(activeId) : null;
-  if (live) return renderJack(all.find((x) => x.name === live.name), live);
+  if (live)
+    return renderJack(
+      all.find((x) => x.name === live.name),
+      live,
+    );
   if (detailMode === "group") return renderGroup();
   renderJack(shown[sel], null);
 }
 
-const groupLabel = () =>
-  group === null ? "All jacks"
-  : group.path;
+const groupLabel = () => (group === null ? "All jacks" : group.path);
 
 function renderGroup() {
   const members = all.filter(inGroup);
   const up = members.filter((j) => dotState(j.name) === "up").length;
   const down = members.filter((j) => dotState(j.name) === "down").length;
   const rest = members.length - up - down;
-  // Whatever the dots are actually wearing, so the tally and the rows agree.
   const waiting = prefs.probe !== false;
-  const open = [...sessions.values()].filter((s) => !s.dead && members.some((j) => j.name === s.name));
-  // "All jacks" is a row too, and it has no folder to rename or delete.
+  const open = [...sessions.values()].filter(
+    (s) => !s.dead && members.some((j) => j.name === s.name),
+  );
+  // "All jacks" has no folder to rename or delete.
   const real = group !== null && group.path !== null;
 
   detailEl.innerHTML = `
     <div class="d-name"><span class="d-os">${icon(
-      real ? "folder-open" : "layers")}</span>${esc(groupLabel())}</div>
+      real ? "folder-open" : "layers",
+    )}</span>${esc(groupLabel())}</div>
     <div class="d-desc">${members.length} device${members.length === 1 ? "" : "s"}${
-      real && group.path.includes("/") ? ` · in ${esc(group.path.slice(0, group.path.lastIndexOf("/")))}` : ""}</div>
+      real && group.path.includes("/")
+        ? ` · in ${esc(group.path.slice(0, group.path.lastIndexOf("/")))}`
+        : ""
+    }</div>
 
     <div class="d-sec">${icon("plug")}Reachable</div>
     <div class="tallies">
       <span><i class="dot up"></i>${up} up</span>
       <span><i class="dot down"></i>${down} down</span>
-      ${rest ? `<span><i class="dot ${waiting ? "checking" : "unknown"}"></i>${
-        rest} ${waiting ? "still checking" : "not checked"}</span>` : ""}
+      ${
+        rest
+          ? `<span><i class="dot ${waiting ? "checking" : "unknown"}"></i>${
+              rest
+            } ${waiting ? "still checking" : "not checked"}</span>`
+          : ""
+      }
     </div>
 
-    ${open.length ? `<div class="d-sec">${icon("square-terminal")}Sessions</div>
-      <div class="route">${open.map((s) => `<span class="last"><i class="pip"></i>${esc(s.name)}</span>`).join("")}</div>` : ""}
+    ${
+      open.length
+        ? `<div class="d-sec">${icon("square-terminal")}Sessions</div>
+      <div class="route">${open.map((s) => `<span class="last"><i class="pip"></i>${esc(s.name)}</span>`).join("")}</div>`
+        : ""
+    }
 
-    ${!real ? "" : `<div class="d-sec">${icon("file-pen-line")}Notes</div>
+    ${
+      !real
+        ? ""
+        : `<div class="d-sec">${icon("file-pen-line")}Notes</div>
       <textarea class="d-note" id="gnote" rows="4" spellcheck="false"
-        placeholder="What somebody arriving here needs to know."></textarea>`}
+        placeholder="What somebody arriving here needs to know."></textarea>`
+    }
 `;
 
-  // Set as a value rather than interpolated: a note is free text somebody wrote, and
-  // a `</textarea>` in it would otherwise end the element.
+  // Set as a value, not interpolated: a `</textarea>` in a note would end the element.
   if (real) {
     const box = $("gnote");
     box.value = notes.get(group.path) ?? "";
-    // On blur rather than per keystroke: a note is a paragraph, and one config write
-    // per character is a rewrite of the whole file per character.
+    // On blur, not per keystroke: each save rewrites the whole config file.
     box.addEventListener("blur", async () => {
       const was = notes.get(group.path) ?? "";
       if (box.value === was) return;
       try {
         await invoke("save_note", { path: group.path, note: box.value });
         notes.set(group.path, box.value.trim());
-      } catch (e) { alertish(e); }
+      } catch (e) {
+        alertish(e);
+      }
     });
   }
 
   dActions.innerHTML = `
     <button class="primary" data-gact="new">${icon("plus")}Device</button>
-    ${real ? `<button class="ghost" data-gact="rename" data-tip="Rename folder">${icon("pencil")}</button>
-    <button class="ghost danger" data-gact="del" data-tip="Delete folder" data-tip-at="right">${icon("trash-2")}</button>` : ""}
+    ${
+      real
+        ? `<button class="ghost" data-gact="rename" data-tip="Rename folder">${icon("pencil")}</button>
+    <button class="ghost danger" data-gact="del" data-tip="Delete folder" data-tip-at="right">${icon("trash-2")}</button>`
+        : ""
+    }
 `;
 }
 
 function renderJack(j, live) {
-  if (!j) { detailEl.innerHTML = ""; dActions.innerHTML = ""; return; }
+  if (!j) {
+    detailEl.innerHTML = "";
+    dActions.innerHTML = "";
+    return;
+  }
   const p = probes.get(j.name);
-  // Same decider as the dot beside the row, so the pane and the list can't disagree
-  // about whether this device is still being asked about.
   const said = dotState(j.name);
-  const reach = said === "unknown" ? `<span style="color:var(--fg-faint)">not checked</span>`
-    : said === "checking" ? `<span style="color:var(--fg-faint)">checking…</span>`
-    : said === "down" ? `<span style="color:var(--down)">no answer</span> · ${esc(p.target)}`
-    : `<span style="color:var(--up)">up</span> · ${esc(p.target)} · ${p.ms}ms`;
+  const reach =
+    said === "unknown"
+      ? `<span style="color:var(--fg-faint)">not checked</span>`
+      : said === "checking"
+        ? `<span style="color:var(--fg-faint)">checking…</span>`
+        : said === "down"
+          ? `<span style="color:var(--down)">no answer</span> · ${esc(p.target)}`
+          : `<span style="color:var(--up)">up</span> · ${esc(p.target)} · ${p.ms}ms`;
 
   const stops = [...j.hops, j.user ? `${j.user}@${j.host}` : j.host];
   const mine = tunnels.filter((t) => t.jack === j.name);
   detailEl.innerHTML = `
     <div class="d-name"><span class="d-os"${
-      osColor(j.os) ? ` style="color:${esc(osColor(j.os))}"` : ""}>${osIcon(j.os)}</span>${esc(j.name)}</div>
+      osColor(j.os) ? ` style="color:${esc(osColor(j.os))}"` : ""
+    }>${osIcon(j.os)}</span>${esc(j.name)}</div>
     ${j.desc ? `<div class="d-desc">${esc(j.desc)}</div>` : `<div class="d-desc"></div>`}
 
     <div class="d-sec">${icon("server")}Target</div>
@@ -339,29 +361,52 @@ function renderJack(j, live) {
       ${j.url ? `<div class="d-row"><dt>web</dt><dd>${esc(j.url)}</dd></div>` : ""}
       ${j.rdp ? `<div class="d-row"><dt>rdp</dt><dd>${j.rdp}</dd></div>` : ""}
     </dl>
-    ${mine.length ? `<div class="d-sec">${icon("waypoints")}Tunnel</div>
-      <div class="route">${mine.map((t) => `<span class="last"><i class="pip"></i>${
-        /* A -R binds its port on the far end, so there is no local address to print. */
-        t.local ? `127.0.0.1:${t.local}` : "held open on the far end"}
-        <i class="arm">via ${esc(t.via)}</i></span>`).join("")}</div>
+    ${
+      mine.length
+        ? `<div class="d-sec">${icon("waypoints")}Tunnel</div>
+      <div class="route">${mine
+        .map(
+          (t) => `<span class="last"><i class="pip"></i>${
+            /* A -R binds on the far end, so there is no local address to print. */
+            t.local ? `127.0.0.1:${t.local}` : "held open on the far end"
+          }
+        <i class="arm">via ${esc(t.via)}</i></span>`,
+        )
+        .join("")}</div>
       <div class="btns"><button class="ghost danger" data-act="untunnel"
-        data-tip="Close the forward">${icon("unplug")}Close tunnel</button></div>` : ""}
+        data-tip="Close the forward">${icon("unplug")}Close tunnel</button></div>`
+        : ""
+    }
 
     <div class="d-sec">${icon("waypoints")}Route</div>
     <div class="route">
       <span><i class="pip"></i>this machine</span>
-      ${stops.map((h, i) => `<span class="${i === stops.length - 1 ? "last" : ""}">
-        <i class="pip"></i>${esc(h)}${i < stops.length - 1 ? `<i class="arm">jump</i>` : ""}</span>`).join("")}
+      ${stops
+        .map(
+          (h, i) => `<span class="${i === stops.length - 1 ? "last" : ""}">
+        <i class="pip"></i>${esc(h)}${i < stops.length - 1 ? `<i class="arm">jump</i>` : ""}</span>`,
+        )
+        .join("")}
     </div>
 
-    ${j.forward.length ? `<div class="d-sec">${icon("arrow-right-left")}Forwards</div>
-      <dl>${j.forward.map((f) => {
-        // A bare forward is `-L`, the way `patchbay::forward_arg` reads it back.
-        const m = /^(-[LRD])\s+(.+)$/.exec(f.trim());
-        return `<div class="d-row"><dt>${m ? m[1] : "-L"}</dt><dd>${esc(m ? m[2] : f)}</dd></div>`;
-      }).join("")}</dl>
-      ${mine.length ? "" : `<div class="btns"><button class="ghost" data-act="forward"
-        data-tip="Hold these open without a session">${icon("arrow-right-left")}Open forwards</button></div>`}` : ""}
+    ${
+      j.forward.length
+        ? `<div class="d-sec">${icon("arrow-right-left")}Forwards</div>
+      <dl>${j.forward
+        .map((f) => {
+          // A bare forward is `-L`, as `patchbay::forward_arg` reads it.
+          const m = /^(-[LRD])\s+(.+)$/.exec(f.trim());
+          return `<div class="d-row"><dt>${m ? m[1] : "-L"}</dt><dd>${esc(m ? m[2] : f)}</dd></div>`;
+        })
+        .join("")}</dl>
+      ${
+        mine.length
+          ? ""
+          : `<div class="btns"><button class="ghost" data-act="forward"
+        data-tip="Hold these open without a session">${icon("arrow-right-left")}Open forwards</button></div>`
+      }`
+        : ""
+    }
 
     <div class="d-sec">${icon("plug")}Reachable</div>
     <div style="font-size:12.5px">${reach}</div>
@@ -370,23 +415,34 @@ function renderJack(j, live) {
       <button class="ghost" data-act="trace" data-tip="${j.hops.length ? `Trace from ${esc(j.hops.at(-1))}` : "Trace the route there"}">${icon("waypoints")}Trace</button>
     </div>
 
-    ${j.ssh ? `<div class="d-sec">${icon("square-terminal")}Command</div>
+    ${
+      j.ssh
+        ? `<div class="d-sec">${icon("square-terminal")}Command</div>
     <div class="d-cmd">
       <div class="mono ${j.command.startsWith("ssh ") ? "" : "err"}">${esc(j.command)}</div>
       <button class="flat d-copy" data-act="copy" data-tip="Copy" data-tip-at="right">${icon("copy")}</button>
-    </div>` : ""}
+    </div>`
+        : ""
+    }
 `;
 
   dActions.innerHTML = `
-    ${live
-      /* A web tab has nothing to disconnect from - it's a page, and you close it. */
-      ? `<button class="primary" data-act="disconnect">${icon("x")}${
-          live.dead || live.kind === "web" ? "Close" : "Disconnect"}</button>`
-      : j.primary === "rdp" ? `<button class="primary" data-act="rdp">${icon("monitor")}Connect</button>`
-      : j.primary === "vnc" ? `<button class="primary" data-act="vnc">${icon("screen-share")}Share screen</button>`
-      : j.primary === "web" ? `<button class="primary" data-act="web">${icon("globe")}Open</button>`
-      : j.primary === "sftp" ? `<button class="primary" data-act="files">${icon("folder")}Browse files</button>`
-      : `<button class="primary" data-act="connect">${icon("square-terminal")}Connect</button>`}
+    ${
+      live
+        ? /* A web tab is a page: closed, not disconnected. */
+          `<button class="primary" data-act="disconnect">${icon("x")}${
+            live.dead || live.kind === "web" ? "Close" : "Disconnect"
+          }</button>`
+        : j.primary === "rdp"
+          ? `<button class="primary" data-act="rdp">${icon("monitor")}Connect</button>`
+          : j.primary === "vnc"
+            ? `<button class="primary" data-act="vnc">${icon("screen-share")}Share screen</button>`
+            : j.primary === "web"
+              ? `<button class="primary" data-act="web">${icon("globe")}Open</button>`
+              : j.primary === "sftp"
+                ? `<button class="primary" data-act="files">${icon("folder")}Browse files</button>`
+                : `<button class="primary" data-act="connect">${icon("square-terminal")}Connect</button>`
+    }
     ${j.ssh && j.primary !== "ssh" ? `<button class="ghost" data-act="connect" data-tip="Connect over ssh">${icon("square-terminal")}</button>` : ""}
     ${j.ssh && j.primary !== "sftp" ? `<button class="ghost" data-act="files" data-tip="Browse files over sftp">${icon("folder")}</button>` : ""}
     ${j.url && j.primary !== "web" ? `<button class="ghost" data-act="web" data-tip="Open web UI">${icon("globe")}</button>` : ""}
@@ -397,7 +453,7 @@ function renderJack(j, live) {
 }
 
 // Selection must not rebuild the list: replacing innerHTML destroys the row under
-// the cursor, so the browser never pairs two clicks into a dblclick on one node.
+// the cursor, so two clicks never pair into a dblclick.
 function select(i) {
   detailMode = "jack";
   if (!shown.length) return;
@@ -407,11 +463,8 @@ function select(i) {
   listEl.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
 }
 
-/// Selection and marks, painted without rebuilding the list - replacing innerHTML
-/// destroys the row under the cursor, so the browser never pairs two clicks into a
-/// dblclick on one node. Keyed on each row's own `data-i` rather than its position:
-/// the map draws the same rows in the shape of the network, and a jump host that isn't
-/// one of your devices is a row with no device behind it at all.
+// Selection and marks, painted in place. Keyed on each row's `data-i`, not its
+// position: the map reorders rows, and a jump host not in the list has no device.
 function paintRows() {
   for (const el of listEl.querySelectorAll(".jack[data-i]")) {
     const j = shown[+el.dataset.i];
@@ -421,18 +474,18 @@ function paintRows() {
   renderDock();
 }
 
-/// Every bulk action, floated up when there is something to bulk. Same actions the
-/// ⌘-right-click menu carries, so the gesture is discoverable without knowing the
-/// chord - and `data-a` dispatches to the same handlers, in one place at the bottom
-/// of the file.
+// The bulk-action dock, shown when two or more rows are marked. Same actions as the
+// context menu, so the gesture is discoverable without knowing the chord.
 function renderDock() {
   const dock = $("dock");
   if (!dock) return;
   const bulk = markedHere();
-  if (bulk.length < 2) { dock.hidden = true; dock.innerHTML = ""; return; }
+  if (bulk.length < 2) {
+    dock.hidden = true;
+    dock.innerHTML = "";
+    return;
+  }
   const ssh = bulk.filter((j) => j.ssh).length;
-  // The attribute goes through esc() like every other interpolated value, because a
-  // device name is text somebody else may have written.
   const btn = (a, ic, lbl, extra = "") =>
     `<button type="button" class="ghost" data-a="${esc(a)}"${extra}>${icon(ic)}${esc(lbl)}</button>`;
   dock.innerHTML = `
@@ -452,21 +505,16 @@ $("dock")?.addEventListener("click", (e) => {
   if (a === "del") return removeMarked(bulk);
 });
 
-/// ⌘-click picks a row out, shift-click takes the run between it and the selected one -
-/// the two gestures every list has. `sel` stays put as the anchor, so a second
-/// shift-click extends from where you started rather than from the last one.
+// ⌘-click marks a row; shift-click marks the run from `sel`. `sel` stays put as the
+// anchor. Marks are names, the selection is an index: the list is refiltered under
+// them on every render.
 function markToggle(i) {
   const n = shown[i]?.name;
   if (!n) return;
-  // The first ⌘-click picks out a *second* row: the one already selected is the first,
-  // the way it is in every other list and the way shift-click below has always treated
-  // it. Without this the dock counted two while three rows were lit, and the blue one -
-  // the most emphatic of the three - was the one Delete would have spared.
+  // The first ⌘-click also marks the selected row, or three rows are lit and the
+  // dock says two.
   if (!marked.size && i !== sel && shown[sel]) marked.add(shown[sel].name);
   marked.has(n) ? marked.delete(n) : marked.add(n);
-  // sel stays put: ⌘-click picks a row out of a group without moving the highlighted
-  // one, which is what makes it an anchor for shift-click. Moving sel here also
-  // reset the detail pane on every mark, which read as flicker.
   paintRows();
 }
 function markRange(i) {
@@ -474,33 +522,29 @@ function markRange(i) {
   paintRows();
 }
 
-/// What a bulk action applies to: the marks that are still in front of you. A device
-/// marked in one folder and then filtered out of view is not part of what you asked for.
+// What a bulk action applies to: a mark filtered out of view is not part of the ask.
 const markedHere = () => shown.filter((j) => marked.has(j.name));
 
 const move = (d) => select(sel + d);
 
-/// A folder row taken as the list: the click and the arrow keys land here.
+// A folder row taken as the list: the click and the arrow keys land here.
 function pickGroup(id, foldable) {
   group = id;
   if (foldable) expanded.add(gkey(id));
   sel = 0;
-  // A different list is a different set of rows; marks made in the last one are not
-  // an answer to anything here.
   marked.clear();
-  detailMode = "group";   // the pane describes the folder, not its first device
+  detailMode = "group"; // the pane describes the folder, not its first device
   render();
 }
 
-/// Left folds the folder you are in, or steps up a row; Right unfolds it, or steps
-/// down one - the tree idiom of every file browser, over the rows the sidebar drew.
+// Left folds the current folder or steps up a row; Right unfolds it or steps down.
 function stepTree(d) {
   const rows = [...treeEl.querySelectorAll(".group")];
   const at = rows.findIndex((r) => r.getAttribute("aria-current") === "true");
   const cur = rows[at];
   const id = cur?.dataset.group ? { path: cur.dataset.path } : null;
   const open = id && cur.dataset.hasKids === "true" && expanded.has(gkey(id));
-  if (id && cur.dataset.hasKids === "true" && (d < 0) === !!open) {
+  if (id && cur.dataset.hasKids === "true" && d < 0 === !!open) {
     open ? expanded.delete(gkey(id)) : expanded.add(gkey(id));
     return render();
   }
@@ -508,27 +552,28 @@ function stepTree(d) {
   if (next) pickGroup(next.dataset.group ? { path: next.dataset.path } : null, false);
 }
 
-/// In a tab, like a terminal and like RDP. "Open in browser" is still on the context
-/// menu, and `web_check` offers it when the page is one a webview can't show - an
-/// appliance's self-signed certificate has no click-through here, only in a browser.
+// In a tab. "Open in browser" stays on the context menu: a webview has no
+// certificate click-through.
 async function openWeb(name) {
   used(name);
   await openWebSession(name);
 }
 
-/// In a tab, like a terminal. "Open in Windows App" on the context menu is still
-/// the handoff, for when someone wants their own client's settings.
+// In a tab. The context menu still offers the handoff to the system client.
 async function openRdp(name) {
   used(name);
   await openRdpSession(name);
   await refreshTunnels();
 }
 
-// No tab of our own: the OS opens whatever registered `vnc://`, the way the system
-// RDP client is handed a `.rdp`.
+// Always a handoff: the OS opens whatever registered `vnc://`.
 async function openVnc(name) {
   used(name);
-  try { await invoke("open_vnc", { name }); } catch (e) { alertish(e); }
+  try {
+    await invoke("open_vnc", { name });
+  } catch (e) {
+    alertish(e);
+  }
 }
 
 async function handOffRdp(name) {
@@ -536,15 +581,21 @@ async function handOffRdp(name) {
   try {
     await invoke("open_rdp", { name });
     await refreshTunnels();
-  } catch (e) { alertish(e); }
+  } catch (e) {
+    alertish(e);
+  }
 }
 
 async function refreshTunnels() {
-  try { tunnels = await invoke("tunnels"); render(); } catch { /* none is normal */ }
+  try {
+    tunnels = await invoke("tunnels");
+    render();
+  } catch {
+    /* none is normal */
+  }
 }
 
-/// What Enter, a double-click and the palette do: ssh if it has it, else remote
-/// desktop, else the web UI. Connect is meaningless on a web-only NAS.
+// What Enter, a double-click and the palette do.
 function primary(name) {
   const j = all.find((x) => x.name === name);
   if (!j) return;
@@ -568,29 +619,35 @@ async function connect(name, inTerminal = prefs.connect_in_terminal === true) {
 
 // ── command palette ────────────────────────────────────────────────────────
 const palOpen = () => !paletteEl.hidden;
-// `seed` is set when you just start typing in the list - the keystroke isn't lost.
+// `seed` carries the keystroke that opened the palette from the list.
 function openPalette(seed = "") {
   paletteEl.hidden = false;
-  pq.value = seed; palSel = 0;
+  pq.value = seed;
+  palSel = 0;
   $("pq-icon").innerHTML = icon("search");
   renderPalette();
   pq.focus();
   pq.setSelectionRange(seed.length, seed.length);
 }
-function closePalette() { paletteEl.hidden = true; }
+function closePalette() {
+  paletteEl.hidden = true;
+}
 
-/// Recency first, file order behind it - the sort is stable, so devices you have never
-/// opened keep the order the config puts them in. Only the palette does this: the list
-/// is where your own filing lives, and rows that move under you while you read them
-/// would be a worse list, not a smarter one.
+// Recency first, file order behind it (stable sort). Only the palette ranks by
+// recency; the list stays in file order.
 function palMatches() {
   const f = pq.value.trim().toLowerCase();
-  const rank = (j) => { const i = recent.indexOf(j.name); return i < 0 ? recent.length : i; };
-  return all.filter((j) => hit(j, f)).sort((a, b) => rank(a) - rank(b)).slice(0, 40);
+  const rank = (j) => {
+    const i = recent.indexOf(j.name);
+    return i < 0 ? recent.length : i;
+  };
+  return all
+    .filter((j) => hit(j, f))
+    .sort((a, b) => rank(a) - rank(b))
+    .slice(0, 40);
 }
-/// What the palette offers when nothing matches: `user@host`, `host:2222`, typed and
-/// opened without a record. One word, because that is all ssh gets - Rust applies the
-/// same guard a config'd host gets, so this is a shortcut past the sheet, not past it.
+// A quick connect when nothing matches: `user@host` or `host:2222`, one word. Rust
+// applies the same guard a configured host gets.
 const adhoc = () => {
   const q = pq.value.trim();
   return q && !/\s/.test(q) && !q.startsWith("-") && !palMatches().length ? q : null;
@@ -605,15 +662,16 @@ function renderPalette() {
         <span class="name">${esc(quick)}</span>
         <span class="host">quick connect</span></div>`
     : rows.length
-    ? rows.map((j, i) => {
-        // Same rule as the list: the selected row is a solid block of accent, and a
-        // brand colour tuned against the panel disappears on it.
-        const tint = i === palSel ? null : osColor(j.os);
-        return `<div class="jack" data-pi="${i}" aria-selected="${i === palSel}">
+      ? rows
+          .map((j, i) => {
+            // Same rule as the list: no brand colour on the selected row.
+            const tint = i === palSel ? null : osColor(j.os);
+            return `<div class="jack" data-pi="${i}" aria-selected="${i === palSel}">
         <span class="os"${tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(j.os)}</span>
         <span class="name">${esc(j.name)}</span>
         <span class="host">${esc(j.host)}</span></div>`;
-      }).join("")
-    : `<p class="empty">no match</p>`;
+          })
+          .join("")
+      : `<p class="empty">no match</p>`;
   presultsEl.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
 }

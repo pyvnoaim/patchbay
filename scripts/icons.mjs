@@ -4,23 +4,23 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const USED = [
-  "layers",         // All jacks
+  "layers", // All jacks
   "folder",
   "folder-open",
-  "chevron-right",  // tree disclosure
+  "chevron-right", // tree disclosure
   "tag",
-  "circle-off",     // Untagged
-  "server",         // a jack
+  "circle-off", // Untagged
+  "server", // a jack
   "search",
-  "waypoints",      // route
+  "waypoints", // route
   "arrow-right-left", // port forwards
-  "plug",           // reachable
+  "plug", // reachable
   "square-terminal", // connect
   "copy",
-  "copy-plus",     // duplicate a device
+  "copy-plus", // duplicate a device
   "check",
-  "file-pen-line",  // edit config
-  "download",       // import from an ssh config
+  "file-pen-line", // edit config
+  "download", // import from an ssh config
   "plus",
   "pencil",
   "trash-2",
@@ -29,7 +29,7 @@ const USED = [
   "external-link",
   "globe",
   "monitor",
-  "screen-share",  // vnc
+  "screen-share", // vnc
   "unplug",
   "settings",
   "router",
@@ -39,14 +39,14 @@ const USED = [
   "container",
   "printer",
   "cctv",
-  "rotate-cw",     // try that again
-  "arrow-up",      // up a folder
-  "chevron-up",    // find in session
+  "rotate-cw", // try that again
+  "arrow-up", // up a folder
+  "chevron-up", // find in session
   "chevron-down",
-  "list",          // the two ways the middle column lists
-  "share-2",       // the map: a route, branching
-  "radio-tower",   // broadcast: input fanning out to every pane
-  "square",        // the broadcast tab chip's mute state
+  "list", // the two ways the middle column lists
+  "share-2", // the map: a route, branching
+  "radio-tower", // broadcast: input fanning out to every pane
+  "square", // the broadcast tab chip's mute state
 ];
 
 const inner = (name) =>

@@ -1,9 +1,5 @@
-// `npm run bump 0.1.0` - the version lives in four files and the release workflow
-// refuses a tag that disagrees with tauri.conf.json.
-//
-// Targeted line rewrites rather than parse-and-serialize: package.json and the lock
-// file would come back reformatted, and a version bump has no business touching
-// anything else in the diff.
+// `npm run bump 0.1.0`: the version lives in four files, and the release workflow refuses a
+// tag that disagrees with tauri.conf.json. Targeted line rewrites, so nothing else is reformatted.
 import { readFileSync, writeFileSync } from "node:fs";
 
 const version = process.argv[2];
@@ -12,9 +8,7 @@ if (!/^\d+\.\d+\.\d+$/.test(version ?? "")) {
   process.exit(1);
 }
 
-// The lock's entry is the one that isn't a version *declaration*, so it is matched by
-// the package it belongs to - patchbay-app is not the only crate in there with a
-// version line, and every other one belongs to somebody else.
+// Cargo.lock has a version line per crate, so the entry is matched by its name.
 const files = [
   ["package.json", /("version":\s*")[^"]+(")/],
   ["src-tauri/tauri.conf.json", /("version":\s*")[^"]+(")/],
@@ -31,11 +25,8 @@ for (const [file, pattern] of files) {
   writeFileSync(file, before.replace(pattern, `$1${version}$2`));
 }
 
-// The heading the release workflow looks for, so the notes are stamped by the same
-// command that sets the version - remembering to do it by hand is how a release ends
-// up shipping the previous one's notes.
-// Anchored to its own line: the file explains this heading in its own prose, and a
-// loose match stamps the sentence about the heading instead of the heading.
+// The heading the release workflow looks for, stamped by the same command that sets the version.
+// Anchored to its own line: the changelog's prose mentions this heading too.
 const heading = /^## Unreleased$/m;
 const log = readFileSync("CHANGELOG.md", "utf8");
 if (!heading.test(log)) {
@@ -45,4 +36,6 @@ if (!heading.test(log)) {
 const today = new Date().toISOString().slice(0, 10);
 writeFileSync("CHANGELOG.md", log.replace(heading, `## ${version} - ${today}`));
 
-console.log(`${version}\n\n  git commit -am "release ${version}" && git tag v${version} && git push --tags`);
+console.log(
+  `${version}\n\n  git commit -am "release ${version}" && git tag v${version} && git push --tags`,
+);

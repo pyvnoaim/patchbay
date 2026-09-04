@@ -54,14 +54,15 @@ export const sdRoundRect = (x, y, cx, cy, hw, hh, r) => {
 };
 export const sdRing = (x, y, cx, cy, r, half) => Math.abs(Math.hypot(x - cx, y - cy) - r) - half;
 export const sdDisc = (x, y, cx, cy, r) => Math.hypot(x - cx, y - cy) - r;
-/// Distance to the segment a→b, so a capsule of half-width `half` is `- half`.
+// Distance to the segment a→b, so a capsule of half-width `half` is `- half`.
 export const sdSegment = (x, y, ax, ay, bx, by) => {
-  const dx = bx - ax, dy = by - ay;
+  const dx = bx - ax,
+    dy = by - ay;
   const t = clamp(((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy), 0, 1);
   return Math.hypot(x - ax - t * dx, y - ay - t * dy);
 };
 
-/// Paint `src` over the accumulator `p` = [r, g, b, a], all 0..1 for alpha.
+// Paint `src` over the accumulator `p` = [r, g, b, a], all 0..1 for alpha.
 export function over(p, cr, cg, cb, ca) {
   if (ca <= 0) return;
   const na = ca + p[3] * (1 - ca);
