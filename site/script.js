@@ -354,7 +354,13 @@
     if (!d) return;
 
     if (e.metaKey || e.ctrlKey) {
-      // The selection stays put, which is what makes it the anchor for a shift-click.
+      // The selection stays put, which is what makes it the anchor for a shift-click -
+      // and it is picked out along with the row you just clicked, so the dock counts
+      // every row that is lit rather than all but the blue one.
+      var sel = list.querySelector(".w-jack[data-sel]");
+      if (!list.querySelector(".w-jack[data-mark]") && sel && sel !== jack) {
+        sel.setAttribute("data-mark", "");
+      }
       jack.toggleAttribute("data-mark");
       return paintDock();
     }

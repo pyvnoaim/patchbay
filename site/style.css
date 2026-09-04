@@ -507,6 +507,10 @@ a { color: inherit; }
 /* Marks and the dock they raise, the same gesture the app has: hold cmd and pick a
    few out, and the actions come to you. */
 .w-jack[data-mark]:not([data-sel]) { background: color-mix(in oklab, var(--accent) 15%, transparent); }
+/* Hovering a marked row keeps the mark and brightens it, rather than dropping back to
+   the plain hover fill - the row above ties with `.w-jack:not([data-sel]):hover` on
+   specificity and loses to it on order. Same two steps as `.jack.marked` in app.css. */
+.w-jack[data-mark]:not([data-sel]):hover { background: color-mix(in oklab, var(--accent) 24%, transparent); }
 .w-dock {
   position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 2;
   display: flex; align-items: center; gap: 3px; padding: 6px;
