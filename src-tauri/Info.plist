@@ -22,14 +22,5 @@
        *name*, resolved against the config on this machine, and never an address. A
        link that could name a host would be a link that dials a stranger's box and
        asks you for a password. See `open_link_to` in main.rs. -->
-  <key>CFBundleURLTypes</key>
-  <array>
-    <dict>
-      <key>CFBundleURLName</key>
-      <string>com.patchbay.device</string>
-      <key>CFBundleURLSchemes</key>
-      <array><string>patchbay</string></array>
-    </dict>
-  </array>
 </dict>
 </plist>

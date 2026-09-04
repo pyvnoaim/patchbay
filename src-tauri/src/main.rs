@@ -148,10 +148,22 @@ fn connect_ms(host: &str, port: u16) -> Option<u64> {
     Some(started.elapsed().as_millis() as u64)
 }
 
+/// A name that is a device, or a `user@host` that isn't one. The device's own error
+/// is the one kept when neither reads: "no jack matching" is what a typo gets.
+fn ssh_target(name: &str, jacks: &patchbay::Jacks) -> Result<(Option<String>, Vec<String>), String> {
+    match patchbay::resolve(name, jacks) {
+        Ok(resolved) => {
+            let args = patchbay::ssh_args(&resolved, jacks)?;
+            Ok((Some(resolved), args))
+        }
+        Err(e) => patchbay::adhoc_args(name).map(|a| (None, a)).map_err(|_| e),
+    }
+}
+
 #[tauri::command]
 fn connect(name: String) -> Result<String, String> {
     let jacks = read()?;
-    let args = patchbay::ssh_args(&patchbay::resolve(&name, &jacks)?, &jacks)?;
+    let (_, args) = ssh_target(&name, &jacks)?;
     terminal::open(&args)?;
     Ok(terminal::command_line(&args))
 }
@@ -282,14 +294,14 @@ fn open_session(
     rows: u16,
 ) -> Result<String, String> {
     let jacks = read()?;
-    let resolved = patchbay::resolve(&name, &jacks)?;
-    let args = patchbay::ssh_args(&resolved, &jacks)?;
+    let (resolved, args) = ssh_target(&name, &jacks)?;
     // The shell is also the connection the file browser rides: `sftp -b` cannot ask
     // for a password, so a session here is what authenticates it. Not shown in the
-    // command line below - that is the command, not our plumbing.
-    let mux = sftp::mux(&sftp::control_path(&resolved));
+    // command line below - that is the command, not our plumbing. A quick connect
+    // has no device for the browser to name, so it rides nothing.
+    let mux = resolved.as_deref().map(|r| sftp::mux(&sftp::control_path(r))).unwrap_or_default();
     let spawned: Vec<String> = mux.into_iter().chain(args.iter().cloned()).collect();
-    let log = config::load_settings().log_sessions.then(|| log_path(&resolved));
+    let log = config::load_settings().log_sessions.then(|| log_path(resolved.as_deref().unwrap_or(&name)));
     sessions.open(&app, id, "ssh", &spawned, cols.max(2), rows.max(2), log)?;
     Ok(terminal::command_line(&args))
 }
@@ -1389,10 +1401,16 @@ fn watch_edit(
 /// link that could name a host is a link that dials a stranger's box and asks for a
 /// password. A name that isn't here is refused rather than guessed at.
 ///
-/// ponytail: macOS only. The scheme is registered in `Info.plist` and arrives as
-/// `RunEvent::Opened`; Windows and Linux want a registry key or a `.desktop` file
-/// written at install time and a single-instance hand-off, which is a plugin's worth
-/// of work for the same two lines of behaviour.
+/// `patchbay://web-01` from a runbook, a ticket or an alert. Held as well as emitted:
+/// a cold start delivers the link before the window is listening, and `take_link` is
+/// how the window asks for it once it is.
+fn deliver_link(handle: &tauri::AppHandle, urls: &[tauri::Url]) {
+    use tauri::Emitter;
+    let Some(name) = urls.iter().find_map(|u| link_target(u.as_str())) else { return };
+    *handle.state::<PendingLink>().0.lock().unwrap() = Some(name.clone());
+    let _ = handle.emit("open:link", name);
+}
+
 fn link_target(url: &str) -> Option<String> {
     let name = link_name(url)?;
     // The exact name, never `resolve`'s unique-substring match. The palette guesses
@@ -1461,7 +1479,9 @@ fn config_path() -> String {
 
 #[tauri::command]
 fn open_config() -> Result<(), String> {
-    os_open(patchbay::config_path().as_os_str())
+    let p = patchbay::config_path();
+    config::ensure_exists(&p)?;
+    os_open(p.as_os_str())
 }
 
 /// The disk image someone dragged us out of, still mounted. Nothing in macOS ejects
@@ -1562,6 +1582,14 @@ async fn update_install(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// The close button's second half. Rust holds the close and the window decides,
+/// because only the window knows which tabs are still live: the pty map keeps a
+/// session until it is closed, exited or not.
+#[tauri::command]
+fn quit(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 /// The restart, once the new bundle is in place. Split from the install because it
 /// takes every live session with it, so it waits for a second click. (Windows is the
 /// exception nobody clicks: its installer takes the process down during the install
@@ -1577,6 +1605,16 @@ fn update_restart(app: tauri::AppHandle) {
 fn main() {
     use tauri_plugin_window_state::StateFlags;
     tauri::Builder::default()
+        // First, as its docs insist: a second launch has to be caught before anything
+        // else sets up. The link it carried is delivered through `on_open_url` by the
+        // plugin's `deep-link` feature, so all that is left here is coming to the front.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         // An app that forgets where it was is one you re-arrange every morning.
         // Not DECORATIONS: the title bar is `Overlay` from tauri.conf.json, and a
@@ -1592,7 +1630,31 @@ fn main() {
         .manage(rdp::SharedTunnels::default())
         .manage(rdp_session::Shared::default())
         .manage(PendingLink::default())
+        // Closing the window with a live session is asked about, and the asking is
+        // the window's - so the close is held here and answered by `quit`.
+        .on_window_event(|w, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                use tauri::Emitter;
+                api.prevent_close();
+                let _ = w.emit("window:close", ());
+            }
+        })
         .setup(|app| {
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                // The installer registers the scheme too; this is for a copy that was
+                // never installed - `tauri dev`, or a binary someone just ran. macOS
+                // has no runtime registration, only the bundle's Info.plist.
+                #[cfg(any(windows, target_os = "linux"))]
+                let _ = app.deep_link().register_all();
+                // A cold start on Windows or Linux carries the link as argv, which is
+                // already history by the time `on_open_url` is listening.
+                if let Ok(Some(urls)) = app.deep_link().get_current() {
+                    deliver_link(app.handle(), &urls);
+                }
+                let h = app.handle().clone();
+                app.deep_link().on_open_url(move |e| deliver_link(&h, &e.urls()));
+            }
             // Spaces were extra config files, from when a shared list had to be one.
             // Anything still in `spaces/` is folded into the list on the way past, so
             // nobody opens the window to find half their devices missing.
@@ -1682,22 +1744,12 @@ fn main() {
             open_session, open_task, write_session, resize_session, close_session,
             sftp_ls, sftp_get, sftp_put, sftp_edit, sftp_open, sftp_ready,
             open_master, open_full_disk_access,
-            app_version, update_check, update_install, update_restart,
+            app_version, update_check, update_install, update_restart, quit,
             take_link
         ])
         .build(tauri::generate_context!())
         .expect("error while building patchbay")
         .run(|handle, event| {
-            // `patchbay://web-01` from a runbook, a ticket or an alert. Held as well as
-            // emitted: a cold start delivers the link before the window is listening.
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Opened { urls } = &event {
-                use tauri::Emitter;
-                if let Some(name) = urls.iter().find_map(|u| link_target(u.as_str())) {
-                    *handle.state::<PendingLink>().0.lock().unwrap() = Some(name.clone());
-                    let _ = handle.emit("open:link", name);
-                }
-            }
             // `ssh -N -L` has no parent to hang up on, so without this a tunnel
             // outlives the window and keeps holding its forwarded port.
             if matches!(event, tauri::RunEvent::Exit) {

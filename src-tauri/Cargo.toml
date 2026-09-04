@@ -60,6 +60,13 @@ tauri-plugin-updater = "2"
 # a screen that still exists.
 tauri-plugin-window-state = "2"
 
+# `patchbay://web-01` on every desktop. The bundler registers the scheme where each
+# OS wants it (Info.plist, the installer's registry keys, the .desktop file); on
+# Windows and Linux the link arrives as argv of a *second* process, which is what
+# single-instance is for - it hands the argv to the copy already running.
+tauri-plugin-deep-link = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.5"
 
