@@ -508,6 +508,21 @@ async function removeJack(name) {
 
 /// Both bulk actions loop the single-device command rather than adding one of their
 
+async function removeMarked(js) {
+  // Named, so this is a list you can check rather than a number to trust - but only
+  // as far as the sheet can show without becoming a wall.
+  const names = js.slice(0, 8).map((j) => j.name).join(", ");
+  const msg = `Delete ${js.length} devices? This edits your config file.`
+    + `\n\n${names}${js.length > 8 ? `, and ${js.length - 8} more` : ""}`;
+  if (!(await ask(msg, null, "Delete"))) return;
+  try {
+    for (const j of js) await invoke("delete_jack", { name: j.name });
+  } catch (e) { alertish(e); }
+  marked.clear();
+  sel = 0;
+  await load();
+}
+
 async function newGroup(parent) {
   const name = await ask(parent?.path ? `New folder inside ${parent.path}` : "New folder", "", "Create");
   if (!name) return;

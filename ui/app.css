@@ -434,6 +434,15 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
   box-shadow: inset 0 1px 0 rgba(255,255,255,.18);
 }
 .jack[aria-selected="true"] .host, .jack[aria-selected="true"] .folder { color: rgba(255,255,255,.82); }
+/* The dot was the one thing on a selected row still wearing its own colour, which read
+   as something the highlight had missed. It goes white with everything else - and
+   `down` stays hollow, so the one distinction worth keeping survives the change. */
+.jack[aria-selected="true"] .dot { background: rgba(255,255,255,.92); box-shadow: none; }
+.jack[aria-selected="true"] .dot.down,
+.jack[aria-selected="true"] .dot.unknown,
+.jack[aria-selected="true"] .dot.checking {
+  background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.85);
+}
 .jack[aria-selected="true"] .folder { background: rgba(255,255,255,.2); }
 /* A probe answering is news, and news that arrives as an instant colour swap reads
    as a glitch. Long enough to catch the eye, short enough to be over by the time
@@ -466,7 +475,9 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
 #detail .drag { height: 46px; border-bottom: 1px solid var(--line); }
 /* The strip was 46px of nothing. Actions live here now, so they stay put instead
    of sitting after a body whose length depends on how much the device has. */
-.dbar { display: flex; align-items: center; padding: 0 12px; }
+/* Same 10px as the tab strip, and for the same reason: a 27px button in a 46px bar
+   leaves 9.5px above and below, so 12 at the sides read as a button shoved at the edge. */
+.dbar { display: flex; align-items: center; padding: 0 10px; }
 .dactions { display: flex; align-items: center; gap: 6px; -webkit-app-region: no-drag; }
 .dactions button { flex: none; height: 27px; padding: 0 11px; border-radius: 7px; }
 .dactions button.ghost { padding: 0 8px; }
