@@ -10,6 +10,19 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- **Import a Royal TS document.** Point patchbay at a `.rtsz` and it reads the lot:
+  folders become folders, RDP and ssh connections and web UIs become devices with the
+  way in they already had. Tick what you want; nothing else is written. Passwords stay
+  in Royal TS, because patchbay keeps none.
+- Importing is its own page in Settings now, with both sources on it, and the list it
+  finds is grouped by folder with a filter - a document with a hundred devices in it is
+  not a list you scroll.
+- **One list, not several.** Spaces are gone: folders do the grouping, and anything you
+  had in `spaces/` is folded into your list on the next launch, keeping its own name as
+  the outermost folder. The files it read are kept as `.toml.merged`.
+- A folder can carry a note - what somebody arriving at that customer needs to know -
+  shown on the folder's own page.
+- A device name can contain a dot. `dc1.acme.local` is a name people actually use.
 - A setting to log a session's terminal output to a file under `logs/`, beside the
   config. Off by default.
 - **Broadcast to marked devices.** Pick out several boxes, right-click, hit Broadcast:
@@ -52,7 +65,7 @@ it back. Nothing is retyped anywhere.
 - A device's forwards can be held open on their own, without a session, from the
   Forwards section of its pane.
 - Importing an ssh config brings `LocalForward` lines across as forwards.
-- A space has a page of its own now: which file it is, and what its sync is doing.
+- A space has a page of its own now, showing which file it is.
 - The window opens where you left it, and the sidebar keeps the width you drag it to.
 - Terminal sessions use patchbay's colours, not the raw VT palette. Links are clickable.
 - Clicking a device you already have open goes to that tab.
