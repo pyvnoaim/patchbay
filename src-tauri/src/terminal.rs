@@ -1,5 +1,5 @@
-//! Hand the ssh command to the system terminal. Same rule CLAUDE.md sets for RDP:
-//! we never embed the client, we hand off to the one the OS already has.
+//! Hand the ssh command to the system terminal: Terminal.app or iTerm, Windows
+//! Terminal or a console window, or the first Linux emulator that launches.
 
 use std::process::Command;
 
@@ -9,7 +9,7 @@ fn is_bare(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || "@%_+=:,./-".contains(c))
 }
 
-/// Quote for a POSIX shell - the command goes through `do script` / `-e "…"`.
+/// Quote for a POSIX shell; the command goes through `do script` or `sh -c`.
 #[cfg(not(windows))]
 fn quote(s: &str) -> String {
     if is_bare(s) {
@@ -27,8 +27,8 @@ fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace('"', "\\\""))
 }
 
-/// The command as a user would type it - shown in the UI and used by the
-/// AppleScript/`sh -c` handoff, so it follows the host platform's quoting.
+/// The command as a user would type it, in the host platform's quoting. Shown in the
+/// window and used by the handoff below.
 pub fn command_line(args: &[String]) -> String {
     command_line_of("ssh", args)
 }
@@ -43,10 +43,8 @@ pub fn command_line_of(program: &str, args: &[String]) -> String {
 #[cfg(target_os = "macos")]
 pub fn open(args: &[String]) -> Result<(), String> {
     let cmd = command_line(args);
-    // Terminal.app unless iTerm is what's actually installed.
-    // `launch` starts the app WITHOUT its normal "open a window" startup, so the
-    // command below supplies the only window. Using `activate` first opens an empty
-    // one as well, and you get two. Activate last, once the window exists.
+    // `launch` starts the app without its usual empty window; `activate` first would
+    // open one, so it comes last.
     let script = if std::path::Path::new("/Applications/iTerm.app").exists() {
         format!(
             r#"tell application "iTerm"
@@ -80,7 +78,7 @@ fn escape(s: &str) -> String {
 
 #[cfg(target_os = "windows")]
 pub fn open(args: &[String]) -> Result<(), String> {
-    // Windows Terminal if it's there (it ships with Win11), else a console window.
+    // Windows Terminal if present, else a console window.
     if Command::new("wt.exe").arg("ssh").args(args).spawn().is_ok() {
         return Ok(());
     }
@@ -95,7 +93,7 @@ pub fn open(args: &[String]) -> Result<(), String> {
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn open(args: &[String]) -> Result<(), String> {
     let cmd = command_line(args);
-    // ponytail: first terminal that launches wins. Add $TERMINAL support when someone's isn't here.
+    // ponytail: first terminal that launches wins; add $TERMINAL when someone's isn't here.
     let candidates: [(&str, &[&str]); 7] = [
         ("x-terminal-emulator", &["-e"]),
         ("gnome-terminal", &["--"]),
@@ -115,7 +113,10 @@ pub fn open(args: &[String]) -> Result<(), String> {
             return Ok(());
         }
     }
-    Err("no terminal emulator found - tried gnome-terminal, konsole, alacritty, kitty, foot, xterm".into())
+    Err(
+        "no terminal emulator found - tried gnome-terminal, konsole, alacritty, kitty, foot, xterm"
+            .into(),
+    )
 }
 
 #[cfg(test)]
@@ -124,7 +125,11 @@ mod tests {
 
     #[test]
     fn command_line_quotes_only_what_needs_it() {
-        let args = ["-J".into(), "deploy@10.0.0.4".into(), "root@10.0.0.5".into()];
+        let args = [
+            "-J".into(),
+            "deploy@10.0.0.4".into(),
+            "root@10.0.0.5".into(),
+        ];
         assert_eq!(command_line(&args), "ssh -J deploy@10.0.0.4 root@10.0.0.5");
     }
 

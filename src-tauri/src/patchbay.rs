@@ -1,5 +1,6 @@
-//! Config load, `[defaults]` inheritance, the jump-chain walk and name resolve.
-//! Everything worth testing lives here; `main.rs` is the command surface over it.
+//! The config as data: load, `[defaults]` inheritance, the jump-chain walk, name
+//! resolve, and every ssh argv the app ever builds. Pure logic with its tests below;
+//! `commands/` is the surface over it.
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -19,20 +20,20 @@ pub struct Jack {
     pub key: Option<String>,
     pub jump: Option<String>,
     pub os: Option<String>,
-    /// Optional web UI - a NAS or router is one device with two ways in.
+    /// Optional web UI; a NAS or router is one device with two ways in.
     pub url: Option<String>,
     /// Port for remote desktop. Absent means this device has none.
     pub rdp: Option<u16>,
-    /// Port for screen sharing. Handed to the system's VNC viewer, never spoken here.
+    /// Port for screen sharing, handed to the system's VNC viewer.
     pub vnc: Option<u16>,
-    /// Absent means yes - most devices are reached over ssh.
+    /// Absent means yes.
     pub ssh: Option<bool>,
-    /// What Enter and a double-click do: "ssh" | "rdp" | "vnc" | "web". Absent picks the
-    /// first one the device actually has.
+    /// What Enter opens: "ssh" | "rdp" | "vnc" | "web". Absent picks the first one the
+    /// device has.
     pub primary: Option<String>,
     pub folders: Option<Vec<String>>,
-    /// ponytail: the old name for `folders`. Read so existing files still work,
-    /// never written; drop it once nobody has one.
+    /// ponytail: the old name for `folders`, read but never written; drop it once nobody
+    /// has one.
     pub tags: Option<Vec<String>>,
     pub desc: Option<String>,
     pub forward: Option<Vec<String>>,
@@ -48,16 +49,16 @@ struct Raw {
     folder: IndexMap<String, Folder>,
 }
 
-/// What a folder is, beyond a string devices carry. Nothing else: a folder exists
-/// because a device names it, and this table only says something *about* one - so a
-/// note on an empty folder is not a folder, and the tree does not grow a row for it.
+/// What is said *about* a folder. A folder exists because a device names it, so a note
+/// on an empty one does not make the tree grow a row.
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 pub struct Folder {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
 
-/// `%APPDATA%` on Windows, `$XDG_CONFIG_HOME` or `~/.config` elsewhere - matches configPath() in the CLI.
+/// `$PATCHBAY_CONFIG` if set; else `%APPDATA%` on Windows, `$XDG_CONFIG_HOME` or
+/// `~/.config` elsewhere.
 pub fn config_path() -> PathBuf {
     if let Ok(p) = std::env::var("PATCHBAY_CONFIG") {
         return PathBuf::from(p);
@@ -74,10 +75,13 @@ pub fn config_path() -> PathBuf {
     home.join("patchbay").join("patchbay.toml")
 }
 
-/// Where a session's log lands when logging is turned on - beside the config, not
-/// in it: it is this machine's answer rather than part of the list.
+/// Where session logs land: beside the config, because they are this machine's and not
+/// part of the list.
 pub fn logs_dir() -> PathBuf {
-    config_path().parent().unwrap_or(Path::new(".")).join("logs")
+    config_path()
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("logs")
 }
 
 fn expand(p: &str) -> String {
@@ -87,9 +91,8 @@ fn expand(p: &str) -> String {
     }
 }
 
-/// `[defaults]` merges into every jack - that's the whole credential-inheritance feature.
-/// The notes hung on folders, by full path. Read on its own rather than folded into
-/// `Jacks`, because a folder is not a device and every caller wants one or the other.
+/// The notes hung on folders, by full path. Read separately from `Jacks` because a
+/// folder is not a device and every caller wants one or the other.
 pub fn notes(src: &str) -> IndexMap<String, String> {
     let raw: Raw = match toml::from_str(src) {
         Ok(r) => r,
@@ -102,6 +105,7 @@ pub fn notes(src: &str) -> IndexMap<String, String> {
         .collect()
 }
 
+/// `[defaults]` merges into every jack; the jack's own value wins.
 pub fn parse(src: &str) -> Result<Jacks, String> {
     let raw: Raw = toml::from_str(src).map_err(|e| e.message().to_string())?;
     let d = &raw.defaults;
@@ -110,7 +114,11 @@ pub fn parse(src: &str) -> Result<Jacks, String> {
         .into_iter()
         .map(|(name, j)| {
             let merged = Jack {
-                host: if j.host.is_empty() { d.host.clone() } else { j.host },
+                host: if j.host.is_empty() {
+                    d.host.clone()
+                } else {
+                    j.host
+                },
                 user: j.user.or_else(|| d.user.clone()),
                 port: j.port.or(d.port),
                 key: j.key.or_else(|| d.key.clone()),
@@ -134,8 +142,8 @@ pub fn parse(src: &str) -> Result<Jacks, String> {
         .collect())
 }
 
-/// No file is an empty list, not an error: it is what a first launch looks like, and
-/// the window has a page for that. A file that exists but won't parse is still one.
+/// A missing file is an empty list (a first run), not an error. A file that won't parse
+/// still is one.
 pub fn load(path: &Path) -> Result<Jacks, String> {
     let src = match std::fs::read_to_string(path) {
         Ok(s) => s,
@@ -152,31 +160,30 @@ pub fn spec(j: &Jack) -> String {
     }
 }
 
-/// A destination on its way into argv. ssh reads a leading `-` as an option, and a
-/// destination is not always the last word: `task_argv` appends `traceroute <host>`
-/// after the chain, which supplies the operand a smuggled `-oProxyCommand=` needs to
-/// run. So a host from a file someone else wrote is refused here rather than passed
-/// along - this is where "nothing in a config is executed as written" is enforced.
+/// A destination on its way into argv. A leading `-` would be an ssh option, and
+/// `task_argv` appends an operand after the chain, which is what a smuggled
+/// `-oProxyCommand=` needs to run. This is where "nothing in a config is executed" holds.
 fn dest(s: String) -> Result<String, String> {
     if s.trim().is_empty() {
         return Err("that jack has no host to connect to".into());
     }
     if s.starts_with('-') {
-        return Err(format!("\"{s}\" isn't a usable host - ssh would read it as an option"));
+        return Err(format!(
+            "\"{s}\" isn't a usable host - ssh would read it as an option"
+        ));
     }
     Ok(s)
 }
 
-/// The same rule for a jack, which needs its `host` checked before `spec` hides an
-/// empty one behind a `user@`.
+/// The same rule for a jack; `host` is checked before `spec` hides an empty one behind
+/// `user@`.
 fn dest_of(j: &Jack) -> Result<String, String> {
     dest(j.host.clone())?;
     dest(spec(j))
 }
 
-/// The jump chain, ordered the way `ssh -J` wants it: leftmost is the first hop
-/// from here. Walking `jump` goes outward from the target, so the walk is reversed -
-/// `db → web → bastion` has to dial bastion first, not web.
+/// The jump chain as `ssh -J` wants it, first hop from here leftmost. Walking `jump`
+/// goes outward from the target, so the walk is reversed.
 pub fn hops(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
     let j = jacks
         .get(name)
@@ -190,7 +197,7 @@ pub fn hops(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
             return Err(format!("jump loop through \"{h}\""));
         }
         match jacks.get(&h) {
-            // not a jack name, pass through as a raw ssh spec
+            // Not a jack name: a raw ssh spec, passed through.
             None => {
                 out.push(dest(h)?);
                 break;
@@ -208,9 +215,8 @@ pub fn hops(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-/// The machine we open the first TCP connection to - the outermost bastion if
-/// there's a chain, otherwise the jack itself. This is the only thing worth probing;
-/// anything past it is reachable only through ssh.
+/// The machine the first TCP connection goes to: the outermost bastion, or the jack
+/// itself. The only thing worth probing; anything past it is reachable only through ssh.
 pub fn entry(name: &str, jacks: &Jacks) -> Result<(String, u16), String> {
     let mut cur = jacks
         .get(name)
@@ -222,22 +228,25 @@ pub fn entry(name: &str, jacks: &Jacks) -> Result<(String, u16), String> {
         }
         match jacks.get(&h) {
             Some(via) => cur = via,
-            // raw spec: user@host, host:port, or both
+            // A raw spec: user@host, host:port, or both.
             None => {
                 let hp = h.rsplit('@').next().unwrap_or(&h);
-                return Ok(match hp.rsplit_once(':').and_then(|(a, b)| b.parse().ok().map(|p| (a, p))) {
-                    Some((host, port)) => (host.to_string(), port),
-                    None => (hp.to_string(), 22),
-                });
+                return Ok(
+                    match hp
+                        .rsplit_once(':')
+                        .and_then(|(a, b)| b.parse().ok().map(|p| (a, p)))
+                    {
+                        Some((host, port)) => (host.to_string(), port),
+                        None => (hp.to_string(), 22),
+                    },
+                );
             }
         }
     }
     Ok((cur.host.clone(), probe_port(cur)))
 }
 
-/// Which port the status dot should test. A device that declares `ssh = false` has
-/// nothing listening on 22, so probing it anyway reported every RDP-only and
-/// web-only device as down while they were perfectly reachable.
+/// Which port the status dot tests. A device with `ssh = false` has nothing on 22.
 fn probe_port(j: &Jack) -> u16 {
     if j.ssh.unwrap_or(true) {
         return j.port.unwrap_or(22);
@@ -259,7 +268,11 @@ fn url_port(url: &str) -> Option<u16> {
             return Some(p);
         }
     }
-    Some(if scheme.eq_ignore_ascii_case("http") { 80 } else { 443 })
+    Some(if scheme.eq_ignore_ascii_case("http") {
+        80
+    } else {
+        443
+    })
 }
 
 pub fn ssh_args(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
@@ -290,19 +303,13 @@ pub fn ssh_args(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
     Ok(args)
 }
 
-/// The flags `forward_arg` can hand back, so the two callers that strip forwards - a
-/// one-shot check, an sftp run - drop the flag *and* its operand for every kind, and
-/// not just for the one that existed first.
+/// Every flag `forward_arg` can hand back. Anything that strips forwards goes through
+/// this, so it drops the flag and its operand for every kind.
 pub const FORWARD_FLAGS: [&str; 3] = ["-L", "-R", "-D"];
 
-/// Which ssh flag a forward is, and the spec that goes after it. A bare one is `-L`,
-/// the local forward every config already had; a remote one and a SOCKS proxy are
-/// written as ssh's own flag, because anyone reaching for either already knows its name.
-///
-/// The flag is matched exactly and the rest may not start with `-`: this value becomes
-/// argv, and a config file must not be able to put an option of its choosing
-/// there. That is the same property `-L` had for free by never being anything but an
-/// operand.
+/// Which ssh flag a forward is, and the spec after it. A bare spec is `-L`; `-R` and
+/// `-D` are written as ssh's own flag. The flag is matched exactly and the rest may not
+/// start with `-`, because this becomes argv and a config must not supply an option.
 pub fn forward_arg(spec: &str) -> Result<(&'static str, &str), String> {
     let spec = spec.trim();
     let (flag, rest) = match spec.split_once(' ') {
@@ -320,16 +327,13 @@ pub fn forward_arg(spec: &str) -> Result<(&'static str, &str), String> {
     Ok((flag, rest))
 }
 
-/// The local port a forward binds - the end of it this machine can connect to, and so
-/// the one a standing tunnel watches for. A `-R` binds on the far end and has none.
-///
-/// ponytail: a bracketed IPv6 bind address has colons of its own and gives None,
-/// which reads as "no port to watch" rather than the wrong one.
+/// The local port a forward binds, which a standing tunnel watches. A `-R` has none.
+/// ponytail: a bracketed IPv6 bind address gives None rather than the wrong port.
 pub fn forward_local(spec: &str) -> Option<u16> {
     let (flag, rest) = forward_arg(spec).ok()?;
     let parts: Vec<&str> = rest.split(':').collect();
     match (flag, parts.len()) {
-        // -D is `[bind:]port` - the whole forward is the local end.
+        // -D is `[bind:]port`: the whole forward is the local end.
         ("-D", 1) => parts[0].parse().ok(),
         ("-D", 2) => parts[1].parse().ok(),
         ("-R", _) | ("-D", _) => None,
@@ -337,6 +341,87 @@ pub fn forward_local(spec: &str) -> Option<u16> {
         (_, 4) => parts[1].parse().ok(),
         _ => None,
     }
+}
+
+/// Drop every forward, flag and operand. A one-shot check or an sftp run has no use
+/// for them, and re-binding a port a live session holds only prints an error.
+pub fn without_forwards(args: Vec<String>) -> Vec<String> {
+    let mut out = Vec::with_capacity(args.len());
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        if FORWARD_FLAGS.contains(&a.as_str()) {
+            it.next();
+        } else {
+            out.push(a);
+        }
+    }
+    out
+}
+
+/// Ping or traceroute toward a device, as `(program, args)`. A device behind a jump
+/// is not reachable from here, so the check runs *on the hop*, over the same chain.
+pub fn task_argv(task: &str, name: &str, jacks: &Jacks) -> Result<(String, Vec<String>), String> {
+    if task != "ping" && task != "trace" {
+        return Err(format!("no task named \"{task}\""));
+    }
+    let j = jacks
+        .get(name)
+        .ok_or_else(|| format!("no jack named \"{name}\""))?;
+    let host = plain_host(&j.host)?;
+
+    let Some(hop) = &j.jump else {
+        return Ok(local_task(task, host));
+    };
+    // ponytail: the far side is assumed POSIX. It answers ssh, so it isn't cmd.exe.
+    let mut args = match jacks.contains_key(hop) {
+        true => without_forwards(ssh_args(hop, jacks)?),
+        // A jump that isn't a jack is a raw ssh spec with no chain of its own.
+        false => vec![hop.clone()],
+    };
+    args.extend(posix_task(task, host));
+    Ok(("ssh".into(), args))
+}
+
+/// The far-side form hands the host to the hop's shell, so a space or a `;` would run
+/// there as a command. Refused rather than quoted, like a newline in a `.rdp`.
+fn plain_host(host: &str) -> Result<&str, String> {
+    let ok = !host.is_empty()
+        && !host.starts_with('-')
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".:-_".contains(c));
+    ok.then_some(host)
+        .ok_or_else(|| format!("\"{host}\" isn't a plain host name to check"))
+}
+
+/// `ping -c 5` / `traceroute`: the spelling the far side has, and the local one
+/// everywhere but Windows.
+fn posix_task(task: &str, host: &str) -> Vec<String> {
+    match task {
+        "trace" => vec!["traceroute".into(), host.into()],
+        _ => vec!["ping".into(), "-c".into(), "5".into(), host.into()],
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn local_task(task: &str, host: &str) -> (String, Vec<String>) {
+    let mut v = posix_task(task, host);
+    (v.remove(0), v)
+}
+
+#[cfg(target_os = "windows")]
+fn local_task(task: &str, host: &str) -> (String, Vec<String>) {
+    match task {
+        "trace" => ("tracert".into(), vec![host.into()]),
+        _ => ("ping".into(), vec!["-n".into(), "5".into(), host.into()]),
+    }
+}
+
+/// Only http(s) may reach the desktop opener or a webview: `open` and `explorer` will
+/// happily launch an application for any other scheme.
+pub fn is_web_url(u: &str) -> bool {
+    let l = u.trim().to_ascii_lowercase();
+    (l.starts_with("http://") || l.starts_with("https://")) && !u.contains(['\n', '\r', '\0'])
 }
 
 /// Exact name wins; otherwise substring match, but only if it's unambiguous.
@@ -350,15 +435,16 @@ pub fn resolve(query: &str, jacks: &Jacks) -> Result<String, String> {
         0 => Err(format!("no jack matching \"{query}\"")),
         n => Err(format!(
             "\"{query}\" matches {n} jacks: {}",
-            hits.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+            hits.iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         )),
     }
 }
 
-/// `user@host:2222` typed into the palette, as an argv - a connection without a
-/// record, for the box you will touch once. Nothing here is looked up: no defaults,
-/// no jump, no key; `~/.ssh/config` is the place those live for a host like this.
-/// The same `dest` guard as a config'd host, because this is argv all the same.
+/// `user@host:2222` typed into the palette, as an argv. No defaults, jump or key are
+/// looked up; the same `dest` guard applies because this is argv all the same.
 pub fn adhoc_args(query: &str) -> Result<Vec<String>, String> {
     let q = query.trim();
     let (target, port) = match q.rsplit_once(':') {
@@ -378,11 +464,10 @@ pub fn adhoc_args(query: &str) -> Result<Vec<String>, String> {
     Ok(args)
 }
 
-/// How a device is reached: "ssh", "rdp", "vnc" or "web". The sheet's radio, resolved in
-/// one place so the CLI refuses what the window wouldn't offer. `primary` is still read
-/// for configs that set several, and ignored when it names something the device lost.
+/// How a device is reached: "ssh", "rdp", "vnc" or "web". `primary` is still read for
+/// configs that set several, and ignored when it names something the device lost.
 pub fn primary(j: &Jack) -> String {
-    // "sftp" is ssh with a different default action, so it needs ssh and nothing else.
+    // "sftp" is ssh with a different default action.
     let has = |k: &str| match k {
         "ssh" | "sftp" => j.ssh.unwrap_or(true),
         "rdp" => j.rdp.is_some(),
@@ -460,10 +545,8 @@ mod tests {
         let _ = std::fs::remove_file(&p);
     }
 
-    /// The website's hero panel lets you edit this config and shows the argv it
-    /// resolves to, which means `site/index.html` carries a JS mirror of `hops`
-    /// and `ssh_args`. This pins the two together: if the flag order or the `-J`
-    /// reversal changes here, this fails and names the page to update.
+    /// `site/index.html` carries a JS mirror of `hops` and `ssh_args` for its demo
+    /// panel; the two must be updated together.
     #[test]
     fn the_config_on_the_website_still_resolves_to_the_argv_it_shows() {
         let j = parse(
@@ -497,24 +580,39 @@ forward = ["5432:localhost:5432"]
 
     #[test]
     fn plain_jack_is_just_user_at_host() {
-        assert_eq!(ssh_args("bastion", &fixture()).unwrap(), ["-p", "2222", "jump@bastion.example"]);
+        assert_eq!(
+            ssh_args("bastion", &fixture()).unwrap(),
+            ["-p", "2222", "jump@bastion.example"]
+        );
     }
 
     #[test]
     fn jump_chains_dial_the_outermost_bastion_first() {
-        // db is reached via web, web via bastion - so from here the order is bastion, then web.
+        // db via web via bastion: from here the order is bastion, then web.
         assert_eq!(
             ssh_args("db", &fixture()).unwrap(),
-            ["-J", "jump@bastion.example:2222,deploy@10.0.0.4", "-L", "5432:localhost:5432", "10.0.0.5"]
+            [
+                "-J",
+                "jump@bastion.example:2222,deploy@10.0.0.4",
+                "-L",
+                "5432:localhost:5432",
+                "10.0.0.5"
+            ]
         );
-        assert_eq!(hops("web", &fixture()).unwrap(), ["jump@bastion.example:2222"]);
+        assert_eq!(
+            hops("web", &fixture()).unwrap(),
+            ["jump@bastion.example:2222"]
+        );
     }
 
     #[test]
     fn entry_is_the_outermost_hop_not_the_target() {
         let j = fixture();
         assert_eq!(entry("db", &j).unwrap(), ("bastion.example".into(), 2222));
-        assert_eq!(entry("bastion", &j).unwrap(), ("bastion.example".into(), 2222));
+        assert_eq!(
+            entry("bastion", &j).unwrap(),
+            ("bastion.example".into(), 2222)
+        );
         assert_eq!(entry("raw", &j).unwrap(), ("elsewhere".into(), 22));
     }
 
@@ -523,7 +621,7 @@ forward = ["5432:localhost:5432"]
         let j = parse(
             r#"
             [jack.dc]
-            host = "10.0.0.26"
+            host = "192.168.1.26"
             ssh = false
             rdp = 3389
 
@@ -549,19 +647,36 @@ forward = ["5432:localhost:5432"]
         )
         .unwrap();
         assert_eq!(entry("dc", &j).unwrap().1, 3389);
-        assert_eq!(entry("mac", &j).unwrap().1, 5900, "screen sharing is where it listens");
+        assert_eq!(
+            entry("mac", &j).unwrap().1,
+            5900,
+            "screen sharing is where it listens"
+        );
         assert_eq!(entry("nas", &j).unwrap().1, 5001);
         assert_eq!(entry("gateway", &j).unwrap().1, 443, "https with no port");
-        assert_eq!(entry("both", &j).unwrap().1, 22, "ssh is still the way in when it has it");
+        assert_eq!(
+            entry("both", &j).unwrap().1,
+            22,
+            "ssh is still the way in when it has it"
+        );
     }
 
     #[test]
     fn tilde_expands_and_unknown_jump_passes_through_raw() {
         let j = fixture();
         let joined = ssh_args("web", &j).unwrap().join(" ");
-        assert!(joined.contains("-i /"), "key should expand to an absolute path: {joined}");
-        assert!(joined.ends_with("/.ssh/prod deploy@10.0.0.4"), "got {joined}");
-        assert_eq!(ssh_args("raw", &j).unwrap(), ["-J", "someone@elsewhere", "c"]);
+        assert!(
+            joined.contains("-i /"),
+            "key should expand to an absolute path: {joined}"
+        );
+        assert!(
+            joined.ends_with("/.ssh/prod deploy@10.0.0.4"),
+            "got {joined}"
+        );
+        assert_eq!(
+            ssh_args("raw", &j).unwrap(),
+            ["-J", "someone@elsewhere", "c"]
+        );
     }
 
     #[test]
@@ -614,8 +729,14 @@ forward = ["5432:localhost:5432"]
             "#,
         )
         .unwrap();
-        assert_eq!(j["old"].folders.as_deref(), Some(&["prod/eu".to_string()][..]));
-        assert_eq!(j["new"].folders.as_deref(), Some(&["prod/us".to_string()][..]));
+        assert_eq!(
+            j["old"].folders.as_deref(),
+            Some(&["prod/eu".to_string()][..])
+        );
+        assert_eq!(
+            j["new"].folders.as_deref(),
+            Some(&["prod/us".to_string()][..])
+        );
         // Normalised away on load, so nothing downstream has to know the old name.
         assert!(j["old"].tags.is_none() && j["new"].tags.is_none());
     }
@@ -633,23 +754,24 @@ forward = ["5432:localhost:5432"]
             "#,
         )
         .unwrap();
-        // Mirrors the TypeScript test of the same name - the two disagreed here once.
         assert_eq!(j["a"].folders.as_deref(), Some(&["mine".to_string()][..]));
     }
 
     #[test]
     fn jacks_keep_file_order() {
         let j = fixture();
-        assert_eq!(j.keys().take(3).map(|s| s.as_str()).collect::<Vec<_>>(), ["bastion", "web", "db"]);
+        assert_eq!(
+            j.keys().take(3).map(|s| s.as_str()).collect::<Vec<_>>(),
+            ["bastion", "web", "db"]
+        );
     }
-
 
     #[test]
     fn a_forwards_local_port_is_the_one_before_the_target() {
         assert_eq!(forward_local("5432:localhost:5432"), Some(5432));
         assert_eq!(forward_local("127.0.0.1:8080:10.0.0.9:80"), Some(8080));
         assert_eq!(forward_local("0.0.0.0:8080:10.0.0.9:80"), Some(8080));
-        // Not a port we could watch: a socket path, a bracketed v6 bind, nonsense.
+        // Not a port to watch: a socket path, a bracketed v6 bind, nonsense.
         assert_eq!(forward_local("8080:/run/thing.sock"), None);
         assert_eq!(forward_local("[::1]:8080:h:80"), None);
         assert_eq!(forward_local("70000:h:80"), None);
@@ -659,23 +781,26 @@ forward = ["5432:localhost:5432"]
         assert_eq!(forward_local("-R 9000:localhost:9000"), None);
     }
 
-    /// The value reaches argv. `-L` was safe for free by only ever being an operand;
-    /// three flags means the prefix has to be matched exactly, or a config someone wrote
-    /// could hand ssh an option of its own.
+    /// The value reaches argv, so the flag is matched exactly or a config could hand ssh
+    /// an option of its own.
     #[test]
     fn a_forward_is_one_of_three_flags_and_never_an_option_of_its_own() {
-        assert_eq!(forward_arg("8080:localhost:80").unwrap(), ("-L", "8080:localhost:80"));
-        assert_eq!(forward_arg("-R 9000:localhost:9000").unwrap(), ("-R", "9000:localhost:9000"));
+        assert_eq!(
+            forward_arg("8080:localhost:80").unwrap(),
+            ("-L", "8080:localhost:80")
+        );
+        assert_eq!(
+            forward_arg("-R 9000:localhost:9000").unwrap(),
+            ("-R", "9000:localhost:9000")
+        );
         assert_eq!(forward_arg("-D 1080").unwrap(), ("-D", "1080"));
         for bad in ["-o ProxyCommand=id", "-L", "-L8080:h:80", "--", "-D", "-R "] {
             assert!(forward_arg(bad).is_err(), "{bad:?} should be refused");
         }
     }
 
-    /// The whole safety story for a config a colleague wrote: it may produce an ssh
-    /// argv and nothing else. A host beginning with `-` is an ssh *option*, and a
-    /// ping or traceroute through a jump appends its own operand after the chain -
-    /// which is the destination a smuggled `-oProxyCommand=` was missing.
+    /// A config may produce an ssh argv and nothing else: a host beginning with `-` is
+    /// an option, and `task_argv` would supply the operand it needs to run.
     #[test]
     fn a_host_can_never_become_an_ssh_option() {
         let j = parse(
@@ -702,13 +827,14 @@ forward = ["5432:localhost:5432"]
         // The hop is what `task_argv` builds on, so the chain has to refuse it too.
         assert!(hops("behind", &j).is_err());
         assert!(hops("raw", &j).is_err());
-        // A user in front would make it an operand again, and that is not a rule worth
-        // having: whether a config is safe would then depend on `[defaults] user`.
+        // A `user@` in front must not make it safe, or safety would depend on `[defaults]`.
         let dressed = parse("[jack.x]\nhost = \"-oProxyCommand=id\"\nuser = \"root\"\n").unwrap();
         assert!(ssh_args("x", &dressed).is_err());
-        // An ordinary host is untouched by any of this.
         let fine = parse("[jack.x]\nhost = \"10.0.0.4\"\nuser = \"root\"\n").unwrap();
-        assert_eq!(ssh_args("x", &fine).unwrap().last().unwrap(), "root@10.0.0.4");
+        assert_eq!(
+            ssh_args("x", &fine).unwrap().last().unwrap(),
+            "root@10.0.0.4"
+        );
     }
 
     #[test]
@@ -718,12 +844,104 @@ forward = ["5432:localhost:5432"]
         )
         .unwrap();
         let a = ssh_args("x", &j).unwrap();
-        assert!(a.windows(2).any(|w| w == ["-L", "8080:localhost:80"]), "got {a:?}");
-        assert!(a.windows(2).any(|w| w == ["-R", "9000:localhost:9000"]), "got {a:?}");
+        assert!(
+            a.windows(2).any(|w| w == ["-L", "8080:localhost:80"]),
+            "got {a:?}"
+        );
+        assert!(
+            a.windows(2).any(|w| w == ["-R", "9000:localhost:9000"]),
+            "got {a:?}"
+        );
         assert!(a.windows(2).any(|w| w == ["-D", "1080"]), "got {a:?}");
 
-        // A broken one fails the connection rather than being passed through.
+        // A broken one fails the connection rather than passing through.
         let bad = parse("[jack.x]\nhost = \"h\"\nforward = [\"-o ProxyCommand=id\"]\n").unwrap();
         assert!(ssh_args("x", &bad).is_err());
+    }
+
+    const CHAIN: &str = r#"
+[jack.bastion]
+host = "bastion.example"
+user = "ops"
+port = 2222
+forward = ["9000:localhost:9000"]
+
+[jack.db]
+host = "db.internal"
+jump = "bastion"
+
+[jack.plain]
+host = "10.0.0.4"
+
+[jack.raw]
+host = "10.0.0.9"
+jump = "ops@edge.example"
+
+[jack.sneaky]
+host = "x; id"
+"#;
+
+    #[test]
+    fn a_check_runs_here_when_it_can_and_on_the_hop_when_it_cannot() {
+        let j = parse(CHAIN).unwrap();
+
+        let (p, a) = task_argv("ping", "plain", &j).unwrap();
+        assert_eq!(p, "ping");
+        assert!(a.contains(&"10.0.0.4".to_string()), "got {a:?}");
+
+        // Behind a bastion it runs there, and the hop's own tunnel is left out or it
+        // fights the live session for the port.
+        let (p, a) = task_argv("ping", "db", &j).unwrap();
+        assert_eq!(p, "ssh");
+        assert_eq!(
+            a,
+            [
+                "-p",
+                "2222",
+                "ops@bastion.example",
+                "ping",
+                "-c",
+                "5",
+                "db.internal"
+            ]
+        );
+
+        let (_, a) = task_argv("trace", "db", &j).unwrap();
+        assert_eq!(a.last().unwrap(), "db.internal");
+        assert!(a.contains(&"traceroute".to_string()), "got {a:?}");
+
+        let (_, a) = task_argv("ping", "raw", &j).unwrap();
+        assert_eq!(a[0], "ops@edge.example");
+    }
+
+    #[test]
+    fn a_host_that_could_be_a_command_on_the_hop_is_refused() {
+        let j = parse(CHAIN).unwrap();
+        assert!(
+            task_argv("ping", "sneaky", &j).is_err(),
+            "a space reaches the hop's shell"
+        );
+        assert!(
+            task_argv("nope", "plain", &j).is_err(),
+            "only the two tasks exist"
+        );
+    }
+
+    #[test]
+    fn only_http_and_https_are_openable() {
+        assert!(is_web_url("https://10.0.0.20:5001"));
+        assert!(is_web_url("HTTP://nas.local/"));
+        assert!(is_web_url("  https://nas.local  "));
+        for bad in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "x-apple-helpme://boom",
+            "smb://share",
+            "nas.local:5001",
+            "",
+            "https://ok\nfile:///etc/passwd",
+        ] {
+            assert!(!is_web_url(bad), "{bad:?} should be rejected");
+        }
     }
 }

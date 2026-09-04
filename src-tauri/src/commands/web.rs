@@ -1,0 +1,500 @@
+//! A device's web UI: opened in the browser, or as a tab (a child webview above the
+//! page). The tab has no certificate interstitial, so this module also explains why a
+//! page stayed blank and can hand a certificate to the system trust store.
+//!
+//! The child webview gets no capability, and must not: its page is a remote origin
+//! that matches nothing in `capabilities/`, which is all that keeps an appliance's
+//! login page away from `delete_jack`.
+
+use super::{load_jacks, os_open};
+use crate::patchbay::{self, is_web_url};
+use serde::Serialize;
+use std::path::{Path, PathBuf};
+use tauri::Manager;
+
+const NOT_WEB: &str = "only http:// and https:// urls can be opened";
+
+/// A device's `url`, resolved and checked.
+fn web_url_of(name: &str) -> Result<(String, String), String> {
+    let jacks = load_jacks()?;
+    let resolved = patchbay::resolve(name, &jacks)?;
+    let url = jacks
+        .get(&resolved)
+        .and_then(|j| j.url.as_deref())
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+        .ok_or_else(|| format!("\"{resolved}\" has no url"))?
+        .to_string();
+    if !is_web_url(&url) {
+        return Err(NOT_WEB.into());
+    }
+    Ok((resolved, url))
+}
+
+/// Open a device's web UI in the browser, the fallback with a certificate interstitial.
+#[tauri::command]
+pub fn open_url(name: String) -> Result<String, String> {
+    let (_, url) = web_url_of(&name)?;
+    os_open(url.as_ref())?;
+    Ok(url)
+}
+
+/// A link clicked in terminal output. Text a remote host wrote, so it goes nowhere
+/// but a browser, and only if it is http(s).
+#[tauri::command]
+pub fn open_link(url: String) -> Result<String, String> {
+    if !is_web_url(&url) {
+        return Err(format!("not a web address: \"{url}\""));
+    }
+    os_open(url.as_ref())?;
+    Ok(url)
+}
+
+fn web_label(id: u32) -> String {
+    format!("webtab-{id}")
+}
+
+/// Open a device's web UI as a tab. Cleartext to a public address goes to the browser
+/// instead; see `is_private_host`.
+///
+/// No reachability check here: it cost a round trip before anything appeared. The
+/// view goes up now and `web_check` explains a blank one afterwards. `on_navigation`
+/// reports where the page really ends up, because a Synology's http port is a
+/// JavaScript redirect to its https one, which no http client can see.
+#[tauri::command]
+pub async fn open_web_view(
+    app: tauri::AppHandle,
+    id: u32,
+    name: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<String, String> {
+    let (resolved, url) = web_url_of(&name)?;
+    let parsed: tauri::Url = url.parse().map_err(|e| format!("\"{url}\": {e}"))?;
+    if parsed.scheme() == "http" && !parsed.host_str().is_some_and(is_private_host) {
+        os_open(url.as_ref())?;
+        return Err(format!(
+            "\"{url}\" is plain http to a public address - patchbay opens cleartext \
+             only on your own network, so it opened in your browser instead"
+        ));
+    }
+    let window = app.get_window("main").ok_or("the main window has gone")?;
+    let reporter = app.clone();
+    window
+        .add_child(
+            tauri::webview::WebviewBuilder::new(web_label(id), tauri::WebviewUrl::External(parsed))
+                .on_navigation(move |to| {
+                    use tauri::Emitter;
+                    let _ = reporter.emit(&format!("web-nav:{id}"), to.to_string());
+                    true
+                }),
+            tauri::LogicalPosition::new(x, y),
+            tauri::LogicalSize::new(width.max(1.0), height.max(1.0)),
+        )
+        .map_err(|e| format!("\"{resolved}\": {e}"))?;
+    Ok(url)
+}
+
+/// Move and size a web tab, in logical pixels. A zero size is how it is hidden: a
+/// child webview ignores CSS and sits above every sheet, so anything opening over it
+/// calls this first.
+#[tauri::command]
+pub fn place_web_view(
+    app: tauri::AppHandle,
+    id: u32,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    // A tab that has already closed is an ordinary race with a resize, not an error.
+    let Some(w) = app.get_webview(&web_label(id)) else {
+        return Ok(());
+    };
+    w.set_position(tauri::LogicalPosition::new(x, y))
+        .map_err(|e| e.to_string())?;
+    w.set_size(tauri::LogicalSize::new(width.max(0.0), height.max(0.0)))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn close_web_view(app: tauri::AppHandle, id: u32) {
+    if let Some(w) = app.get_webview(&web_label(id)) {
+        let _ = w.close();
+    }
+}
+
+/// Why a blank tab is blank. Takes a url rather than a device because the one worth
+/// checking is often a redirect's destination.
+#[tauri::command]
+pub async fn web_check(url: String) -> Result<(), String> {
+    if !is_web_url(&url) {
+        return Err(NOT_WEB.into());
+    }
+    if web_trusted(&url) {
+        return Ok(());
+    }
+    super::blocking(move || web_reachable(&url)).await
+}
+
+/// One request of our own, to turn a silent blank page into a reason.
+fn web_reachable(url: &str) -> Result<(), String> {
+    // 15s, not less: a NAS waking from hibernation drops the first SYN and takes its
+    // time, and "not answering" arriving late beats it arriving wrong.
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("no http client: {e}"))?;
+    client.get(url).send().map(|_| ()).map_err(|e| {
+        // reqwest's Display stops at "error sending request"; the cause is only ever
+        // in the source chain.
+        let mut why = e.to_string();
+        let mut cause: Option<&(dyn std::error::Error + 'static)> = std::error::Error::source(&e);
+        while let Some(c) = cause {
+            why = format!("{why}: {c}");
+            cause = c.source();
+        }
+        let cert_problem = [
+            "certificate",
+            "UnknownIssuer",
+            "NotValidForName",
+            "CertExpired",
+        ]
+        .iter()
+        .any(|s| why.contains(s));
+        if cert_problem {
+            format!(
+                "\"{url}\" uses a certificate this machine doesn't trust, so a window \
+                 here would show nothing - trust it on this machine and it opens in the app"
+            )
+        } else {
+            format!("\"{url}\": {why}")
+        }
+    })
+}
+
+/// Cleartext is LAN-only. `Info.plist` has to turn ATS off for web content to allow
+/// http at all, and Apple offers nothing narrower that covers `192.168.x.x`, so the
+/// narrowing happens here.
+fn is_private_host(host: &str) -> bool {
+    use std::net::{IpAddr, Ipv4Addr};
+    let host = host.trim().trim_start_matches('[').trim_end_matches(']');
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(v4)) => {
+            // 100.64/10 is carrier-grade NAT, which is what Tailscale hands out.
+            // `Ipv4Addr::is_shared` would say so but is still unstable.
+            let o = v4.octets();
+            let cgnat = o[0] == 100 && (64..128).contains(&o[1]);
+            v4.is_private()
+                || cgnat
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4 == Ipv4Addr::UNSPECIFIED
+        }
+        Ok(IpAddr::V6(v6)) => {
+            // Unique-local (fc00::/7), link-local (fe80::/10) and ::1.
+            v6.is_loopback()
+                || (v6.segments()[0] & 0xfe00) == 0xfc00
+                || (v6.segments()[0] & 0xffc0) == 0xfe80
+        }
+        // `.local` is mDNS, and a name with no dot can only resolve on this network.
+        Err(_) => {
+            let h = host.to_ascii_lowercase();
+            let h = h.strip_suffix('.').unwrap_or(&h);
+            h == "localhost"
+                || h.ends_with(".local")
+                || h.ends_with(".home.arpa")
+                || !h.contains('.')
+        }
+    }
+}
+
+// The trust store: urls whose certificate warning was waived on this machine. Kept
+// beside the config, not in it, because it is this machine's answer about one device.
+
+fn web_trust_store() -> PathBuf {
+    patchbay::config_path().with_file_name("web_trusted")
+}
+
+fn web_trusted(url: &str) -> bool {
+    web_trusted_at(&web_trust_store(), url)
+}
+
+fn web_trusted_at(store: &Path, url: &str) -> bool {
+    std::fs::read_to_string(store)
+        .unwrap_or_default()
+        .lines()
+        .any(|l| l.trim() == url)
+}
+
+fn web_trust_at(store: &Path, url: &str) -> Result<(), String> {
+    if web_trusted_at(store, url) {
+        return Ok(());
+    }
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(store)
+        .map_err(|e| format!("{}: {e}", store.display()))?;
+    writeln!(f, "{url}").map_err(|e| format!("{}: {e}", store.display()))
+}
+
+/// "Show it anyway", remembered. This can't make the webview accept a certificate;
+/// it stops our own stricter check from hiding a page the webview renders fine once
+/// the certificate is trusted on this machine.
+#[tauri::command]
+pub fn web_trust(url: String) -> Result<(), String> {
+    if !is_web_url(&url) {
+        return Err(NOT_WEB.into());
+    }
+    web_trust_at(&web_trust_store(), &url)
+}
+
+/// What the user is asked to trust, in the words the OS dialog would use.
+#[derive(Serialize)]
+struct CertFacts {
+    subject: String,
+    issuer: String,
+    expires: String,
+    /// SHA-256 over the DER, the digest every other tool prints.
+    fingerprint: String,
+}
+
+/// A device's leaf certificate, fetched without judging it. The OS does the judging,
+/// and it can't judge what it hasn't been shown.
+fn peer_cert(url: &str) -> Result<(String, Vec<u8>), String> {
+    use std::io::Write as _;
+    use std::net::ToSocketAddrs as _;
+    use tokio_rustls::rustls;
+
+    let u = tauri::Url::parse(url).map_err(|e| format!("\"{url}\": {e}"))?;
+    let host = u
+        .host_str()
+        .ok_or_else(|| format!("\"{url}\" has no host"))?
+        .to_string();
+    let port = u.port_or_known_default().unwrap_or(443);
+
+    let addr = format!("{host}:{port}")
+        .to_socket_addrs()
+        .ok()
+        .and_then(|mut a| a.next())
+        .ok_or_else(|| format!("{host}:{port}: no address for that host"))?;
+    let stream = std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(10))
+        .map_err(|e| format!("{host}:{port}: {e}"))?;
+
+    let config = rustls::client::ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(std::sync::Arc::new(
+            crate::rdp_session::verifier::AcceptAny,
+        ))
+        .with_no_client_auth();
+    let name = host
+        .clone()
+        .try_into()
+        .map_err(|_| format!("\"{host}\" isn't a usable server name"))?;
+    let client = rustls::ClientConnection::new(std::sync::Arc::new(config), name)
+        .map_err(|e| e.to_string())?;
+    let mut tls = rustls::StreamOwned::new(client, stream);
+    // The handshake hasn't reached the peer certificate until something is flushed.
+    tls.flush().map_err(|e| format!("{host}: {e}"))?;
+
+    let der = tls
+        .conn
+        .peer_certificates()
+        .and_then(|c| c.first())
+        .map(|c| c.as_ref().to_vec())
+        .ok_or_else(|| format!("{host} sent no certificate"))?;
+    Ok((host, der))
+}
+
+fn cert_facts(der: &[u8]) -> Result<CertFacts, String> {
+    use x509_cert::der::Decode as _;
+    let c = x509_cert::Certificate::from_der(der).map_err(|e| e.to_string())?;
+    let mut h = <sha2::Sha256 as sha2::Digest>::new();
+    sha2::Digest::update(&mut h, der);
+    let fingerprint = sha2::Digest::finalize(h)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(":");
+    Ok(CertFacts {
+        subject: c.tbs_certificate.subject.to_string(),
+        issuer: c.tbs_certificate.issuer.to_string(),
+        expires: c.tbs_certificate.validity.not_after.to_string(),
+        fingerprint,
+    })
+}
+
+/// Fetch and describe a device's certificate, trusting nothing. Separate from
+/// `web_trust_cert` so the window can show it first and ask second.
+#[tauri::command]
+pub async fn web_cert(url: String) -> Result<serde_json::Value, String> {
+    if !is_web_url(&url) {
+        return Err(NOT_WEB.into());
+    }
+    super::blocking(move || {
+        let (_, der) = peer_cert(&url)?;
+        serde_json::to_value(cert_facts(&der)?).map_err(|e| e.to_string())
+    })
+    .await
+}
+
+/// Trust a device's certificate on this machine, so the webview will load its page.
+#[tauri::command]
+pub async fn web_trust_cert(url: String) -> Result<(), String> {
+    if !is_web_url(&url) {
+        return Err(NOT_WEB.into());
+    }
+    super::blocking(move || {
+        let (host, der) = peer_cert(&url)?;
+        trust_cert(&host, &der)?;
+        // Our own check still refuses a mismatched name, so record the waiver too or
+        // the panel comes straight back for a page that now loads.
+        web_trust_at(&web_trust_store(), &url)
+    })
+    .await
+}
+
+/// Hand the certificate to macOS the way the browser's "Always trust" does. `security`
+/// raises the system's own password prompt; we never write trust settings ourselves.
+/// `-s <host>` scopes the trust to this device, so a CA certificate handed out by an
+/// appliance never becomes a trusted root for everything. `-e hostnameMismatch` is
+/// the error being forgiven: an appliance reached by IP has a certificate naming
+/// something else.
+#[cfg(target_os = "macos")]
+fn trust_cert(host: &str, der: &[u8]) -> Result<(), String> {
+    let path = std::env::temp_dir().join(format!("patchbay-cert-{}.der", std::process::id()));
+    std::fs::write(&path, der).map_err(|e| format!("{}: {e}", path.display()))?;
+    let keychain = dirs::home_dir()
+        .ok_or("no home directory")?
+        .join("Library/Keychains/login.keychain-db");
+    let out = std::process::Command::new("/usr/bin/security")
+        .args([
+            "add-trusted-cert",
+            "-r",
+            "trustAsRoot",
+            "-p",
+            "ssl",
+            "-e",
+            "hostnameMismatch",
+        ])
+        .args(["-s", host, "-k"])
+        .arg(&keychain)
+        .arg(&path)
+        .output()
+        .map_err(|e| format!("could not run security: {e}"));
+    let _ = std::fs::remove_file(&path);
+    trust_outcome(out?)
+}
+
+/// Windows keeps its own store and WebView2 reads it. `-user` keeps this to one
+/// account, because the machine store needs an administrator. Windows has no per-host
+/// name-mismatch waiver, so WebView2 may still refuse a certificate trusted here.
+#[cfg(target_os = "windows")]
+fn trust_cert(_host: &str, der: &[u8]) -> Result<(), String> {
+    let path = std::env::temp_dir().join(format!("patchbay-cert-{}.cer", std::process::id()));
+    std::fs::write(&path, der).map_err(|e| format!("{}: {e}", path.display()))?;
+    let out = std::process::Command::new("certutil")
+        .args(["-user", "-addstore", "Root"])
+        .arg(&path)
+        .output()
+        .map_err(|e| format!("could not run certutil: {e}"));
+    let _ = std::fs::remove_file(&path);
+    trust_outcome(out?)
+}
+
+/// Linux has no one store the webview reads, and writing to the system bundle is the
+/// distribution's business.
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn trust_cert(_host: &str, _der: &[u8]) -> Result<(), String> {
+    Err("trusting a certificate from here isn't supported on this system - accept it in your browser instead".into())
+}
+
+/// A cancelled system prompt is a decision, not a failure to explain.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn trust_outcome(out: std::process::Output) -> Result<(), String> {
+    if out.status.success() {
+        return Ok(());
+    }
+    let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(match why.is_empty() {
+        true => "the certificate wasn't trusted".to_string(),
+        false => format!("the certificate wasn't trusted: {why}"),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn showing_a_device_anyway_is_remembered() {
+        let dir = std::env::temp_dir().join(format!("patchbay-webtrust-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("web_trusted");
+        let url = "https://192.168.1.20:5001/";
+
+        assert!(
+            !web_trusted_at(&store, url),
+            "trusted before anyone said so"
+        );
+        web_trust_at(&store, url).unwrap();
+        assert!(web_trusted_at(&store, url));
+        // Saying it twice is one line, and a different device is still unanswered.
+        web_trust_at(&store, url).unwrap();
+        assert_eq!(std::fs::read_to_string(&store).unwrap().lines().count(), 1);
+        assert!(!web_trusted_at(&store, "https://192.168.1.9:5001/"));
+    }
+
+    #[test]
+    fn cleartext_is_for_your_own_network_only() {
+        for ours in [
+            "192.168.1.20",
+            "10.0.0.4",
+            "172.16.3.9",
+            "172.31.255.1",
+            "127.0.0.1",
+            "localhost",
+            "169.254.1.1",
+            "nas",
+            "nas.local",
+            "::1",
+            "fe80::1",
+            "fd00::1",
+            // Tailscale's 100.64/10 is someone's own network too.
+            "100.64.0.1",
+            "100.101.102.103",
+            "100.127.255.254",
+        ] {
+            assert!(is_private_host(ours), "{ours:?} is on your own network");
+        }
+        for theirs in [
+            "example.com",
+            "8.8.8.8",
+            "172.32.0.1",
+            "172.15.0.1",
+            "1.1.1.1",
+            "evil.example.co.uk",
+            "2606:4700::1111",
+            "100.63.255.255",
+            "100.128.0.1",
+        ] {
+            assert!(!is_private_host(theirs), "{theirs:?} is not");
+        }
+    }
+
+    /// reqwest's Display stops at the url; the reason lives in the source chain.
+    #[test]
+    fn a_web_ui_that_wont_load_says_why_not_just_which() {
+        let err = web_reachable("https://127.0.0.1:1").unwrap_err();
+        assert!(err.contains("127.0.0.1:1"), "{err}");
+        assert!(
+            err.to_lowercase().contains("refused"),
+            "the cause chain wasn't walked, so the message names no cause: {err}"
+        );
+    }
+}

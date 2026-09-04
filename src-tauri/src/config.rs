@@ -1,6 +1,6 @@
-//! Writing the config back out. The file is something people hand-edit, so every
-//! change goes through toml_edit - comments, spacing and key order survive - and
-//! lands via a temp file + rename so a crash mid-write can't truncate it.
+//! The only code that writes a config. People hand-edit the file, so every change goes
+//! through toml_edit (comments, spacing and key order survive) and lands as a temp
+//! file plus rename, so a crash mid-write can't truncate it.
 
 use crate::patchbay;
 use serde::{Deserialize, Serialize};
@@ -38,23 +38,18 @@ fn read_doc(path: &Path) -> Result<DocumentMut, String> {
         .map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// The name of the file patchbay writes into `~/.ssh`, and the `Include` line that
-/// makes ssh read it. Relative, because ssh resolves a relative Include against `~/.ssh`
-/// and an absolute one would bake this machine's home directory into a line people
-/// carry between machines.
+/// Our file in `~/.ssh` and the line that makes ssh read it. Relative, because ssh
+/// resolves it against `~/.ssh` and an absolute path would bake in this machine's home.
 const SSH_FILE: &str = "patchbay.conf";
 const SSH_INCLUDE: &str = "Include patchbay.conf";
 
-/// Write the generated host list and make sure `~/.ssh/config` reads it.
-///
-/// Its own file, never theirs: people hand-tune that config for years and it is not
-/// ours to rewrite. The one thing we touch in it is a single `Include` at the top, and
-/// the top is where a first-wins file wants it - `to_ssh_config` has already left out
-/// every name their config spells out, so nothing of theirs is shadowed from up there.
+/// Write the generated host list and make sure `~/.ssh/config` includes it. The user's
+/// config is never rewritten: one `Include` line goes in at the top, where a first-wins
+/// file needs it, and `to_ssh_config` has already left out every name they define.
 pub fn write_ssh_include(dir: &Path, body: &str) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let ours = dir.join(SSH_FILE);
-    // Nothing to do is the common case - this runs whenever the list is read.
+    // Runs on every read of the list, so an unchanged file is not rewritten.
     if std::fs::read_to_string(&ours).is_ok_and(|had| had == body) {
         return Ok(());
     }
@@ -70,8 +65,7 @@ pub fn write_ssh_include(dir: &Path, body: &str) -> Result<(), String> {
     write_text(&cfg, &format!("{SSH_INCLUDE}\n\n{had}"))
 }
 
-/// Put it back the way it was: the generated file goes, and so does the one line we
-/// added. Everything else in their config is left exactly where they wrote it.
+/// Remove the generated file and our one `Include` line, leaving everything else as written.
 pub fn remove_ssh_include(dir: &Path) -> Result<(), String> {
     let _ = std::fs::remove_file(dir.join(SSH_FILE));
     let cfg = dir.join("config");
@@ -85,15 +79,13 @@ pub fn remove_ssh_include(dir: &Path) -> Result<(), String> {
     write_text(&cfg, &format!("{}\n", kept.join("\n").trim_start()))
 }
 
-/// What a previous install left behind in `~/.ssh`, so the window can offer to sweep
-/// it up when this setting has been off since (re)install. The two answers are
-/// independent: someone might have deleted `patchbay.conf` themselves and left the
-/// `Include` line, or the file might be here without a line reading it.
+/// What a previous install left in `~/.ssh`. The two flags are independent: either the
+/// file or the `Include` line can be there without the other.
 #[derive(Debug, serde::Serialize, PartialEq)]
 pub struct Leftovers {
     pub conf_file: bool,
     pub include_line: bool,
-    /// Absolute paths, so the pill can show them and the user knows what will go.
+    /// Absolute paths, so the window can show what will be removed.
     pub conf_path: String,
     pub config_path: String,
 }
@@ -109,16 +101,14 @@ pub fn ssh_leftovers(dir: &Path) -> Leftovers {
     }
 }
 
-/// Spelled either way people write it - ours goes in relative, but someone who has
-/// moved it to an absolute path still has it, and adding a second line would be worse
-/// than leaving theirs alone.
-///
-/// The *whole* last segment, never just the tail: `Include ~/.ssh/work-patchbay.conf`
-/// is someone else's file, and reading it as ours would take their line out of their
-/// config the first time this is switched off.
+/// Matches our `Include` whether written relative or absolute. The whole last path
+/// segment must match: `work-patchbay.conf` is someone else's file.
 fn is_our_include(line: &str) -> bool {
     let l = line.trim();
-    let Some(path) = l.strip_prefix("Include ").or_else(|| l.strip_prefix("include ")) else {
+    let Some(path) = l
+        .strip_prefix("Include ")
+        .or_else(|| l.strip_prefix("include "))
+    else {
         return false;
     };
     path.trim().rsplit('/').next() == Some(SSH_FILE)
@@ -128,8 +118,7 @@ fn includes_ours(src: &str) -> bool {
     src.lines().any(is_our_include)
 }
 
-/// Temp file and rename, like every other write here - someone's ssh config is not a
-/// thing to leave half-written.
+/// Temp file plus rename, so the ssh config is never left half-written.
 fn write_text(path: &Path, body: &str) -> Result<(), String> {
     let tmp = path.with_extension("patchbay-tmp");
     std::fs::write(&tmp, body).map_err(|e| format!("{}: {e}", tmp.display()))?;
@@ -140,14 +129,13 @@ fn write_doc(path: &Path, doc: &DocumentMut) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    // Same directory, so the rename is atomic - the config is never half-written.
+    // Same directory, so the rename is atomic.
     let tmp = path.with_extension("toml.tmp");
     std::fs::write(&tmp, doc.to_string()).map_err(|e| format!("{}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, &path).map_err(|e| format!("{}: {e}", path.display()))
+    std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// An empty file where there was none, so "Open config file" on a first run opens an
-/// editor rather than doing nothing - `open` on a missing path exits quietly.
+/// Create an empty file on a first run: the desktop opener does nothing for a missing path.
 pub fn ensure_exists(path: &Path) -> Result<(), String> {
     if path.exists() {
         return Ok(());
@@ -155,11 +143,10 @@ pub fn ensure_exists(path: &Path) -> Result<(), String> {
     write_doc(path, &DocumentMut::new())
 }
 
-/// toml_edit hangs the lines above a table on that table, so removing one deletes
-/// the comments sitting over it - including a file header that was never about it.
-/// Hands them back for `rehome_comments` instead.
-/// ponytail: the whole block moves, so a comment about a deleted jack ends up above
-/// the next one. A stale comment is visible and fixable; a deleted one isn't.
+/// Remove a table and hand back the comments above it for `rehome_comments`: toml_edit
+/// would otherwise delete them, file header included.
+/// ponytail: the whole block moves, so a comment about a deleted jack lands above the
+/// next one. Stale is visible and fixable; deleted is not.
 pub fn orphan_comments(parent: &mut Table, key: &str) -> Option<(String, usize)> {
     let removed = parent.remove(key)?;
     let t = removed.as_table()?;
@@ -170,8 +157,8 @@ pub fn orphan_comments(parent: &mut Table, key: &str) -> Option<(String, usize)>
     Some((prefix.to_string(), t.position()?))
 }
 
-/// Tables render in `position()` order, so the one that takes the removed table's
-/// place is the next position along - wherever in the tree it happens to live.
+/// Tables render in `position()` order, so the next position along is the one that
+/// takes the removed table's place, wherever it lives in the tree.
 fn first_position_after(item: &Item, after: usize) -> Option<usize> {
     let t = item.as_table()?;
     t.iter()
@@ -181,9 +168,16 @@ fn first_position_after(item: &Item, after: usize) -> Option<usize> {
 }
 
 fn prepend_prefix(item: &mut Item, at: usize, comments: &str) -> bool {
-    let Some(t) = item.as_table_mut() else { return false };
+    let Some(t) = item.as_table_mut() else {
+        return false;
+    };
     if t.position() == Some(at) {
-        let old = t.decor().prefix().and_then(|p| p.as_str()).unwrap_or("").to_string();
+        let old = t
+            .decor()
+            .prefix()
+            .and_then(|p| p.as_str())
+            .unwrap_or("")
+            .to_string();
         t.decor_mut().set_prefix(format!("{comments}{old}"));
         return true;
     }
@@ -191,12 +185,14 @@ fn prepend_prefix(item: &mut Item, at: usize, comments: &str) -> bool {
 }
 
 pub fn rehome_comments(doc: &mut DocumentMut, orphan: Option<(String, usize)>) {
-    let Some((comments, was_at)) = orphan else { return };
+    let Some((comments, was_at)) = orphan else {
+        return;
+    };
     match first_position_after(doc.as_item(), was_at) {
         Some(at) => {
             prepend_prefix(doc.as_item_mut(), at, &comments);
         }
-        // Nothing renders after it, so the file ends with them.
+        // Nothing renders after it, so the comments end the file.
         None => {
             let trailing = doc.trailing().as_str().unwrap_or("").to_string();
             doc.set_trailing(format!("{comments}{trailing}"));
@@ -204,7 +200,7 @@ pub fn rehome_comments(doc: &mut DocumentMut, orphan: Option<(String, usize)>) {
     }
 }
 
-/// `[jack]` is implicit - we only ever write the `[jack.name]` children.
+/// `[jack]` stays implicit: only the `[jack.name]` children are written.
 fn jack_table(doc: &mut DocumentMut) -> Result<&mut Table, String> {
     let item = doc.entry("jack").or_insert_with(|| {
         let mut t = Table::new();
@@ -228,7 +224,11 @@ fn set_str(t: &mut Table, k: &str, v: Option<&str>) {
 }
 
 fn set_arr(t: &mut Table, k: &str, items: &[String]) {
-    let kept: Vec<&str> = items.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    let kept: Vec<&str> = items
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
     if kept.is_empty() {
         t.remove(k);
         return;
@@ -240,8 +240,7 @@ fn set_arr(t: &mut Table, k: &str, items: &[String]) {
     t[k] = value(a);
 }
 
-/// `original` is None when adding, Some(old_name) when editing - passing a different
-/// name than the original renames the jack.
+/// `original` is None when adding and the old name when editing; a different name renames.
 pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Result<(), String> {
     let name = j.name.trim().to_string();
     if name.is_empty() {
@@ -251,13 +250,11 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
         return Err(format!("\"{name}\" needs a host"));
     }
     if let Some(u) = j.url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
-        if !crate::is_web_url(u) {
+        if !patchbay::is_web_url(u) {
             return Err("a url has to start with http:// or https://".into());
         }
     }
-    // Checked on the way in as well as on the way out, the way a url is: a forward
-    // becomes argv, and finding out it wasn't one at connect time means a device that
-    // was saved and simply never works.
+    // A forward becomes argv, so it is validated on save as well as on connect.
     for f in &j.forward {
         crate::patchbay::forward_arg(f)?;
     }
@@ -269,8 +266,7 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     if (original.is_none() || renaming) && jacks.contains_key(&name) {
         return Err(format!("there's already a jack named \"{name}\""));
     }
-    // Carried over, not dropped and rebuilt: a rename keeps the jack's comments,
-    // its place in the file, and any key the sheet can't edit - same as an edit does.
+    // A rename keeps the jack's comments, position and any key the sheet can't edit.
     let previous = renaming
         .then(|| jacks.remove(original.as_deref().unwrap_or_default()))
         .flatten();
@@ -291,9 +287,9 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     set_str(t, "primary", j.primary.as_deref());
     set_str(t, "desc", j.desc.as_deref());
     set_arr(t, "folders", &j.folders);
-    t.remove("tags");   // migrates a jack written before folders had their own key
+    t.remove("tags"); // the old name for `folders`
     set_arr(t, "forward", &j.forward);
-    // Only written when false; the default keeps configs uncluttered.
+    // Only written when false, to keep configs uncluttered.
     match j.ssh {
         Some(false) => t["ssh"] = value(false),
         _ => {
@@ -322,9 +318,8 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     write_doc(path, &doc)
 }
 
-/// A folder's note: the thing people keep a README in the tree for. Blank removes it,
-/// and the whole `[folder]` table goes with the last one - a file full of empty tables
-/// is worse than no feature.
+/// Set or clear a folder's note. A blank note removes it, and the `[folder]` table goes
+/// with the last one.
 pub fn set_note_at(file: &Path, folder: &str, note: &str) -> Result<(), String> {
     let path = folder.trim().trim_matches('/');
     if path.is_empty() {
@@ -370,40 +365,32 @@ pub fn delete_jack_at(path: &Path, name: &str) -> Result<(), String> {
 /// App preferences, in `[settings]`. Defaults are what you get with no section.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Settings {
-    /// TCP-probe every device's entry point on a timer for the status dots.
+    /// TCP-probe every device's entry point on a timer, for the status dots.
     #[serde(default = "yes")]
     pub probe: bool,
     /// Connect opens the system terminal instead of a tab in the window.
     #[serde(default)]
     pub connect_in_terminal: bool,
-    /// Write the device list into `~/.ssh/patchbay.conf` and have `~/.ssh/config`
-    /// include it, so `ssh web-01` in any terminal reaches what Connect reaches. Off by
-    /// default: it is the one setting that writes outside patchbay's own directory.
+    /// Write the list to `~/.ssh/patchbay.conf` and include it from `~/.ssh/config`.
+    /// Off by default: it writes outside patchbay's own directory.
     #[serde(default)]
     pub write_ssh_config: bool,
-    /// Tint a device's icon by its `os`, using the brand's colour unless [colors]
-    /// overrides it.
+    /// Tint a device's icon by its `os`, using the brand colour unless `[colors]` overrides it.
     #[serde(default = "yes")]
     pub os_colors: bool,
-    /// Ask the update endpoint once per launch. On unless it is turned off here -
-    /// it is the only request the app makes on its own.
+    /// Ask the update endpoint once per launch. The only request the app makes on its own.
     #[serde(default = "yes")]
     pub check_updates: bool,
-    /// Append every session's terminal output to a file under `logs/` beside the
-    /// config, for whoever wants a record of what ran on a box. Off by default,
-    /// same reasoning as `write_ssh_config`: it writes outside patchbay's own file.
+    /// Append each session's output to a file under `logs/` beside the config. Off by default.
     #[serde(default)]
     pub log_sessions: bool,
-    /// "system" follows the machine; "light" and "dark" pin it. Anything else reads
-    /// as "system", so a typo here is a working app rather than an unstyled one.
+    /// "system", "light" or "dark". Anything else reads as "system".
     #[serde(default = "system")]
     pub theme: String,
-    /// Terminal font size, in px. Clamped on the way in - it reaches xterm, which
-    /// will happily lay out a session at 400px.
+    /// Terminal font size in px. Clamped on save; it reaches xterm unchecked.
     #[serde(default = "font_size")]
     pub font_size: f64,
-    /// The sidebar's width in px, as you last dragged it. Clamped here too: it lands
-    /// in a grid template, and a column wider than the window leaves no list.
+    /// Sidebar width in px. Clamped on save; a column wider than the window leaves no list.
     #[serde(default = "sidebar")]
     pub sidebar: f64,
 }
@@ -440,9 +427,7 @@ impl Default for Settings {
     }
 }
 
-/// `[defaults]` merges into every jack, so it accepts any jack key. The sheet only
-/// offers the four worth inheriting - anything else someone wrote there by hand is
-/// left exactly where it is.
+/// The four `[defaults]` keys the sheet edits. Any other key written by hand is left alone.
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Defaults {
     pub user: Option<String>,
@@ -461,8 +446,7 @@ pub fn load_defaults() -> Defaults {
     load_defaults_at(&patchbay::config_path())
 }
 
-/// Never fails, for the same reason `load_settings_at` doesn't: the sheet has to
-/// open even when the file it is about to fix is broken.
+/// Never fails: the sheet has to open even when the file it is about to fix is broken.
 pub fn load_defaults_at(file: &Path) -> Defaults {
     std::fs::read_to_string(file)
         .ok()
@@ -494,8 +478,7 @@ pub fn save_defaults_at(file: &Path, d: &Defaults) -> Result<(), String> {
         }
         t.is_empty()
     };
-    // Nothing inherited means no section - an empty `[defaults]` left behind is
-    // noise in a file people read. A hand-written key keeps the table alive.
+    // An empty `[defaults]` is removed; a hand-written key keeps the table alive.
     if empty {
         let orphan = orphan_comments(doc.as_table_mut(), "defaults");
         rehome_comments(&mut doc, orphan);
@@ -513,8 +496,7 @@ pub fn load_settings() -> Settings {
     load_settings_at(&patchbay::config_path())
 }
 
-/// Never fails: a broken or missing config just means defaults, so the settings
-/// sheet still opens and can fix whatever is wrong.
+/// Never fails: a broken or missing config means defaults, so the sheet still opens.
 pub fn load_settings_at(file: &Path) -> Settings {
     std::fs::read_to_string(file)
         .ok()
@@ -540,8 +522,7 @@ pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
     t["check_updates"] = value(s.check_updates);
     t["log_sessions"] = value(s.log_sessions);
     t["write_ssh_config"] = value(s.write_ssh_config);
-    // Both are read straight back out by the window - one onto the root element, one
-    // into xterm - so they are narrowed here rather than wherever they land.
+    // Read straight back by the window (root element, xterm), so narrowed here.
     t["theme"] = value(match s.theme.as_str() {
         "light" => "light",
         "dark" => "dark",
@@ -558,8 +539,7 @@ struct RawColors {
     colors: std::collections::BTreeMap<String, String>,
 }
 
-/// `[colors]` maps an `os` value to a hex. Absent entries fall back to the brand's
-/// own colour, so this only holds what you have deliberately changed.
+/// `[colors]` maps an `os` value to a hex. Only deliberate overrides are stored.
 pub fn load_colors() -> std::collections::BTreeMap<String, String> {
     std::fs::read_to_string(patchbay::config_path())
         .ok()
@@ -579,10 +559,9 @@ pub fn save_color_at(file: &Path, os: &str, hex: Option<&str>) -> Result<(), Str
         return Err("which os?".into());
     }
     if let Some(h) = hex {
-        // This ends up in a style attribute, so nothing but a plain hex gets in.
-        let ok = h.len() == 7
-            && h.starts_with('#')
-            && h[1..].chars().all(|c| c.is_ascii_hexdigit());
+        // Reaches a style attribute, so only a plain hex gets in.
+        let ok =
+            h.len() == 7 && h.starts_with('#') && h[1..].chars().all(|c| c.is_ascii_hexdigit());
         if !ok {
             return Err(format!("\"{h}\" isn't a #rrggbb colour"));
         }
@@ -602,11 +581,11 @@ pub fn save_color_at(file: &Path, os: &str, hex: Option<&str>) -> Result<(), Str
     write_doc(file, &doc)
 }
 
-/// on the jacks that are in it.
-/// A note is hung on a path, so a folder that moves has to take it along and one that
-/// goes has to drop it - otherwise a rename silently orphans what somebody wrote.
+/// A note hangs on a path, so a renamed folder takes it along and a deleted one drops it.
 fn move_note(doc: &mut DocumentMut, from: &str, to: Option<&str>) {
-    let Some(table) = doc.get_mut("folder").and_then(Item::as_table_mut) else { return };
+    let Some(table) = doc.get_mut("folder").and_then(Item::as_table_mut) else {
+        return;
+    };
     let moved: Vec<(String, Item)> = table
         .iter()
         .filter(|(k, _)| *k == from || k.starts_with(&format!("{from}/")))
@@ -630,11 +609,18 @@ fn map_folders(file: &Path, path: &str, to: Option<&str>) -> Result<usize, Strin
     let mut touched = 0;
 
     for (_, item) in jacks.iter_mut() {
-        let Some(t) = item.as_table_mut() else { continue };
-        // ponytail: `tags` is the old key for the same list, so a rename still works
-        // on a file written before the change. Drop when no old files are left.
-        let key = if t.contains_key("folders") { "folders" } else { "tags" };
-        let Some(arr) = t.get(key).and_then(|i| i.as_array()) else { continue };
+        let Some(t) = item.as_table_mut() else {
+            continue;
+        };
+        // ponytail: `tags` is the old key for `folders`; drop when no old files are left.
+        let key = if t.contains_key("folders") {
+            "folders"
+        } else {
+            "tags"
+        };
+        let Some(arr) = t.get(key).and_then(|i| i.as_array()) else {
+            continue;
+        };
 
         let mut next = Array::new();
         let mut changed = false;
@@ -677,14 +663,9 @@ pub fn delete_group_at(file: &Path, path: &str) -> Result<usize, String> {
     map_folders(file, path, None)
 }
 
-/// Spaces were extra config files beside the main one, from when a shared list had to
-/// be a whole file of its own. One list and folders do that job now, so anything still
-/// in `spaces/` is folded in on the way past: each device keeps its devices' folders
-/// with the space's name in front, so `acme` + `prod` becomes `acme/prod` and nothing
-/// that was filed separately ends up mixed in.
-///
-/// Runs once - the files it reads are renamed `.toml.merged` rather than deleted,
-/// because it is somebody's device list and this is the only copy of the split version.
+/// Fold the old `spaces/*.toml` files into the one list. Each device gets the space's
+/// name as its outermost folder, so `acme` + `prod` becomes `acme/prod`. The files read
+/// are renamed `.toml.merged`, not deleted: they are the only copy of the split version.
 pub fn fold_spaces_at(cfg: &Path) -> Result<usize, String> {
     let dir = cfg.with_file_name("spaces");
     let Ok(entries) = std::fs::read_dir(&dir) else {
@@ -703,22 +684,29 @@ pub fn fold_spaces_at(cfg: &Path) -> Result<usize, String> {
     let mut doc = read_doc(cfg)?;
     let (mut moved, mut merged) = (0, Vec::new());
     for file in files {
-        let Some(space) = file.file_stem().and_then(|s| s.to_str()).map(str::to_string) else {
+        let Some(space) = file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(str::to_string)
+        else {
             continue;
         };
-        let Ok(src) = std::fs::read_to_string(&file) else { continue };
+        let Ok(src) = std::fs::read_to_string(&file) else {
+            continue;
+        };
         let Ok(from) = src.parse::<DocumentMut>() else {
-            // A file that doesn't parse is left exactly where it is, named in the log
-            // rather than quietly dropped on the floor.
-            eprintln!("patchbay: {} doesn't parse, so it was left alone", file.display());
+            // A file that doesn't parse is left where it is and named in the log.
+            eprintln!(
+                "patchbay: {} doesn't parse, so it was left alone",
+                file.display()
+            );
             continue;
         };
-        let Some(jacks) = from.get("jack").and_then(Item::as_table) else { continue };
-        // A space had its own `[defaults]`, which applied to its devices and nobody
-        // else's. There is one `[defaults]` after this, so the inherited keys are
-        // written onto each device on the way over - otherwise a device that leaned on
-        // `user = "root"` in its own file arrives without a user and simply stops
-        // working, which is the worst way for a migration to fail.
+        let Some(jacks) = from.get("jack").and_then(Item::as_table) else {
+            continue;
+        };
+        // A space's own `[defaults]` is written onto each of its devices, since there
+        // is only one `[defaults]` after this.
         let defaults = from.get("defaults").and_then(Item::as_table);
 
         for (name, item) in jacks.iter() {
@@ -731,9 +719,12 @@ pub fn fold_spaces_at(cfg: &Path) -> Result<usize, String> {
                     }
                 }
             }
-            // The space becomes the outermost folder, so the split survives as a
-            // branch of the tree instead of as a second file.
-            let key = if t.contains_key("folders") { "folders" } else { "tags" };
+            // The space becomes the outermost folder.
+            let key = if t.contains_key("folders") {
+                "folders"
+            } else {
+                "tags"
+            };
             let mut folders = Array::new();
             match t.get(key).and_then(Item::as_array) {
                 Some(had) if !had.is_empty() => {
@@ -755,8 +746,7 @@ pub fn fold_spaces_at(cfg: &Path) -> Result<usize, String> {
                 })
                 .as_table_mut()
                 .ok_or("`jack` in that config is not a table")?;
-            // First wins, the way loading two spaces did: a name already here is the
-            // one you have been using.
+            // First wins: a name already in the list is the one in use.
             let mut at = name.to_string();
             let mut n = 2;
             while table.contains_key(&at) {
@@ -771,9 +761,7 @@ pub fn fold_spaces_at(cfg: &Path) -> Result<usize, String> {
     if moved == 0 {
         return Ok(0);
     }
-    // The config lands before anything is renamed. The other order loses the devices
-    // outright if this write fails: the files it read would already be `.toml.merged`,
-    // and the list they were folded into was never written.
+    // Written before renaming: the other order loses the devices if the write fails.
     write_doc(cfg, &doc)?;
     for file in merged {
         let _ = std::fs::rename(&file, file.with_extension("toml.merged"));
@@ -811,22 +799,49 @@ folders = ["prod/eu/web"]
     }
     fn input(name: &str, host: &str) -> JackInput {
         JackInput {
-            name: name.into(), host: host.into(),
-            user: None, port: None, key: None, jump: None, os: None, url: None, rdp: None, vnc: None, ssh: None, primary: None, desc: None,
-            folders: vec![], forward: vec![],
+            name: name.into(),
+            host: host.into(),
+            user: None,
+            port: None,
+            key: None,
+            jump: None,
+            os: None,
+            url: None,
+            rdp: None,
+            vnc: None,
+            ssh: None,
+            primary: None,
+            desc: None,
+            folders: vec![],
+            forward: vec![],
         }
     }
 
     #[test]
     fn a_theme_and_a_font_size_are_narrowed_on_the_way_in() {
         let p = scratch("settings");
-        save_settings_at(&p, &Settings { theme: "neon".into(), font_size: 900.0, ..Settings::default() }).unwrap();
+        save_settings_at(
+            &p,
+            &Settings {
+                theme: "neon".into(),
+                font_size: 900.0,
+                ..Settings::default()
+            },
+        )
+        .unwrap();
         let back = load_settings_at(&p);
-        // One reaches the root element, the other reaches xterm's layout.
         assert_eq!(back.theme, "system");
         assert_eq!(back.font_size, 32.0);
 
-        save_settings_at(&p, &Settings { theme: "light".into(), font_size: 14.0, ..Settings::default() }).unwrap();
+        save_settings_at(
+            &p,
+            &Settings {
+                theme: "light".into(),
+                font_size: 14.0,
+                ..Settings::default()
+            },
+        )
+        .unwrap();
         let back = load_settings_at(&p);
         assert_eq!(back.theme, "light");
         assert_eq!(back.font_size, 14.0);
@@ -836,11 +851,17 @@ folders = ["prod/eu/web"]
     #[test]
     fn the_update_check_is_on_until_it_is_turned_off() {
         let p = scratch("check_updates");
-        // A config written before the setting existed still checks - absent is on,
-        // and a machine that silently stopped looking would never say so.
+        // Absent is on: a config written before the setting existed still checks.
         assert!(load_settings_at(&p).check_updates);
 
-        save_settings_at(&p, &Settings { check_updates: false, ..Settings::default() }).unwrap();
+        save_settings_at(
+            &p,
+            &Settings {
+                check_updates: false,
+                ..Settings::default()
+            },
+        )
+        .unwrap();
         assert!(!load_settings_at(&p).check_updates);
     }
 
@@ -849,14 +870,28 @@ folders = ["prod/eu/web"]
         let p = scratch("log_sessions");
         assert!(!load_settings_at(&p).log_sessions);
 
-        save_settings_at(&p, &Settings { log_sessions: true, ..Settings::default() }).unwrap();
+        save_settings_at(
+            &p,
+            &Settings {
+                log_sessions: true,
+                ..Settings::default()
+            },
+        )
+        .unwrap();
         assert!(load_settings_at(&p).log_sessions);
     }
 
     #[test]
     fn the_ssh_config_switch_survives_a_save() {
         let p = scratch("write_ssh_config");
-        save_settings_at(&p, &Settings { write_ssh_config: true, ..Settings::default() }).unwrap();
+        save_settings_at(
+            &p,
+            &Settings {
+                write_ssh_config: true,
+                ..Settings::default()
+            },
+        )
+        .unwrap();
         assert!(load_settings_at(&p).write_ssh_config);
     }
 
@@ -876,8 +911,7 @@ folders = ["prod/eu/web"]
         assert_eq!(back.port, Some(2222));
         assert!(read(&p).contains("keep this comment"));
 
-        // Clearing every field takes the section with it rather than leaving an
-        // empty `[defaults]` in a file people read.
+        // Clearing every field takes the section with it.
         save_defaults_at(&p, &Defaults::default()).unwrap();
         assert!(!read(&p).contains("[defaults]"), "got {}", read(&p));
     }
@@ -888,7 +922,10 @@ folders = ["prod/eu/web"]
         save_defaults_at(&p, &Defaults::default()).unwrap();
         let out = read(&p);
         assert!(!out.contains("[defaults]"), "got {out}");
-        assert!(out.contains("# my hosts"), "the file header went with it:\n{out}");
+        assert!(
+            out.contains("# my hosts"),
+            "the file header went with it:\n{out}"
+        );
         assert!(
             out.find("# my hosts") < out.find("[jack.bastion]"),
             "the header should still be on top:\n{out}"
@@ -900,8 +937,7 @@ folders = ["prod/eu/web"]
         assert!(out.contains("# the way in"), "got {out}");
         assert!(out.find("# my hosts") < out.find("[jack.web]"), "got {out}");
 
-        // Nothing renders after the last jack, so its comments end up at the end
-        // rather than nowhere.
+        // Nothing renders after the last jack, so its comments end the file.
         delete_jack_at(&p, "web").unwrap();
         assert!(read(&p).contains("# my hosts"), "got {}", read(&p));
     }
@@ -909,10 +945,18 @@ folders = ["prod/eu/web"]
     #[test]
     fn renaming_a_jack_takes_its_comment_along() {
         let p = scratch("rename-comment");
-        save_jack_at(&p, Some("bastion".into()), input("gateway", "bastion.example")).unwrap();
+        save_jack_at(
+            &p,
+            Some("bastion".into()),
+            input("gateway", "bastion.example"),
+        )
+        .unwrap();
         let out = read(&p);
         assert!(out.contains("# the way in"), "got {out}");
-        assert!(out.find("# the way in") < out.find("[jack.gateway]"), "got {out}");
+        assert!(
+            out.find("# the way in") < out.find("[jack.gateway]"),
+            "got {out}"
+        );
     }
 
     #[test]
@@ -947,7 +991,10 @@ folders = ["prod/eu/web"]
         j.folders = vec!["prod/eu".into()];
         save_jack_at(&p, Some("bastion".into()), j).unwrap();
         let out = read(&p);
-        assert!(!out.contains("port = 2222"), "cleared port should be gone:\n{out}");
+        assert!(
+            !out.contains("port = 2222"),
+            "cleared port should be gone:\n{out}"
+        );
         assert!(out.contains("# the way in"), "comment survived the edit");
         assert!(!out.contains("entrypoint"), "dropped tag should be gone");
     }
@@ -967,19 +1014,21 @@ folders = ["prod/eu/web"]
     #[test]
     fn a_jack_needs_a_name_and_a_host() {
         let p = scratch("valid");
-        assert!(save_jack_at(&p, None, input("", "h")).unwrap_err().contains("needs a name"));
-        assert!(save_jack_at(&p, None, input("x", "  ")).unwrap_err().contains("needs a host"));
+        assert!(save_jack_at(&p, None, input("", "h"))
+            .unwrap_err()
+            .contains("needs a name"));
+        assert!(save_jack_at(&p, None, input("x", "  "))
+            .unwrap_err()
+            .contains("needs a host"));
     }
 
-    /// The thing people keep a README in the tree for. It hangs on the path, so the
-    /// two things that move a path have to carry it - a rename that orphaned somebody's
-    /// notes would be a silent loss of the only writing in the file.
-    /// The one-way door out of spaces. It has to be lossless in the way that matters:
-    /// every device arrives, and the split it used to have survives as a branch rather
-    /// than dissolving into everyone else's list.
+    /// Every device arrives, and the split survives as a branch of the tree.
     #[test]
     fn spaces_fold_into_the_one_list_and_keep_their_shape() {
-        let cfg = std::env::temp_dir().join(format!("patchbay-{}-fold/patchbay.toml", std::process::id()));
+        let cfg = std::env::temp_dir().join(format!(
+            "patchbay-{}-fold/patchbay.toml",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(cfg.parent().unwrap());
         std::fs::create_dir_all(cfg.with_file_name("spaces")).unwrap();
         std::fs::write(&cfg, "# mine\n[jack.laptop]\nhost = \"192.168.1.9\"\n").unwrap();
@@ -989,7 +1038,7 @@ folders = ["prod/eu/web"]
              [jack.web]\nhost = \"10.0.0.4\"\nuser = \"deploy\"\nfolders = [\"prod\"]\n",
         )
         .unwrap();
-        // A name that is already in the main list, which first-wins used to hide.
+        // A name already in the main list.
         std::fs::write(
             cfg.with_file_name("spaces").join("lab.toml"),
             "[jack.laptop]\nhost = \"10.1.1.1\"\n",
@@ -1001,28 +1050,48 @@ folders = ["prod/eu/web"]
         assert_eq!(jacks.len(), 4);
         assert!(read(&cfg).contains("# mine"), "the file was re-serialized");
 
-        // A space's `[defaults]` applied to its devices and to nobody else's, and there
-        // is only one `[defaults]` after this - so what they inherited comes with them,
-        // and what they set themselves is left alone.
-        assert_eq!(jacks["db"].user.as_deref(), Some("root"), "an inherited user was dropped");
-        assert_eq!(jacks["web"].user.as_deref(), Some("deploy"), "an inherited user won");
+        // Inherited keys come along; keys set on the device itself win.
+        assert_eq!(
+            jacks["db"].user.as_deref(),
+            Some("root"),
+            "an inherited user was dropped"
+        );
+        assert_eq!(
+            jacks["web"].user.as_deref(),
+            Some("deploy"),
+            "an inherited user won"
+        );
 
-        // The space is the outermost folder now, whether or not there was one before.
-        assert_eq!(jacks["db"].folders.as_deref(), Some(&["acme".to_string()][..]));
-        assert_eq!(jacks["web"].folders.as_deref(), Some(&["acme/prod".to_string()][..]));
-        // Yours is untouched and the other one is beside it under a name of its own.
+        // The space is the outermost folder, with or without folders before.
+        assert_eq!(
+            jacks["db"].folders.as_deref(),
+            Some(&["acme".to_string()][..])
+        );
+        assert_eq!(
+            jacks["web"].folders.as_deref(),
+            Some(&["acme/prod".to_string()][..])
+        );
+        // The existing device is untouched; the clash gets its own name.
         assert_eq!(jacks["laptop"].host, "192.168.1.9");
         assert_eq!(jacks["laptop 2"].host, "10.1.1.1");
 
         // The files it read are kept, and it does not run twice.
-        assert!(cfg.with_file_name("spaces").join("acme.toml.merged").exists());
+        assert!(cfg
+            .with_file_name("spaces")
+            .join("acme.toml.merged")
+            .exists());
         assert_eq!(fold_spaces_at(&cfg).unwrap(), 0);
     }
 
     #[test]
     fn a_folder_note_survives_a_rename_and_goes_with_a_delete() {
         let p = scratch("notes");
-        set_note_at(&p, "prod/eu", "the recovery key is in the safe\nask Anna first").unwrap();
+        set_note_at(
+            &p,
+            "prod/eu",
+            "the recovery key is in the safe\nask Anna first",
+        )
+        .unwrap();
         assert_eq!(
             patchbay::notes(&read(&p))["prod/eu"],
             "the recovery key is in the safe\nask Anna first",
@@ -1031,18 +1100,27 @@ folders = ["prod/eu/web"]
 
         rename_group_at(&p, "prod/eu", "prod/emea").unwrap();
         let after = patchbay::notes(&read(&p));
-        assert!(after.contains_key("prod/emea"), "the note was orphaned by a rename");
+        assert!(
+            after.contains_key("prod/emea"),
+            "the note was orphaned by a rename"
+        );
         assert!(!after.contains_key("prod/eu"));
 
         delete_group_at(&p, "prod/emea").unwrap();
         assert!(patchbay::notes(&read(&p)).is_empty());
-        assert!(!read(&p).contains("[folder"), "an empty table was left behind");
+        assert!(
+            !read(&p).contains("[folder"),
+            "an empty table was left behind"
+        );
 
-        // And a blank note is a removal, not a folder with an empty string in it.
+        // A blank note is a removal.
         set_note_at(&p, "prod", "x").unwrap();
         set_note_at(&p, "prod", "  ").unwrap();
         assert!(patchbay::notes(&read(&p)).is_empty());
-        assert!(read(&p).contains("keep this comment"), "the file was re-serialized");
+        assert!(
+            read(&p).contains("keep this comment"),
+            "the file was re-serialized"
+        );
     }
 
     #[test]
@@ -1051,8 +1129,14 @@ folders = ["prod/eu/web"]
         assert_eq!(rename_group_at(&p, "prod/eu", "prod/emea").unwrap(), 2);
         let out = read(&p);
         assert!(out.contains(r#""prod/emea""#), "{out}");
-        assert!(out.contains(r#""prod/emea/web""#), "children move too:\n{out}");
-        assert!(out.contains(r#""entrypoint""#), "unrelated folders untouched");
+        assert!(
+            out.contains(r#""prod/emea/web""#),
+            "children move too:\n{out}"
+        );
+        assert!(
+            out.contains(r#""entrypoint""#),
+            "unrelated folders untouched"
+        );
     }
 
     #[test]
@@ -1063,8 +1147,11 @@ folders = ["prod/eu/web"]
         assert!(!out.contains("prod/eu"));
         assert!(out.contains("[jack.bastion]"), "the device stays");
         assert!(out.contains("[jack.web]"), "the device stays");
-        assert!(out.contains(r#"folders = ["entrypoint"]"#), "its other folder stays");
-        // web's only tag was under the folder, so the key goes entirely
+        assert!(
+            out.contains(r#"folders = ["entrypoint"]"#),
+            "its other folder stays"
+        );
+        // web's only folder was under it, so the key goes entirely.
         assert!(!out.contains(r#"folders = []"#));
     }
 
@@ -1074,10 +1161,16 @@ folders = ["prod/eu/web"]
         save_color_at(&p, "Synology", Some("#0C4A9F")).unwrap();
         let out = read(&p);
         assert!(out.contains("[colors]"), "{out}");
-        assert!(out.contains(r##"synology = "#0C4A9F""##), "key is lowercased: {out}");
+        assert!(
+            out.contains(r##"synology = "#0C4A9F""##),
+            "key is lowercased: {out}"
+        );
 
         for bad in ["blue", "#0C4A9", "#GGGGGG", "red; background:url(x)"] {
-            assert!(save_color_at(&p, "x", Some(bad)).is_err(), "{bad:?} should be rejected");
+            assert!(
+                save_color_at(&p, "x", Some(bad)).is_err(),
+                "{bad:?} should be rejected"
+            );
         }
 
         save_color_at(&p, "synology", None).unwrap();
@@ -1089,12 +1182,12 @@ folders = ["prod/eu/web"]
         let p = scratch("delete");
         delete_jack_at(&p, "web").unwrap();
         assert!(!read(&p).contains("[jack.web]"));
-        assert!(delete_jack_at(&p, "web").unwrap_err().contains("no jack named"));
+        assert!(delete_jack_at(&p, "web")
+            .unwrap_err()
+            .contains("no jack named"));
     }
 
-    /// The one write that lands outside patchbay's own directory. Their config is
-    /// theirs: one line goes in at the top, and turning it off takes exactly that line
-    /// and the generated file, leaving everything they wrote where they wrote it.
+    /// One line goes in at the top; turning it off takes exactly that line and the file.
     #[test]
     fn the_ssh_include_is_one_line_of_theirs_and_comes_back_out_cleanly() {
         let dir = std::env::temp_dir().join(format!("patchbay-{}-sshinc", std::process::id()));
@@ -1105,23 +1198,35 @@ folders = ["prod/eu/web"]
         std::fs::write(&cfg, mine).unwrap();
 
         write_ssh_include(&dir, "Host db\n").unwrap();
-        assert_eq!(std::fs::read_to_string(dir.join("patchbay.conf")).unwrap(), "Host db\n");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("patchbay.conf")).unwrap(),
+            "Host db\n"
+        );
         let after = std::fs::read_to_string(&cfg).unwrap();
-        assert!(after.starts_with("Include patchbay.conf\n"), "at the top: {after:?}");
+        assert!(
+            after.starts_with("Include patchbay.conf\n"),
+            "at the top: {after:?}"
+        );
         assert!(after.contains(mine), "everything they wrote is still there");
 
-        // Run again and it is the same file - this is called on every read of the list.
+        // Idempotent: this runs on every read of the list.
         write_ssh_include(&dir, "Host db\n").unwrap();
-        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), after, "no second Include");
+        assert_eq!(
+            std::fs::read_to_string(&cfg).unwrap(),
+            after,
+            "no second Include"
+        );
 
         remove_ssh_include(&dir).unwrap();
         assert!(!dir.join("patchbay.conf").exists());
-        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), mine, "theirs, untouched");
+        assert_eq!(
+            std::fs::read_to_string(&cfg).unwrap(),
+            mine,
+            "theirs, untouched"
+        );
     }
 
-    /// The line we take back out is *our* file, not anything whose name happens to end
-    /// the same way - taking someone's own Include out of their config would be the one
-    /// thing this feature promised never to do.
+    /// Only our own Include is removed, never a similarly named one of theirs.
     #[test]
     fn only_our_own_include_line_is_ours_to_remove() {
         assert!(is_our_include("Include patchbay.conf"));
@@ -1131,41 +1236,42 @@ folders = ["prod/eu/web"]
         assert!(!is_our_include("Host patchbay.conf"));
     }
 
-    /// Nothing of ours in there yet is the first-run case, and the common one for
-    /// anyone who has never written an ssh config by hand.
     #[test]
     fn a_machine_with_no_ssh_config_gets_one_with_only_the_include_in_it() {
         let dir = std::env::temp_dir().join(format!("patchbay-{}-sshnew", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
 
         write_ssh_include(&dir, "Host db\n").unwrap();
-        assert_eq!(std::fs::read_to_string(dir.join("config")).unwrap(), "Include patchbay.conf\n\n");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("config")).unwrap(),
+            "Include patchbay.conf\n\n"
+        );
         remove_ssh_include(&dir).unwrap();
-        assert_eq!(std::fs::read_to_string(dir.join("config")).unwrap().trim(), "");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("config")).unwrap().trim(),
+            ""
+        );
     }
 
-    /// The reason `ssh_leftovers` exists: uninstall is drag-to-trash on macOS, so a
-    /// previous install of patchbay can leave the file and the Include line behind.
-    /// The window offers to clean up on first launch of the next install.
+    /// Uninstall is drag-to-trash on macOS, so a previous install can leave both behind.
     #[test]
     fn a_previous_install_can_be_swept_up_and_a_clean_machine_says_so() {
         let dir = std::env::temp_dir().join(format!("patchbay-{}-sshleft", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        // Nothing left behind: both false.
         let l = ssh_leftovers(&dir);
         assert!(!l.conf_file && !l.include_line);
-        // Simulate an install that turned the setting on once.
         write_ssh_include(&dir, "Host db\n").unwrap();
         let l = ssh_leftovers(&dir);
-        assert!(l.conf_file && l.include_line, "the file and the include line are both here");
+        assert!(
+            l.conf_file && l.include_line,
+            "the file and the include line are both here"
+        );
         assert!(l.conf_path.ends_with("patchbay.conf"));
-        // Someone deleted the file by hand but left the line in ~/.ssh/config -
-        // one leftover is still a leftover.
+        // File deleted by hand, line left behind: still a leftover.
         std::fs::remove_file(dir.join(SSH_FILE)).unwrap();
         let l = ssh_leftovers(&dir);
         assert!(!l.conf_file && l.include_line);
-        // The cleanup takes them both out and stays quiet on a machine that has neither.
         remove_ssh_include(&dir).unwrap();
         let l = ssh_leftovers(&dir);
         assert!(!l.conf_file && !l.include_line);
@@ -1173,10 +1279,12 @@ folders = ["prod/eu/web"]
 
     #[test]
     fn a_missing_config_is_created_rather_than_erroring() {
-        let p = std::env::temp_dir().join(format!("patchbay-{}-fresh/patchbay.toml", std::process::id()));
+        let p = std::env::temp_dir().join(format!(
+            "patchbay-{}-fresh/patchbay.toml",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(p.parent().unwrap());
         save_jack_at(&p, None, input("first", "10.0.0.1")).unwrap();
         assert!(read(&p).contains("[jack.first]"));
     }
-
 }

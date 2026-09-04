@@ -1,12 +1,6 @@
-//! The clipboard shared with a remote desktop, over RDP's CLIPRDR channel.
-//!
-//! Text only, deliberately. Files mean `CF_HDROP`, a temp directory and chunked
-//! file-stream transfers - a much larger feature, and copying an error message out
-//! of a Windows box is what people actually open a session for.
-//!
-//! Both directions are lazy, which is how CLIPRDR works: whoever copies only
-//! *announces* that it has something, and the data crosses when the other side
-//! pastes. So a copy on a remote desktop costs nothing until you use it.
+//! The clipboard shared with a remote desktop, over RDP's CLIPRDR channel. Text only:
+//! files would mean `CF_HDROP` and chunked file streams. Both directions are lazy, as
+//! CLIPRDR is: a copy only announces itself, and the data crosses on paste.
 
 use ironrdp_cliprdr::backend::{ClipboardMessage, CliprdrBackend};
 use ironrdp_cliprdr::pdu::{
@@ -17,21 +11,25 @@ use std::sync::mpsc::Sender;
 
 /// Windows hands `CF_UNICODETEXT` over as NUL-terminated UTF-16LE.
 fn to_utf16(s: &str) -> Vec<u8> {
-    s.encode_utf16().chain(core::iter::once(0)).flat_map(u16::to_le_bytes).collect()
+    s.encode_utf16()
+        .chain(core::iter::once(0))
+        .flat_map(u16::to_le_bytes)
+        .collect()
 }
 
 fn from_utf16(bytes: &[u8]) -> String {
     let units: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|p| u16::from_le_bytes([p[0], p[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&p| u16::from_le_bytes(p))
         .take_while(|&u| u != 0)
         .collect();
     String::from_utf16_lossy(&units)
 }
 
-/// Reading and writing the machine's own clipboard. Each call opens its own handle:
-/// holding one across a whole session blocks other applications on some platforms,
-/// and this happens at human speed, not in a loop.
+/// A fresh handle per call: holding one across a session blocks other applications
+/// on some platforms.
 pub fn local_text() -> Option<String> {
     arboard::Clipboard::new().ok()?.get_text().ok()
 }
@@ -42,15 +40,13 @@ fn set_local_text(text: &str) {
     }
 }
 
-/// Our half of CLIPRDR. It never talks to the network - it turns callbacks into
-/// [`ClipboardMessage`]s on a channel, and the session's pump loop turns those into
-/// PDUs. That keeps every socket write on the one thread that owns the connection.
-/// What the local clipboard last held, as far as the session is concerned. Shared
-/// with the poll loop so text that arrived *from* the remote isn't immediately
-/// advertised back to it - that round trip is wasted, and it takes clipboard
-/// ownership away from the machine that actually has the data.
+/// What the local clipboard last held, as the session knows it. Shared with the poll
+/// loop so text that arrived from the remote is not advertised straight back to it.
 pub type LastSeen = std::sync::Arc<std::sync::Mutex<Option<String>>>;
 
+/// Our half of CLIPRDR. Never touches the network: callbacks become
+/// [`ClipboardMessage`]s on a channel, and the session's pump loop turns those into
+/// PDUs, so every socket write stays on the thread that owns the connection.
 #[derive(Debug)]
 pub struct Backend {
     to_session: Sender<ClipboardMessage>,
@@ -60,17 +56,20 @@ pub struct Backend {
 
 impl Backend {
     pub fn new(to_session: Sender<ClipboardMessage>, last_seen: LastSeen) -> Self {
-        Self { to_session, last_seen, temp: std::env::temp_dir().to_string_lossy().into_owned() }
+        Self {
+            to_session,
+            last_seen,
+            temp: std::env::temp_dir().to_string_lossy().into_owned(),
+        }
     }
 
-    /// The formats we can serve. Announced when our clipboard changes, and again
-    /// whenever the remote asks what we have.
+    /// The formats served: announced when the local clipboard changes and on request.
     pub fn text_formats() -> Vec<ClipboardFormat> {
         vec![ClipboardFormat::new(ClipboardFormatId::CF_UNICODETEXT)]
     }
 
     fn send(&self, msg: ClipboardMessage) {
-        // A closed session is the normal way this ends, not an error to report.
+        // A closed session is the normal end, not an error.
         let _ = self.to_session.send(msg);
     }
 }
@@ -90,13 +89,12 @@ impl CliprdrBackend for Backend {
     }
 
     fn client_capabilities(&self) -> ClipboardGeneralCapabilityFlags {
-        // No long format names, no file streams: we serve one well-known format.
+        // No long format names, no file streams: one well-known format.
         ClipboardGeneralCapabilityFlags::empty()
     }
 
     fn on_ready(&mut self) {
-        // Offer whatever is already on the clipboard, so the first paste into the
-        // session works without having to copy something again first.
+        // Offer what is already on the clipboard, so the first paste works.
         if local_text().is_some() {
             self.send(ClipboardMessage::SendInitiateCopy(Self::text_formats()));
         }
@@ -110,15 +108,20 @@ impl CliprdrBackend for Backend {
 
     fn on_process_negotiated_capabilities(&mut self, _: ClipboardGeneralCapabilityFlags) {}
 
-    /// Something was copied over there. Ask for it as Unicode text if that's on
-    /// offer; anything else we can't represent, so we leave the local clipboard be.
+    /// Something was copied remotely. Ask for it as Unicode text if offered; other
+    /// formats leave the local clipboard alone.
     fn on_remote_copy(&mut self, available_formats: &[ClipboardFormat]) {
-        if available_formats.iter().any(|f| f.id == ClipboardFormatId::CF_UNICODETEXT) {
-            self.send(ClipboardMessage::SendInitiatePaste(ClipboardFormatId::CF_UNICODETEXT));
+        if available_formats
+            .iter()
+            .any(|f| f.id == ClipboardFormatId::CF_UNICODETEXT)
+        {
+            self.send(ClipboardMessage::SendInitiatePaste(
+                ClipboardFormatId::CF_UNICODETEXT,
+            ));
         }
     }
 
-    /// They're pasting what we advertised, so hand over the text now.
+    /// The remote is pasting what was advertised: hand over the text now.
     fn on_format_data_request(&mut self, request: FormatDataRequest) {
         let response = match (request.format, local_text()) {
             (ClipboardFormatId::CF_UNICODETEXT, Some(text)) => {
@@ -129,7 +132,7 @@ impl CliprdrBackend for Backend {
         self.send(ClipboardMessage::SendFormatData(response.into_owned()));
     }
 
-    /// Their text has arrived - put it on this machine's clipboard.
+    /// Remote text has arrived: put it on this machine's clipboard.
     fn on_format_data_response(&mut self, response: FormatDataResponse<'_>) {
         if response.is_error() {
             return;
@@ -175,16 +178,18 @@ mod tests {
 
     #[test]
     fn a_trailing_nul_is_not_part_of_the_text() {
-        // Windows sends the terminator inside the payload; keeping it would append a
-        // stray character to everything pasted out of a session.
+        // Windows sends the terminator inside the payload.
         assert_eq!(from_utf16(&to_utf16("ok")), "ok");
-        assert_eq!(to_utf16("ok").len(), 6, "two chars plus the NUL, two bytes each");
+        assert_eq!(
+            to_utf16("ok").len(),
+            6,
+            "two chars plus the NUL, two bytes each"
+        );
     }
 
     #[test]
     fn junk_decodes_to_something_rather_than_panicking() {
-        // An odd byte count can't be UTF-16 at all; a lone surrogate isn't valid
-        // either. Neither should take the session down.
+        // An odd byte count and a lone surrogate are both invalid; neither may panic.
         assert_eq!(from_utf16(&[0x41]), "");
         let _ = from_utf16(&[0x00, 0xD8, 0x41, 0x00]);
     }

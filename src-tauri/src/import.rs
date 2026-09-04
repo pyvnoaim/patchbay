@@ -1,13 +1,6 @@
-//! The ssh config format, both directions.
-//!
-//! In: turning an existing ssh config into jacks. Parses only - the window shows the
-//! list and writes what you tick through `save_jack`, like any other edit.
-//!
-//! Out: `to_ssh_config` writes the list back as `Host` blocks, so `ssh web-01` in any
-//! terminal reaches what patchbay's Connect reaches, and so do `scp`, `rsync`, Ansible
-//! and anything else that reads that file. Every key it emits is one `ssh_args` already
-//! puts on the command line - this adds no way to reach a device that patchbay didn't
-//! already have.
+//! Lists in and out: an ssh config or a Royal TS document parsed into devices (the
+//! window writes what gets ticked), and the device list written back as ssh `Host`
+//! blocks. Every key emitted is one `ssh_args` already puts on the command line.
 
 use crate::patchbay::{self, Jack, Jacks};
 use serde::Serialize;
@@ -21,17 +14,14 @@ pub struct Imported {
     pub port: Option<u16>,
     pub key: Option<String>,
     pub jump: Option<String>,
-    /// Set by the Royal TS side, which has a tree to bring across. An ssh config has
-    /// no folders in it, so that import leaves these alone.
+    /// Only the Royal TS side fills this; an ssh config has no folders.
     #[serde(default)]
     pub folders: Vec<String>,
     pub rdp: Option<u16>,
     pub url: Option<String>,
     pub os: Option<String>,
     pub desc: Option<String>,
-    /// `LocalForward`, `RemoteForward` and `DynamicForward`, spelled the way
-    /// `patchbay::forward_arg` reads them back. A tunnel someone set up once is part of
-    /// how they reach that host, so importing without it imports half a jack.
+    /// Forwards, spelled the way `patchbay::forward_arg` reads them back.
     pub forward: Vec<String>,
 }
 
@@ -41,14 +31,11 @@ pub struct Found {
     pub warnings: Vec<String>,
 }
 
-/// Everything else ssh already applies for us - we exec it, so importing its defaults
-/// would only duplicate them into a second file that can go stale. `localforward` is
-/// handled apart from these: a host can have several, and first-wins would drop them.
+/// Everything else ssh applies itself when it runs. Forwards are handled separately:
+/// a host can have several, and first-wins would drop them.
 const WANTED: [&str; 5] = ["hostname", "user", "port", "identityfile", "proxyjump"];
 
-/// `LocalForward 8080 localhost:80` is `8080:localhost:80`; ssh accepts the whole
-/// thing written with colons too, which is already the shape we want. The same join
-/// does for the other two - `DynamicForward 1080` is one token either way.
+/// `LocalForward 8080 localhost:80` becomes `8080:localhost:80`, the shape ssh also accepts.
 fn colon_joined(v: &str) -> String {
     v.split_whitespace().collect::<Vec<_>>().join(":")
 }
@@ -65,7 +52,7 @@ fn is_pattern(h: &str) -> bool {
     h.starts_with('!') || h.contains('*') || h.contains('?')
 }
 
-/// The locals the TypeScript's `flush` closes over. Same fields, same names.
+/// Parser state: the finished hosts, and the `Host` block being read.
 #[derive(Default)]
 struct Walk {
     out: Vec<Imported>,
@@ -84,8 +71,7 @@ impl Walk {
             Some(v) => Some(v.to_string()),
         };
         if let Some(j) = jump.clone().filter(|j| j.contains(',')) {
-            // `jump` is the one hop before the target; a chain is built by pointing
-            // jacks at each other, which we can't synthesise from a list of raw specs.
+            // `jump` is one hop; a chain of raw specs can't be synthesised into jacks.
             let hops: Vec<&str> = j.split(',').map(str::trim).collect();
             let last = hops.last().unwrap().to_string();
             self.warnings.push(format!(
@@ -133,8 +119,8 @@ pub fn from_ssh_config(src: &str) -> Found {
 
     for raw in src.lines() {
         let line = raw.trim();
-        // ssh only treats `#` as a comment at the start of a line - a trailing one is
-        // part of the value, so stripping it would corrupt a path with a hash in it.
+        // ssh only treats `#` as a comment at the start of a line; a trailing one is
+        // part of the value.
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
@@ -155,8 +141,7 @@ pub fn from_ssh_config(src: &str) -> Found {
                 .collect();
             continue;
         }
-        // A Match block's settings hang off conditions, not a host, so nothing in it
-        // belongs to a jack.
+        // A Match block's settings hang off conditions, not a host.
         if key == "match" {
             w.flush();
             continue;
@@ -165,9 +150,8 @@ pub fn from_ssh_config(src: &str) -> Found {
             included = true;
             continue;
         }
-        // Every one of them, in the order ssh would apply them - unlike the rest, a
-        // second forward is another tunnel rather than an override. `-L` is the bare
-        // spelling patchbay reads by default, so only the other two carry their flag.
+        // Every forward is kept: a second one is another tunnel, not an override.
+        // `-L` is the bare spelling patchbay reads by default.
         if let Some(flag) = match key.as_str() {
             "localforward" => Some(""),
             "remoteforward" => Some("-R "),
@@ -194,31 +178,35 @@ pub fn from_ssh_config(src: &str) -> Found {
     } = w;
 
     if included {
-        warnings.push("Include lines were not followed - run the importer on those files too".into());
+        warnings
+            .push("Include lines were not followed - run the importer on those files too".into());
     }
 
-    // A ProxyJump naming another Host has to point at that jack's sanitised name;
-    // anything else is a raw spec, which patchbay passes through to ssh untouched.
+    // A ProxyJump naming another Host points at that jack's sanitised name; anything
+    // else is a raw spec passed through to ssh.
     for j in &mut out {
         if let Some(name) = j.jump.as_ref().and_then(|v| by_alias.get(v)) {
             j.jump = Some(name.clone());
         }
     }
 
-    Found { hosts: out, warnings }
+    Found {
+        hosts: out,
+        warnings,
+    }
 }
 
-/// A word ssh will read as one token in a `Host` line. `Host` takes *patterns*, so a
-/// name carrying `*`, `?` or `!` would match hosts it was never meant to, and a newline
-/// would start a directive of someone else's choosing - the same hole a `.rdp` has, and
-/// refused the same way rather than escaped.
+/// A word ssh reads as one token in a `Host` line. `Host` takes patterns, so `*`, `?`
+/// or `!` would match other hosts, and a newline would start a directive. Refused, not escaped.
 fn plain_token(s: &str) -> bool {
-    !s.is_empty() && !s.chars().any(|c| c.is_control() || c.is_whitespace() || "*?!\"".contains(c))
+    !s.is_empty()
+        && !s
+            .chars()
+            .any(|c| c.is_control() || c.is_whitespace() || "*?!\"".contains(c))
 }
 
-/// A value as ssh reads one. A space is legal inside double quotes, because a key
-/// really does live in a path with a space in it often enough; a quote or a control
-/// character is refused, since escaping is what turns one directive into two.
+/// A value as ssh reads one: quoted if it has a space, refused if it has a quote or
+/// a control character, since escaping is what turns one directive into two.
 fn ssh_value(v: &str) -> Option<String> {
     let v = v.trim();
     if v.is_empty() || v.chars().any(|c| c.is_control() || c == '"') {
@@ -237,13 +225,11 @@ fn line(out: &mut String, key: &str, v: Option<&str>) {
 }
 
 /// One jack as a `Host` block, or None if it has nothing to say to ssh. `ProxyJump`
-/// carries only the *immediate* hop, never the flattened chain: every hop is a `Host`
-/// block of its own here, and ssh chains ProxyJump itself. A jump that isn't a jack is
-/// a raw `user@host`, which is what ProxyJump wants anyway.
+/// names only the next hop: every hop is a block of its own and ssh chains them itself.
 fn host_block(name: &str, j: &Jack) -> Option<String> {
     let mut out = format!("Host {name}\n");
     line(&mut out, "HostName", Some(&j.host));
-    // A block with no HostName is a block that does nothing but shadow the name.
+    // Without a HostName the block would only shadow the name.
     if !out.contains("HostName") {
         return None;
     }
@@ -252,8 +238,7 @@ fn host_block(name: &str, j: &Jack) -> Option<String> {
     line(&mut out, "IdentityFile", j.key.as_deref());
     line(&mut out, "ProxyJump", j.jump.as_deref());
     for f in j.forward.iter().flatten() {
-        // Refused rather than emitted broken: `forward_arg` is the same check that
-        // decides what reaches argv, so the file can never say more than a connect would.
+        // `forward_arg` is the same check that decides what reaches argv.
         if let Ok((flag, spec)) = patchbay::forward_arg(f) {
             let key = match flag {
                 "-R" => "RemoteForward",
@@ -266,12 +251,8 @@ fn host_block(name: &str, j: &Jack) -> Option<String> {
     Some(out)
 }
 
-/// The list as ssh reads it. `theirs` is the `Host` names their own config already
-/// defines, and those are left out: they wrote that file, and quietly shadowing a host
-/// someone has used for years is the one way this could do real damage.
-///
-/// Left out with a reason written into the file, not silently - it is the only place
-/// anyone would go looking when `ssh web` doesn't reach what the window reaches.
+/// The list as ssh reads it. Names in `theirs` (their own config's `Host` lines) are
+/// left out with a reason written into the file, never silently shadowed.
 pub fn to_ssh_config(jacks: &Jacks, theirs: &HashSet<String>) -> String {
     let mut out = String::from(
         "# Written by patchbay. Edits here are lost the next time it writes - change\n\
@@ -282,7 +263,7 @@ pub fn to_ssh_config(jacks: &Jacks, theirs: &HashSet<String>) -> String {
 
     for (name, j) in jacks {
         if !j.ssh.unwrap_or(true) {
-            continue;   // a web-only or RDP-only device has nothing to say to ssh
+            continue;
         }
         if theirs.contains(name) {
             skipped.push(format!("{name} (your own config already defines it)"));
@@ -292,8 +273,7 @@ pub fn to_ssh_config(jacks: &Jacks, theirs: &HashSet<String>) -> String {
             skipped.push(format!("{name} (not a name ssh can be given)"));
             continue;
         }
-        // Reuses the cycle guard rather than repeating it: a jump loop would become a
-        // ProxyJump loop, and ssh would only find out about it while you waited.
+        // A jump loop would become a ProxyJump loop ssh only discovers while you wait.
         if patchbay::hops(name, jacks).is_err() {
             skipped.push(format!("{name} (its jump chain doesn't resolve)"));
             continue;
@@ -311,13 +291,9 @@ pub fn to_ssh_config(jacks: &Jacks, theirs: &HashSet<String>) -> String {
     out
 }
 
-/// The `Host` names a config already spells out. Exact names only, deliberately: a
-/// pattern is how people write global options, and `Host *` claiming every name would
-/// leave nothing to write. A pattern that overlaps one of ours still applies for every
-/// keyword we don't set, which is what someone writing `Host prod-*` meant anyway.
-///
-/// Read off the raw text rather than through `from_ssh_config`, which drops the
-/// patterns - and a name it dropped is still a name we must not shadow.
+/// The `Host` names a config spells out. Exact names only: `Host *` is how people
+/// write global options, not a claim on every name. Read off the raw text rather than
+/// through `from_ssh_config`, which drops the patterns.
 pub fn host_names(src: &str) -> HashSet<String> {
     let mut out = HashSet::new();
     for l in src.lines() {
@@ -330,16 +306,11 @@ pub fn host_names(src: &str) -> HashSet<String> {
     out
 }
 
-// ── Royal TS ────────────────────────────────────────────────────────────────
-// A `.rtsz` is XML, despite the z: one flat list of objects under `<RTSZDocument>`,
-// each carrying an `ID` and a `ParentID`. The tree is those pointers rather than the
-// nesting, so a folder path is a walk up the parents and not something the document
-// spells out anywhere.
-//
-// Read with quick-xml rather than by hand for one reason that shows up in every real
-// document: a customer called `H&S - Hart & Smith` is `H&amp;S` in the file.
+// Royal TS. A `.rtsz` is XML despite the z: one flat list of objects under
+// `<RTSZDocument>` joined by `ParentID`, so a folder path is a walk up the parents.
+// quick-xml rather than by hand because names carry entities (`H&amp;S`).
 
-/// One object as it stands in the document, before anything is decided about it.
+/// One object in the document.
 #[derive(Default)]
 struct Node {
     tag: String,
@@ -350,24 +321,27 @@ struct Node {
 
 impl Node {
     fn get(&self, key: &str) -> Option<&str> {
-        self.fields.get(key).map(String::as_str).filter(|v| !v.trim().is_empty())
+        self.fields
+            .get(key)
+            .map(String::as_str)
+            .filter(|v| !v.trim().is_empty())
     }
     fn num(&self, key: &str) -> Option<u16> {
         self.get(key)?.trim().parse().ok()
     }
     fn yes(&self, key: &str) -> bool {
-        self.get(key).is_some_and(|v| v.eq_ignore_ascii_case("true"))
+        self.get(key)
+            .is_some_and(|v| v.eq_ignore_ascii_case("true"))
     }
 }
 
-/// Every object in the file, in document order. Depth is the only thing separating an
-/// object from its own fields: objects sit at depth 1 under the root, values at 2.
+/// Every object in document order. Objects sit at depth 2 under the root, their
+/// fields at depth 3.
 fn objects(src: &str) -> Result<Vec<Node>, String> {
     use quick_xml::events::Event;
     let mut rd = quick_xml::Reader::from_str(src);
     rd.config_mut().trim_text(true);
-    // A half-written document is a truncated one, and importing the first half of
-    // somebody's list silently is worse than refusing it.
+    // Importing the first half of a truncated list silently is worse than refusing it.
     rd.config_mut().check_end_names = true;
 
     let (mut out, mut depth, mut field, mut root) =
@@ -381,7 +355,10 @@ fn objects(src: &str) -> Result<Vec<Node>, String> {
                 let name = String::from_utf8_lossy(e.local_name().as_ref()).into_owned();
                 match depth {
                     1 => root = name,
-                    2 => out.push(Node { tag: name, ..Node::default() }),
+                    2 => out.push(Node {
+                        tag: name,
+                        ..Node::default()
+                    }),
                     3 => field = name,
                     _ => {}
                 }
@@ -395,14 +372,11 @@ fn objects(src: &str) -> Result<Vec<Node>, String> {
             _ => {}
         }
     }
-    // Ending inside an element is a truncated file - a half-finished download, or a
-    // sync that landed mid-write. quick-xml is happy to stop there, and importing the
-    // first half of somebody's list without saying so is the worst of the options.
+    // quick-xml is happy to stop inside an element; a truncated file is not an import.
     if depth != 0 {
         return Err("that document stops half way through - is it still copying?".into());
     }
-    // Named rather than sniffed: an ssh config or somebody's exported bookmarks would
-    // otherwise import as nothing at all and look like an empty document.
+    // Any other XML would otherwise import as an empty document.
     if root != "RTSZDocument" {
         return Err("that isn't a Royal TS document".into());
     }
@@ -414,8 +388,7 @@ fn objects(src: &str) -> Result<Vec<Node>, String> {
 }
 
 /// The folders above a node, outermost first, and whether the walk passed through the
-/// trash on the way up. Deleted things are still in the file, and importing somebody's
-/// bin back onto their screen is the wrong kind of thorough.
+/// trash. Deleted objects are still in the file.
 fn place(by_id: &HashMap<&str, &Node>, node: &Node) -> (Vec<String>, bool) {
     let (mut path, mut binned, mut seen) = (Vec::new(), false, HashSet::new());
     let mut at = node.parent.as_str();
@@ -434,9 +407,8 @@ fn place(by_id: &HashMap<&str, &Node>, node: &Node) -> (Vec<String>, bool) {
     (path, binned)
 }
 
-/// What patchbay calls the same thing. A Royal TS name only has to be unique among its
-/// siblings, so a document with twenty customers holds twenty `DC1`s - and a jack name
-/// is a key. The customer goes in front only where it has to, so most names stay short.
+/// A unique jack name. Royal TS names are only unique among siblings, so a document
+/// can hold twenty `DC1`s; the top folder goes in front only where it has to.
 fn unique(
     name: &str,
     folders: &[String],
@@ -456,10 +428,8 @@ fn unique(
     out
 }
 
-/// A web connection's address is whatever somebody typed into Royal TS, which is a URL
-/// about half the time and a bare address the rest. patchbay needs both a host to probe
-/// and an http(s) url to open, so the missing half is filled in - https, because these
-/// are appliances and every one of them redirects there anyway.
+/// Host to probe and url to open, from an address that may be either. A missing
+/// scheme is assumed https.
 fn web_parts(uri: &str) -> (String, String) {
     let url = match uri.starts_with("http://") || uri.starts_with("https://") {
         true => uri.to_string(),
@@ -475,12 +445,11 @@ fn web_parts(uri: &str) -> (String, String) {
         .rsplit('@')
         .next()
         .unwrap_or(uri);
-    // A port in the address is part of reaching the web UI, not of reaching the host.
+    // The port belongs to the url, not the host.
     (host.split(':').next().unwrap_or(host).to_string(), url)
 }
 
-/// A Royal TS document in, jacks out. Parses only, like the ssh-config side: the window
-/// shows what it found and writes what you tick, through `save_jack` like any edit.
+/// A Royal TS document parsed into devices. Parses only; the window writes what gets ticked.
 pub fn from_royal_ts(src: &str) -> Result<Found, String> {
     let nodes = objects(src)?;
     let by_id: HashMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
@@ -517,7 +486,7 @@ pub fn from_royal_ts(src: &str) -> Result<Found, String> {
             warnings.push(format!("\"{name}\" has no address, so it was left out"));
             continue;
         };
-        // Neither is an ssh session, and patchbay has nothing to open them with.
+        // patchbay has nothing to open these with.
         if n.yes("IsTelnetConnection") || n.yes("IsSerialPortConnection") {
             serial += 1;
             continue;
@@ -533,11 +502,9 @@ pub fn from_royal_ts(src: &str) -> Result<Found, String> {
             },
             ..Imported::default()
         };
-        // Named, never guessed. A document has connection types patchbay has no answer
-        // for, and turning one of those into an ssh device would import something that
-        // simply fails when you click it - a line in the warnings is the honest answer.
+        // A type patchbay can't open is named in the warnings, never guessed at.
         match n.tag.as_str() {
-            // Terminal Services and Hyper-V are both RDP with a different front end.
+            // Terminal Services and Hyper-V are RDP with a different front end.
             "RoyalRDSConnection" | "RoyalTerminalServicesConnection" | "RoyalHyperVConnection" => {
                 j.host = uri.to_string();
                 j.rdp = Some(n.num("RDPPort").unwrap_or(3389));
@@ -564,7 +531,10 @@ pub fn from_royal_ts(src: &str) -> Result<Found, String> {
     for (n, what) in [
         (binned, "in the trash, left there"),
         (serial, "telnet or serial, which patchbay doesn't open"),
-        (guessed, "web addresses with no scheme, so https was assumed"),
+        (
+            guessed,
+            "web addresses with no scheme, so https was assumed",
+        ),
     ] {
         if n > 0 {
             warnings.push(format!("{n} {what}"));
@@ -578,8 +548,12 @@ pub fn from_royal_ts(src: &str) -> Result<Found, String> {
     let mut left = unknown.into_iter().collect::<Vec<_>>();
     left.sort();
     for (tag, n) in left {
-        let kind = tag.trim_start_matches("Royal").trim_end_matches("Connection");
-        warnings.push(format!("{n} {kind} connection(s) skipped - patchbay has no way to open one"));
+        let kind = tag
+            .trim_start_matches("Royal")
+            .trim_end_matches("Connection");
+        warnings.push(format!(
+            "{n} {kind} connection(s) skipped - patchbay has no way to open one"
+        ));
     }
     Ok(Found { hosts, warnings })
 }
@@ -633,14 +607,12 @@ Match host *.internal
             }
         );
 
-        // Two aliases on one Host line share the block, and a missing HostName means
-        // the alias was already the hostname.
+        // Two aliases share the block; a missing HostName means the alias is the host.
         assert_eq!(f.hosts[1].host, "10.0.0.4");
         assert_eq!(f.hosts[2].host, "10.0.0.4");
         assert_eq!(f.hosts[4].host, "bare");
 
-        // `Match` settings hang off a condition, not a host - nothing there is a jack,
-        // and it must not leak into the block before it.
+        // `Match` settings must not leak into the block before them.
         assert_eq!(f.hosts[4].user, None);
     }
 
@@ -653,7 +625,11 @@ Match host *.internal
     #[test]
     fn a_multi_hop_proxyjump_keeps_the_hop_nearest_the_target_and_says_so() {
         let f = from_ssh_config(CONFIG);
-        assert_eq!(f.hosts[3].jump.as_deref(), Some("10.0.0.4"), "the last -J entry");
+        assert_eq!(
+            f.hosts[3].jump.as_deref(),
+            Some("10.0.0.4"),
+            "the last -J entry"
+        );
         assert!(
             f.warnings.iter().any(|w| w.contains("dropped the rest")),
             "got {:?}",
@@ -671,22 +647,27 @@ Match host *.internal
     #[test]
     fn an_unfollowed_include_is_reported_not_silently_skipped() {
         let f = from_ssh_config("Include ~/.ssh/work/*\nHost x\n");
-        assert!(f.warnings.iter().any(|w| w.contains("Include")), "got {:?}", f.warnings);
+        assert!(
+            f.warnings.iter().any(|w| w.contains("Include")),
+            "got {:?}",
+            f.warnings
+        );
     }
 
     #[test]
     fn a_port_outside_a_u16_or_not_plainly_decimal_is_dropped() {
         let port = |v: &str| from_ssh_config(&format!("Host t\n  Port {v}\n")).hosts[0].port;
         assert_eq!(port("22"), Some(22));
-        assert_eq!(port("70000"), None, "would write a config nothing can load back");
+        assert_eq!(
+            port("70000"),
+            None,
+            "would write a config nothing can load back"
+        );
         assert_eq!(port("0x16"), None, "Number() reads hex; ssh does not");
         assert_eq!(port("1e3"), None);
         assert_eq!(port("0"), None);
     }
 
-    /// The file makes `ssh db` do what Connect does, so the keys have to be the ones
-    /// `ssh_args` builds - and `ProxyJump` names the next hop only, because the hop is a
-    /// `Host` block here too and ssh chains them itself.
     #[test]
     fn a_jack_comes_out_as_the_host_block_ssh_would_have_wanted() {
         let jacks = patchbay::parse(
@@ -704,30 +685,30 @@ Match host *.internal
         assert!(out.contains("    IdentityFile ~/.ssh/prod\n"));
         assert!(out.contains("    LocalForward 5432:localhost:5432\n"));
         assert!(out.contains("    DynamicForward 1080\n"));
-        // The next hop, not the flattened chain - ssh walks the rest itself.
+        // The next hop, not the flattened chain.
         assert!(out.contains("    ProxyJump bastion\n"));
         assert!(out.contains("Host bastion\n") && out.contains("    Port 2222\n"));
-        // A device ssh can't reach has nothing to say here.
-        assert!(!out.contains("Host nas"), "a web-only device is not an ssh host: {out}");
+        assert!(
+            !out.contains("Host nas"),
+            "a web-only device is not an ssh host: {out}"
+        );
     }
 
-    /// Their file is theirs. A name it already spells out is left alone and said so in
-    /// the only place anyone would look when `ssh web` doesn't go where the window does.
     #[test]
     fn a_name_their_own_config_defines_is_left_to_them() {
-        let jacks = patchbay::parse("[jack.web]\nhost = \"10.0.0.4\"\n[jack.db]\nhost = \"10.0.0.5\"\n").unwrap();
-        let theirs = host_names("Host web\n  HostName elsewhere\nHost *\n  ServerAliveInterval 60\n");
+        let jacks =
+            patchbay::parse("[jack.web]\nhost = \"10.0.0.4\"\n[jack.db]\nhost = \"10.0.0.5\"\n")
+                .unwrap();
+        let theirs =
+            host_names("Host web\n  HostName elsewhere\nHost *\n  ServerAliveInterval 60\n");
         assert!(theirs.contains("web"));
         let out = to_ssh_config(&jacks, &theirs);
         assert!(!out.contains("Host web\n"), "{out}");
         assert!(out.contains("# left out: web (your own config already defines it)"));
-        // `Host *` is how people write global options, not a claim on every name.
         assert!(out.contains("Host db\n"), "{out}");
     }
 
-    /// ssh_config is line-based and `Host` takes patterns, so both are the `.rdp` hole
-    /// in another spelling: a newline starts a directive, a `*` claims hosts it wasn't
-    /// given. Refused rather than escaped, and never at the cost of the rest of the file.
+    /// A newline starts a directive and a `*` claims other hosts: refused, not escaped.
     #[test]
     fn a_name_or_value_that_could_smuggle_a_directive_is_left_out() {
         for bad in ["ev*il", "two words", "a\nProxyCommand id", "!no", "q\"uote"] {
@@ -736,12 +717,15 @@ Match host *.internal
         assert!(plain_token("prod-web01.eu"));
 
         assert_eq!(ssh_value("10.0.0.4").as_deref(), Some("10.0.0.4"));
-        assert_eq!(ssh_value("~/my keys/id").as_deref(), Some("\"~/my keys/id\""));
+        assert_eq!(
+            ssh_value("~/my keys/id").as_deref(),
+            Some("\"~/my keys/id\"")
+        );
         assert_eq!(ssh_value("x\nProxyCommand id"), None);
         assert_eq!(ssh_value("x\"y"), None);
         assert_eq!(ssh_value("  "), None);
 
-        // And end to end: the hostile jack goes, the one beside it stays.
+        // End to end: the hostile jack goes, the one beside it stays.
         let jacks = patchbay::parse(
             "[jack.ok]\nhost = \"10.0.0.4\"\n[jack.sneaky]\nhost = \"h\\nProxyCommand id\"\n",
         )
@@ -756,13 +740,15 @@ Match host *.internal
         let f = from_ssh_config(
             "Host db\n  LocalForward 5432 localhost:5432\n  LocalForward 127.0.0.1:6379 cache:6379\nHost other\n",
         );
-        assert_eq!(f.hosts[0].forward, ["5432:localhost:5432", "127.0.0.1:6379:cache:6379"]);
-        // The other two carry the flag patchbay reads them back by.
+        assert_eq!(
+            f.hosts[0].forward,
+            ["5432:localhost:5432", "127.0.0.1:6379:cache:6379"]
+        );
         let g = from_ssh_config(
             "Host tun\n  RemoteForward 9000 localhost:9000\n  DynamicForward 1080\n",
         );
         assert_eq!(g.hosts[0].forward, ["-R 9000:localhost:9000", "-D 1080"]);
-        // A block's forwards belong to that block and must not leak into the next.
+        // Forwards must not leak into the next block.
         assert_eq!(f.hosts[1].forward, [] as [String; 0]);
     }
 
@@ -778,9 +764,7 @@ Match host *.internal
 mod royal_tests {
     use super::*;
 
-    /// A document shaped exactly like a real one: objects flat under the root, joined
-    /// by ParentID, with the two things a hand-rolled reader gets wrong - an entity in
-    /// a name, and a connection sitting in the trash.
+    /// Shaped like a real document: an entity in a name, and a connection in the trash.
     const DOC: &str = r#"<?xml version="1.0" encoding="utf-8"?>
 <RTSZDocument>
   <RoyalDocument><ID>doc</ID><Name>Acme</Name></RoyalDocument>
@@ -812,23 +796,37 @@ mod royal_tests {
 </RTSZDocument>"#;
 
     fn find<'a>(f: &'a Found, name: &str) -> &'a Imported {
-        f.hosts.iter().find(|h| h.name == name).unwrap_or_else(|| panic!("no {name}: {:?}",
-            f.hosts.iter().map(|h| &h.name).collect::<Vec<_>>()))
+        f.hosts.iter().find(|h| h.name == name).unwrap_or_else(|| {
+            panic!(
+                "no {name}: {:?}",
+                f.hosts.iter().map(|h| &h.name).collect::<Vec<_>>()
+            )
+        })
     }
 
     #[test]
     fn a_document_becomes_devices_with_the_way_in_they_already_had() {
         let f = from_royal_ts(DOC).unwrap();
-        assert_eq!(f.hosts.len(), 6, "{:?}", f.hosts.iter().map(|h| &h.name).collect::<Vec<_>>());
+        assert_eq!(
+            f.hosts.len(),
+            6,
+            "{:?}",
+            f.hosts.iter().map(|h| &h.name).collect::<Vec<_>>()
+        );
 
-        // Terminal Services is RDP with a different front end, not an ssh box.
         assert_eq!(find(&f, "ts").rdp, Some(3389));
-        // And a type with no answer here is named rather than turned into something
-        // that would simply fail when clicked.
-        assert!(!f.hosts.iter().any(|h| h.name == "kvm"), "a VNC connection was guessed at");
-        assert!(f.warnings.iter().any(|w| w.contains("Vnc")), "{:?}", f.warnings);
+        // A type with no answer here is named, not guessed at.
+        assert!(
+            !f.hosts.iter().any(|h| h.name == "kvm"),
+            "a VNC connection was guessed at"
+        );
+        assert!(
+            f.warnings.iter().any(|w| w.contains("Vnc")),
+            "{:?}",
+            f.warnings
+        );
 
-        // The tree is ParentID pointers, and the entity has to survive the walk.
+        // The entity has to survive the parent walk.
         let dc = find(&f, "H&S DC1");
         assert_eq!(dc.folders, ["H&S/Server"]);
         assert_eq!(dc.host, "10.80.0.50");
@@ -836,15 +834,16 @@ mod royal_tests {
         assert_eq!(dc.user.as_deref(), Some("administrator"));
         assert_eq!(dc.os.as_deref(), Some("windows"));
 
-        // Two `DC1`s in one document: a jack name is a key, so the customer goes in
-        // front of both rather than one of them quietly winning.
+        // Two `DC1`s: the customer goes in front of both.
         assert_eq!(find(&f, "Acme DC1").rdp, Some(3390));
 
-        // A name nothing collides with is left alone.
         let ssh = find(&f, "edge");
-        assert_eq!((ssh.host.as_str(), ssh.port), ("10.9.0.1", None), "port 22 is not worth writing");
+        assert_eq!(
+            (ssh.host.as_str(), ssh.port),
+            ("10.9.0.1", None),
+            "port 22 is not worth writing"
+        );
 
-        // A web address with no scheme gets one, and the port belongs to the url.
         let nas = find(&f, "NAS");
         assert_eq!(nas.url.as_deref(), Some("https://10.9.0.20:5001"));
         assert_eq!(nas.host, "10.9.0.20", "the probe wants a host, not a url");
@@ -855,13 +854,17 @@ mod royal_tests {
         assert_eq!(pve.desc.as_deref(), Some("the hypervisor"));
     }
 
-    /// The three things that must never come across, each said out loud rather than
-    /// dropped quietly.
     #[test]
     fn the_bin_the_serial_port_and_the_passwords_stay_behind() {
         let f = from_royal_ts(DOC).unwrap();
-        assert!(!f.hosts.iter().any(|h| h.name == "gone"), "the trash was imported");
-        assert!(!f.hosts.iter().any(|h| h.name == "console"), "a serial port was imported");
+        assert!(
+            !f.hosts.iter().any(|h| h.name == "gone"),
+            "the trash was imported"
+        );
+        assert!(
+            !f.hosts.iter().any(|h| h.name == "console"),
+            "a serial port was imported"
+        );
 
         let said = f.warnings.join(" | ");
         assert!(said.contains("trash"), "{said}");
@@ -872,39 +875,70 @@ mod royal_tests {
 
     #[test]
     fn a_document_that_is_not_one_says_so_rather_than_importing_nothing() {
-        // Something else entirely, and something cut off half way.
-        assert!(from_royal_ts("<opml><body/></opml>").unwrap_err().contains("Royal TS"));
+        assert!(from_royal_ts("<opml><body/></opml>")
+            .unwrap_err()
+            .contains("Royal TS"));
         assert!(from_royal_ts("<RTSZDocument><RoyalFolder><ID>f").is_err());
-        // A real but empty one is not an error, it just has nothing in it.
-        assert_eq!(from_royal_ts("<RTSZDocument></RTSZDocument>").unwrap().hosts.len(), 0);
+        assert_eq!(
+            from_royal_ts("<RTSZDocument></RTSZDocument>")
+                .unwrap()
+                .hosts
+                .len(),
+            0
+        );
     }
 }
 
 #[cfg(test)]
 mod royal_smoke {
     use super::*;
-    /// Run against a real document by pointing this at one:
-    ///   ROYAL_TS_DOC=/path/to/doc.rtsz cargo test royal_smoke -- --nocapture
-    /// Skipped otherwise, so nobody's document is a prerequisite for the suite.
+    /// Runs only when `ROYAL_TS_DOC=/path/to/doc.rtsz cargo test royal_smoke -- --nocapture`.
     #[test]
     fn a_real_document_reads() {
-        let Ok(path) = std::env::var("ROYAL_TS_DOC") else { return };
+        let Ok(path) = std::env::var("ROYAL_TS_DOC") else {
+            return;
+        };
         let src = std::fs::read_to_string(&path).expect("read the document");
         let f = from_royal_ts(&src).expect("parse");
         let (rdp, web, ssh) = (
             f.hosts.iter().filter(|h| h.rdp.is_some()).count(),
             f.hosts.iter().filter(|h| h.url.is_some()).count(),
-            f.hosts.iter().filter(|h| h.rdp.is_none() && h.url.is_none()).count(),
+            f.hosts
+                .iter()
+                .filter(|h| h.rdp.is_none() && h.url.is_none())
+                .count(),
         );
         let folders: std::collections::BTreeSet<_> =
             f.hosts.iter().flat_map(|h| h.folders.clone()).collect();
-        println!("\n{} devices: {rdp} rdp, {web} web, {ssh} ssh", f.hosts.len());
-        println!("{} folders, deepest {}", folders.len(),
-            folders.iter().map(|f| f.matches('/').count() + 1).max().unwrap_or(0));
-        println!("qualified names: {}", f.hosts.iter().filter(|h| h.name.contains(' ')).count());
-        for w in &f.warnings { println!("  warning: {w}"); }
-        assert!(f.hosts.iter().all(|h| !h.host.trim().is_empty()), "a device with no host");
+        println!(
+            "\n{} devices: {rdp} rdp, {web} web, {ssh} ssh",
+            f.hosts.len()
+        );
+        println!(
+            "{} folders, deepest {}",
+            folders.len(),
+            folders
+                .iter()
+                .map(|f| f.matches('/').count() + 1)
+                .max()
+                .unwrap_or(0)
+        );
+        println!(
+            "qualified names: {}",
+            f.hosts.iter().filter(|h| h.name.contains(' ')).count()
+        );
+        for w in &f.warnings {
+            println!("  warning: {w}");
+        }
+        assert!(
+            f.hosts.iter().all(|h| !h.host.trim().is_empty()),
+            "a device with no host"
+        );
         let names: std::collections::HashSet<_> = f.hosts.iter().map(|h| &h.name).collect();
-        assert_eq!(names.len(), f.hosts.len(), "two devices ended up with one name");
+        assert_eq!(
+            names.len(),
+            f.hosts.len(),
+            "two devices ended up with one name"
+        );
     }
 }
