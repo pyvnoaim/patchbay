@@ -504,7 +504,12 @@ a { color: inherit; }
 .w-dot.up { background: var(--up); }
 .w-dot.down { background: var(--down); }
 .w-dot.unknown { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink-faint); }
-.w-jack[data-sel] .w-dot.up { background: #fff; }
+/* The dot keeps its own colour on a selected row. Everything else here goes white,
+   but this one carries the only piece of state in the row - painting it white said
+   the device was fine and up whatever it actually was. A ring separates it from the
+   accent underneath instead. */
+.w-jack[data-sel] .w-dot { box-shadow: 0 0 0 1.5px rgba(255,255,255,.55); }
+.w-jack[data-sel] .w-dot.unknown { background: rgba(255,255,255,.25); }
 .w-os { display: flex; flex: none; align-self: center; }
 .w-os svg { width: 14px; height: 14px; display: block; }
 .w-jack[data-sel] .w-os { color: rgba(255,255,255,.92) !important; }

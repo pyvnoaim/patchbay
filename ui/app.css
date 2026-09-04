@@ -434,15 +434,9 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
   box-shadow: inset 0 1px 0 rgba(255,255,255,.18);
 }
 .jack[aria-selected="true"] .host, .jack[aria-selected="true"] .folder { color: rgba(255,255,255,.82); }
-/* The dot was the one thing on a selected row still wearing its own colour, which read
-   as something the highlight had missed. It goes white with everything else - and
-   `down` stays hollow, so the one distinction worth keeping survives the change. */
-.jack[aria-selected="true"] .dot { background: rgba(255,255,255,.92); box-shadow: none; }
-.jack[aria-selected="true"] .dot.down,
-.jack[aria-selected="true"] .dot.unknown,
-.jack[aria-selected="true"] .dot.checking {
-  background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.85);
-}
+/* The dot keeps its own colour here: it is the only piece of state in the row, and
+   the accent underneath is what it needs separating from, not replacing with. */
+.jack[aria-selected="true"] .dot { box-shadow: 0 0 0 1.5px rgba(255,255,255,.55); }
 .jack[aria-selected="true"] .folder { background: rgba(255,255,255,.2); }
 /* A probe answering is news, and news that arrives as an instant colour swap reads
    as a glitch. Long enough to catch the eye, short enough to be over by the time
