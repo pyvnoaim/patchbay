@@ -29,10 +29,13 @@ if (existsSync(cargoBin)) process.env.PATH = `${cargoBin}${delimiter}${process.e
 // The updater signs its artifact or prints an error at the end of every build, which
 // reads like a failed one. The key never lives in the repo; CI passes the key itself
 // through TAURI_SIGNING_PRIVATE_KEY, and a machine that has neither just builds a
-// bundle nobody can update from, which is what a local build is anyway.
+// bundle nobody can update from, which is what a local build is anyway. The one
+// variable takes a path or the key itself - there is no `_PATH` twin, and setting one
+// was the same error at the end of every build. The key is password-protected, so
+// a build here still wants TAURI_SIGNING_PRIVATE_KEY_PASSWORD in the environment.
 const signingKey = join(homedir(), ".tauri", "patchbay.key");
 if (existsSync(signingKey) && !process.env.TAURI_SIGNING_PRIVATE_KEY) {
-  process.env.TAURI_SIGNING_PRIVATE_KEY_PATH = signingKey;
+  process.env.TAURI_SIGNING_PRIVATE_KEY = signingKey;
 }
 
 const run = (cmd, args, env) =>
