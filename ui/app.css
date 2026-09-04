@@ -87,9 +87,12 @@ body[data-os="macos"] { background: transparent; }
   .grip { display: none; }
 }
 /* ── tabs & sessions ───────────────────────────────────────── */
+/* The space around a tab is the same on all four sides: a 27px tab in a 46px bar
+   leaves 9.5px above and below, so the sides match it rather than sitting at 12 and
+   reading as a tab pushed up against the edge. */
 .tabs {
   display: flex; align-items: center; gap: 10px; flex: none;
-  padding: 0 12px; height: 46px;
+  padding: 0 10px; height: 46px;
   border-bottom: 1px solid var(--line);
 }
 .tabstrip {
@@ -287,11 +290,10 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
 #dock {
   position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
   z-index: 3; display: flex; align-items: center; gap: 3px;
-  /* Fully-rounded ends, like every other floating pill in the app (#uptoast, #msg,
-     #find all use 999px). Buttons match at half their height (28/2 = 14px) so the
-     nested rounding is concentric - a filled Delete on the right hugs the pill's
-     end without a square edge or a wedge of dead space. */
-  padding: 7px; border-radius: 999px;
+  /* The context menu's shape, not the notice pill's: this is a list of actions you
+     operate, and `.pill` is a sentence that talks at you. 12px outside, 7px on the
+     buttons, so the nested rounding stays concentric against the 7px of padding. */
+  padding: 7px; border-radius: 12px;
   /* Capped by the pane it's centred in, `#browse`, not the viewport - a viewport-wide
      cap let the pill size itself past a narrow pane (sidebar open, detail pane open)
      and `overflow: hidden` sliced the last button clean off, which is what happened
@@ -324,7 +326,7 @@ body:not([data-os="macos"]) #side .drag { height: 40px; }
    one control. */
 #dock button {
   display: inline-flex; align-items: center; gap: 7px; flex: none;
-  height: 28px; padding: 0 12px; border: 0; border-radius: 999px;
+  height: 28px; padding: 0 12px; border: 0; border-radius: 7px;
   background-color: transparent; background-image: none;
   color: var(--fg-dim); font: inherit; font-size: 12.5px; white-space: nowrap;
 }
@@ -502,12 +504,24 @@ button, .tab, .tab .x, .chip, .ctx-item, .how-opt, .crumb .drop,
 }
 /* A press is not a hover: it wants to land the instant the mouse goes down, so the
    transition that softens the hover is what makes a click feel late. */
-.group:active, .jack:active, .frow:active, .tab:active, .ctx-item:active {
+.group:active, .jack:active, .frow:active, .tab:active {
   background: color-mix(in srgb, var(--fg) 13%, transparent);
   transition: none;
 }
 /* The selected row is already the accent gradient, so it darkens instead. */
 .jack[aria-selected="true"]:active { background: linear-gradient(180deg, var(--accent), var(--accent-deep)); filter: brightness(.94); }
+/* A folder's note - the thing people keep a README in the tree for. Written where the
+   folder is rather than in a sheet, because it is read far more often than edited. */
+.d-note {
+  width: 100%; margin-top: 2px; padding: 7px 9px; resize: vertical;
+  border: 1px solid var(--line); border-radius: 7px;
+  background: var(--row); color: var(--fg);
+  font: inherit; font-size: 12.5px; line-height: 1.5; outline: none;
+  -webkit-user-select: text; user-select: text;
+}
+.d-note:focus { border-color: var(--accent); }
+.d-note::placeholder { color: var(--fg-faint); }
+
 .d-row { display: flex; gap: 10px; padding: 2px 0; font-size: 12.5px; }
 .d-row dt { color: var(--fg-faint); width: 42px; flex: none; }
 .d-row dd { margin: 0; overflow: hidden; text-overflow: ellipsis; -webkit-user-select: text; user-select: text; }
@@ -613,9 +627,24 @@ button.flat:hover { background: var(--row-hover); color: var(--fg); }
   display: flex; align-items: center; gap: 9px;
   padding: 6px 9px; border-radius: 6px; font-size: 12.5px; white-space: nowrap;
 }
-.ctx-item:hover, .ctx-item.on { background: var(--accent); color: #fff; }
+/* The same gradient and inner highlight as button.primary and the dock's hover: a
+   flat fill reads as a coloured rectangle laid over the menu, the gradient reads as
+   the row itself lifting. */
+.ctx-item:hover, .ctx-item.on {
+  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.22);
+}
 .ctx-item.danger { color: var(--down); }
-.ctx-item.danger:hover, .ctx-item.danger.on { background: var(--down); color: #fff; }
+.ctx-item.danger:hover, .ctx-item.danger.on {
+  background: linear-gradient(180deg, var(--down), var(--down-deep));
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.22);
+}
+/* A menu item is always hovered by the time it is pressed, so it darkens its own
+   accent the way a selected row does - the neutral press fill would paint grey over
+   the gradient underneath it. */
+.ctx-item:active { filter: brightness(.94); transition: none; }
 .ctx-item kbd {
   margin-left: auto; padding-left: 16px;
   background: transparent; color: var(--fg-faint); font: inherit; font-size: 11px;
@@ -663,21 +692,75 @@ button.flat:hover { background: var(--row-hover); color: var(--fg); }
   display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
 }
 .sheet.small .sheet-body { display: block; }
-.sheet.imp .sheet-body { display: block; }
-.imp-note { font-size: 12px; line-height: 1.5; color: var(--fg-dim); margin-bottom: 10px; }
+/* An import is a list, and a real document brings a hundred of them - so this sheet
+   is wider than the rest and its rows are a grid rather than a flex run, or a long
+   name pushes the address off the end and wraps itself over four lines. */
+.sheet.imp { width: min(820px, 94vw); max-height: 86vh; }
+.sheet.imp .sheet-body { display: block; padding-top: 0; }
+.imp-top { padding: 0 16px 10px; display: flex; flex-direction: column; gap: 8px; }
+.imp-note { font-size: 12px; line-height: 1.5; color: var(--fg-dim); }
 .imp-note b { color: var(--fg); font-weight: 550; }
-.imp-note .warn { display: block; margin-top: 6px; color: var(--down); }
-.imp-list { display: flex; flex-direction: column; gap: 1px; }
-.imp-row { display: flex; align-items: center; gap: 8px; padding: 5px 7px; border-radius: 6px; font-size: 12.5px; }
+/* Notes, not errors: they say what the document had that patchbay hasn't taken, and
+   painting them red made an ordinary import look like it had gone wrong. */
+.imp-note .warn {
+  display: block; position: relative; margin-top: 4px; padding-left: 13px;
+  color: var(--fg-faint);
+}
+.imp-note .warn::before {
+  content: ""; position: absolute; left: 3px; top: .58em;
+  width: 3px; height: 3px; border-radius: 50%; background: currentColor;
+}
+.imp-find {
+  width: 100%; padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--row); color: var(--fg); font: inherit; font-size: 12.5px; outline: none;
+}
+.imp-find:focus { border-color: var(--accent); }
+
+.imp-list { display: flex; flex-direction: column; }
+/* The folder a device came out of, as a heading rather than a column repeated forty
+   times - a Royal TS document is a customer per folder, and this is how you find one. */
+.imp-head {
+  display: flex; align-items: center; gap: 8px;
+  position: sticky; top: 0; z-index: 1;
+  margin-top: 10px; padding: 6px 7px;
+  background: var(--panel); backdrop-filter: blur(28px);
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--fg-dim);
+}
+.imp-head:first-child { margin-top: 0; }
+.imp-head .n { color: var(--fg-faint); font-weight: 400; }
+.imp-head button {
+  margin-left: auto; flex: none; padding: 2px 8px; font-size: 11px;
+  background: none; color: var(--fg-faint); border-radius: 5px;
+}
+.imp-head button:hover { background: var(--row-hover); color: var(--fg); }
+
+.imp-row {
+  display: grid; grid-template-columns: auto minmax(0, 1.1fr) minmax(0, 1.4fr) auto;
+  align-items: center; gap: 10px; padding: 5px 7px; border-radius: 6px; font-size: 12.5px;
+}
 .imp-row:hover { background: var(--row-hover); }
 .imp-row input { flex: none; accent-color: var(--accent); }
+.imp-row.gone, .imp-head.gone { display: none; }
+/* Every cell clips rather than wraps: one line per device is what makes a hundred of
+   them scannable, and the full value is in the tooltip. */
+.imp-name, .imp-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .imp-name { font-weight: 550; }
 .imp-host { color: var(--fg-dim); font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
-.imp-tag { margin-left: auto; flex: none; color: var(--fg-faint); font-size: 11px; }
+.imp-tag {
+  flex: none; justify-self: end; min-width: 42px; text-align: right;
+  color: var(--fg-faint); font-size: 11px;
+}
+.imp-row input:disabled ~ .imp-name { color: var(--fg-faint); font-weight: 400; }
 .sheet.small .f + .f { margin-top: 10px; }
-.f { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+/* `pointer-events` here because the field wraps its input in a <label>, which makes
+   the whole box a hit target - so a click in the empty space beside "Team server"
+   put a caret in the field. The association is what a screen reader announces the
+   input by and it stays; only the label's dead space stops taking clicks, while the
+   words and the control keep theirs - the half of a label anybody aims at. */
+.f { display: flex; flex-direction: column; gap: 4px; min-width: 0; pointer-events: none; }
+.f > * { pointer-events: auto; }
 .f.wide { grid-column: 1 / -1; }
-.f > span { font-size: 11px; color: var(--fg-faint); font-weight: 550; }
+.f > span { font-size: 11px; color: var(--fg-faint); font-weight: 550; width: fit-content; }
 /* Required, and only where saving actually refuses without it. */
 .f.req > span:first-child::after { content: "*"; color: var(--down); margin-left: 3px; }
 /* One box for both, or they drift: WebKit's native `menulist` select ignores the
@@ -736,9 +819,12 @@ button.danger:hover { background: color-mix(in srgb, var(--down) 18%, transparen
    the free space between them, so the globe floated to a different spot on every row
    depending on how many folder tags it was sharing with. It belongs with the address
    it describes, not adrift in the gap. */
-.jack .web { display: flex; flex: none; align-self: center; color: var(--fg-faint); margin-left: 6px; }
-.jack[aria-selected="true"] .web { color: rgba(255,255,255,.8); }
-.jack .web .i { width: 12px; height: 12px; }
+/* How the device is reached, and - when it also has a web UI it isn't reached by -
+   the globe beside it. Faint on purpose: it is there to be found in a scan down the
+   column, not to compete with the name. */
+.jack .web, .jack .kind { display: flex; flex: none; align-self: center; color: var(--fg-faint); margin-left: 6px; }
+.jack[aria-selected="true"] .web, .jack[aria-selected="true"] .kind { color: rgba(255,255,255,.8); }
+.jack .web .i, .jack .kind .i { width: 12px; height: 12px; }
 
 .hint { grid-column: 1 / -1; margin: 8px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--fg-faint); }
 
@@ -848,6 +934,49 @@ button:disabled { opacity: .5; }
 .pane > .d-sec:first-child { margin-top: 0; }
 /* The settings sheet is a single column, so a row of fields needs its own grid. */
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+/* Where a list comes from. Two cards, so the whole thing is the target rather than a
+   word at the end of a sentence, and they read as one pair rather than two paragraphs.
+   The state lives on the card: idle, reading, then a tick - because a 200-device
+   document takes long enough that a button which does nothing visible reads as broken. */
+.sources { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 10px; }
+.source {
+  position: relative; overflow: hidden;
+  /* One of the two is a <button>, and a button's UA rules set `justify-content: center`
+     - which centres the whole grid *track*, not the items inside it. That is why
+     `justify-items` and `text-align` both looked like they had no effect and one card
+     kept reading centred while its twin read left. */
+  -webkit-appearance: none; appearance: none;
+  display: grid; gap: 2px; padding: 13px 14px;
+  justify-content: start; justify-items: start; text-align: left;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--row);
+  color: var(--fg); font: inherit;
+  transition: background .18s cubic-bezier(.2,.8,.3,1), border-color .18s cubic-bezier(.2,.8,.3,1);
+}
+.source:hover { background: var(--row-hover); border-color: var(--fg-faint); }
+.source:active { filter: brightness(.96); }
+.source .si { display: flex; color: var(--fg-faint); margin-bottom: 7px; }
+.source .si .i { width: 15px; height: 15px; }
+.source:hover .si { color: var(--accent); }
+.source b { font-weight: 600; font-size: 13px; }
+.source > span:not(.si):not(.go) { font-size: 12px; color: var(--fg-dim); }
+/* The action reads as one, and it is where the state gets written. */
+.source .go {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 9px; font-size: 12px; font-weight: 600; color: var(--accent);
+}
+.source .go .i { width: 13px; height: 13px; }
+.source[data-state="busy"] { border-color: color-mix(in oklab, var(--accent) 45%, transparent); }
+.source[data-state="busy"] .go { color: var(--fg-dim); }
+.source[data-state="done"] .go { color: var(--up); }
+/* A line of light crossing the card while the file is read - the same idea as the
+   update pill's indeterminate bar, at the size this needs. */
+.source[data-state="busy"]::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: source-scan 1.1s cubic-bezier(.4,0,.6,1) infinite;
+}
+@keyframes source-scan { from { transform: translateX(-100%) } to { transform: translateX(100%) } }
+
 .opt { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; }
 .opt input { margin: 2px 0 0; flex: none; accent-color: var(--accent); }
 /* Block, not a flex column: the title and the line under it are the only two things
@@ -860,6 +989,10 @@ button:disabled { opacity: .5; }
   font-size: 11.5px; color: var(--fg);
 }
 .page-note { margin: 2px 0 8px; font-size: 12px; line-height: 1.5; color: var(--fg-dim); }
+/* An answer that sits beside the button that asked for it - the update check's shape,
+   used again by the team pane. `#notices` is under every overlay, so a pill fired from
+   inside a sheet is behind that sheet's blur and reads as broken rather than as quiet. */
+.btns .page-note { margin: 0; align-self: center; }
 
 /* One block per space in the settings sheet: what it is, where it syncs, what you
    can do about it. */

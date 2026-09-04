@@ -36,9 +36,6 @@ pub struct Jack {
     pub tags: Option<Vec<String>>,
     pub desc: Option<String>,
     pub forward: Option<Vec<String>>,
-    /// Which space this came from - the file it was in, not a field anyone writes.
-    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
-    pub space: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -47,6 +44,17 @@ struct Raw {
     defaults: Jack,
     #[serde(default)]
     jack: IndexMap<String, Jack>,
+    #[serde(default)]
+    folder: IndexMap<String, Folder>,
+}
+
+/// What a folder is, beyond a string devices carry. Nothing else: a folder exists
+/// because a device names it, and this table only says something *about* one - so a
+/// note on an empty folder is not a folder, and the tree does not grow a row for it.
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+pub struct Folder {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// `%APPDATA%` on Windows, `$XDG_CONFIG_HOME` or `~/.config` elsewhere - matches configPath() in the CLI.
@@ -67,7 +75,7 @@ pub fn config_path() -> PathBuf {
 }
 
 /// Where a session's log lands when logging is turned on - beside the config, not
-/// in it, same reasoning as `team.toml`.
+/// in it: it is this machine's answer rather than part of the list.
 pub fn logs_dir() -> PathBuf {
     config_path().parent().unwrap_or(Path::new(".")).join("logs")
 }
@@ -80,6 +88,20 @@ fn expand(p: &str) -> String {
 }
 
 /// `[defaults]` merges into every jack - that's the whole credential-inheritance feature.
+/// The notes hung on folders, by full path. Read on its own rather than folded into
+/// `Jacks`, because a folder is not a device and every caller wants one or the other.
+pub fn notes(src: &str) -> IndexMap<String, String> {
+    let raw: Raw = match toml::from_str(src) {
+        Ok(r) => r,
+        Err(_) => return IndexMap::new(),
+    };
+    raw.folder
+        .into_iter()
+        .filter_map(|(k, f)| Some((k, f.note?)))
+        .filter(|(_, n)| !n.trim().is_empty())
+        .collect()
+}
+
 pub fn parse(src: &str) -> Result<Jacks, String> {
     let raw: Raw = toml::from_str(src).map_err(|e| e.message().to_string())?;
     let d = &raw.defaults;
@@ -106,7 +128,6 @@ pub fn parse(src: &str) -> Result<Jacks, String> {
                 tags: None,
                 desc: j.desc.or_else(|| d.desc.clone()),
                 forward: j.forward.or_else(|| d.forward.clone()),
-                space: None,
             };
             (name, merged)
         })
@@ -116,61 +137,6 @@ pub fn parse(src: &str) -> Result<Jacks, String> {
 pub fn load(path: &Path) -> Result<Jacks, String> {
     let src = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     parse(&src).map_err(|e| format!("{}: {e}", path.display()))
-}
-
-/// Beside the config: one file per extra space. A space *is* a config, whole.
-pub fn spaces_dir(cfg: &Path) -> PathBuf {
-    cfg.with_file_name("spaces")
-}
-
-/// Where a named space lives. `None` is the main config - that one is your own list.
-pub fn space_path(cfg: &Path, space: Option<&str>) -> PathBuf {
-    match space {
-        Some(s) => spaces_dir(cfg).join(format!("{s}.toml")),
-        None => cfg.to_path_buf(),
-    }
-}
-
-/// Every space that exists: the main config first, then `spaces/*.toml` sorted.
-/// The `.toml` test is load-bearing - a space's `.toml.base` and `.toml.bak` sit in
-/// the same directory and are not spaces.
-pub fn space_paths(cfg: &Path) -> Vec<(Option<String>, PathBuf)> {
-    let mut out = Vec::new();
-    if cfg.exists() {
-        out.push((None, cfg.to_path_buf()));
-    }
-    let Ok(dir) = std::fs::read_dir(spaces_dir(cfg)) else {
-        return out;
-    };
-    let mut spaces: Vec<(Option<String>, PathBuf)> = dir
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "toml"))
-        .filter_map(|p| Some((Some(p.file_stem()?.to_str()?.to_string()), p)))
-        .collect();
-    // read_dir is unordered, and which of two colliding names wins must not depend
-    // on the filesystem.
-    spaces.sort();
-    out.append(&mut spaces);
-    out
-}
-
-/// Every space's jacks in one map. Each file resolves on its own, so `[defaults]` in
-/// a space applies to that space's jacks and nobody else's.
-///
-/// ponytail: a name in two spaces resolves to the first one - the main config, then
-/// spaces alphabetically. Qualify as "acme:web" if two spaces ever collide in practice.
-pub fn load_all(cfg: &Path) -> Result<Jacks, String> {
-    let mut out = Jacks::new();
-    for (space, path) in space_paths(cfg) {
-        for (name, mut j) in load(&path)? {
-            if !out.contains_key(&name) {
-                j.space = space.clone();
-                out.insert(name, j);
-            }
-        }
-    }
-    Ok(out)
 }
 
 pub fn spec(j: &Jack) -> String {
@@ -328,7 +294,7 @@ pub const FORWARD_FLAGS: [&str; 3] = ["-L", "-R", "-D"];
 /// written as ssh's own flag, because anyone reaching for either already knows its name.
 ///
 /// The flag is matched exactly and the rest may not start with `-`: this value becomes
-/// argv, and a config a team wrote must not be able to put an option of its choosing
+/// argv, and a config file must not be able to put an option of its choosing
 /// there. That is the same property `-L` had for free by never being anything but an
 /// operand.
 pub fn forward_arg(spec: &str) -> Result<(&'static str, &str), String> {
@@ -629,59 +595,6 @@ forward = ["5432:localhost:5432"]
         assert_eq!(j.keys().take(3).map(|s| s.as_str()).collect::<Vec<_>>(), ["bastion", "web", "db"]);
     }
 
-    #[test]
-    fn every_space_loads_the_main_config_wins_a_collision_and_defaults_stay_put() {
-        // Mirrors the TypeScript test of the same name.
-        let dir = std::env::temp_dir().join(format!("patchbay-{}-spaces", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join("spaces")).unwrap();
-        let cfg = dir.join("patchbay.toml");
-        std::fs::write(&cfg, "[jack.mine]\nhost = \"h1\"\n\n[jack.both]\nhost = \"ours\"\n").unwrap();
-        std::fs::write(
-            dir.join("spaces/acme.toml"),
-            "[defaults]\nuser = \"root\"\n\n[jack.theirs]\nhost = \"h2\"\n\n[jack.both]\nhost = \"theirs\"\n",
-        )
-        .unwrap();
-        // Neither is a space: they sit beside one and end in something else.
-        std::fs::write(dir.join("spaces/acme.toml.base"), "[jack.stale]\nhost = \"old\"\n").unwrap();
-        std::fs::write(dir.join("spaces/acme.toml.bak"), "[jack.older]\nhost = \"older\"\n").unwrap();
-
-        let all = load_all(&cfg).unwrap();
-        let mut names: Vec<&String> = all.keys().collect();
-        names.sort();
-        assert_eq!(names, ["both", "mine", "theirs"]);
-        assert_eq!(all["mine"].space, None);
-        assert_eq!(all["theirs"].space.as_deref(), Some("acme"));
-        assert_eq!(all["both"].host, "ours");
-        // A space's [defaults] are that space's, not everyone's.
-        assert_eq!(all["theirs"].user.as_deref(), Some("root"));
-        assert_eq!(all["mine"].user, None);
-    }
-
-    #[test]
-    fn no_spaces_directory_is_not_an_error() {
-        let dir = std::env::temp_dir().join(format!("patchbay-{}-nospaces", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let cfg = dir.join("patchbay.toml");
-        std::fs::write(&cfg, "[jack.a]\nhost = \"h1\"\n").unwrap();
-        assert_eq!(load_all(&cfg).unwrap().keys().collect::<Vec<_>>(), ["a"]);
-    }
-
-    #[test]
-    fn primary_names_how_a_device_is_reached_and_falls_back_when_it_points_at_nothing() {
-        let how = |extra: &str| {
-            let j = parse(&format!("[jack.x]\nhost = \"h\"\n{extra}")).unwrap();
-            primary(&j["x"])
-        };
-        assert_eq!(how(""), "ssh");
-        assert_eq!(how("ssh = false\nurl = \"https://x\""), "web");
-        assert_eq!(how("ssh = false\nrdp = 3389"), "rdp");
-        assert_eq!(how("ssh = false\nvnc = 5900"), "vnc");
-        assert_eq!(how("url = \"https://x\""), "ssh", "ssh wins unless the device says otherwise");
-        assert_eq!(how("primary = \"web\"\nurl = \"https://x\""), "web");
-        assert_eq!(how("primary = \"rdp\""), "ssh", "a primary pointing at what's gone falls back");
-    }
 
     #[test]
     fn a_forwards_local_port_is_the_one_before_the_target() {
@@ -699,7 +612,7 @@ forward = ["5432:localhost:5432"]
     }
 
     /// The value reaches argv. `-L` was safe for free by only ever being an operand;
-    /// three flags means the prefix has to be matched exactly, or a config a team wrote
+    /// three flags means the prefix has to be matched exactly, or a config someone wrote
     /// could hand ssh an option of its own.
     #[test]
     fn a_forward_is_one_of_three_flags_and_never_an_option_of_its_own() {

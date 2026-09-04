@@ -66,12 +66,6 @@ document.addEventListener("contextmenu", (e) => {
             run: () => openBroadcast(bulk) },
           "-",
         ] : []),
-        // One row per space rather than a picker: a space is a file, there are rarely
-        // more than a few, and the answer is worth reading before it's clicked. With no
-        // second space there is nowhere to move them, so the rows aren't offered.
-        ...(spaces.length ? [null, ...spaces].map((sp) => ({
-          icon: "box", label: `Move to ${sp ?? "Private"}`, run: () => moveMarked(bulk, sp),
-        })).concat("-") : []),
         { icon: "trash-2", label: `Delete ${bulk.length} devices`, key: "⌫", danger: true,
           run: () => removeMarked(bulk) },
       ]);
@@ -108,24 +102,21 @@ document.addEventListener("contextmenu", (e) => {
       { icon: "pencil", label: "Edit…", run: () => openJack(j) },
       // Everything but the name, which is the one field a copy has to differ in.
       { icon: "copy-plus", label: "Duplicate…", run: () => openJack({ ...j, name: "" }) },
-      { icon: "trash-2", label: "Delete", key: "⌫", danger: true, run: () => removeJack(j.name, j.space ?? null) },
+      { icon: "trash-2", label: "Delete", key: "⌫", danger: true, run: () => removeJack(j.name) },
     ], j.os ?? null);
   }
 
   if (groupRow && groupRow.dataset.group && !groupRow.dataset.path) {
-    const space = groupRow.dataset.space || null;
-    return showCtx(e.clientX, e.clientY, space ?? "Private", [
-      { icon: "plus", label: "New device here…", run: () => openJack(null, { space, path: null }) },
-      { icon: "folder-plus", label: "New folder…", run: () => newGroup({ space, path: null }) },
+    return showCtx(e.clientX, e.clientY, "All devices", [
+      { icon: "plus", label: "New device here…", run: () => openJack(null, { path: null }) },
+      { icon: "folder-plus", label: "New folder…", run: () => newGroup({ path: null }) },
       "-",
-      { icon: "box", label: "New space…", run: () => newSpace() },
       // Your own list is the config file; there is no version of it to remove.
-      ...(space ? [{ icon: "trash-2", label: "Delete space", danger: true, run: () => removeSpace(space) }] : []),
     ]);
   }
 
   if (groupRow) {
-    const id = { space: groupRow.dataset.space || null, path: groupRow.dataset.path || null };
+    const id = { path: groupRow.dataset.path || null };
     if (!id.path) return;   // "All jacks" isn't a folder
     return showCtx(e.clientX, e.clientY, id.path, [
       { icon: "plus", label: "New device here…", run: () => openJack(null, id) },
@@ -167,10 +158,8 @@ document.addEventListener("contextmenu", (e) => {
 
   showCtx(e.clientX, e.clientY, null, [
     { icon: "plus", label: "New device…", run: () => openJack(null, group) },
-    { icon: "folder-plus", label: "New folder…", run: () => newGroup({ space: group?.space ?? null, path: null }) },
-    { icon: "box", label: "New space…", run: () => newSpace() },
+    { icon: "folder-plus", label: "New folder…", run: () => newGroup({ path: null }) },
     "-",
-    { icon: "download", label: "Import from ssh config…", run: () => openImport() },
     { icon: "file-pen-line", label: "Open config file", run: () => invoke("open_config") },
   ]);
 });
@@ -421,7 +410,6 @@ function openJack(j, prefillGroup) {
   editing = j?.name || null;
   // Which file this write lands in. An existing device stays where it is; a new one
   // goes wherever you were standing.
-  editingSpace = j ? j.space ?? null : prefillGroup?.space ?? null;
   $("sheet-title").textContent = editing ? `Edit ${editing}` : "New device";
   jfDelete.hidden = !editing;
   jfDelete.innerHTML = `${icon("trash-2")}Delete`;
@@ -447,10 +435,6 @@ function openJack(j, prefillGroup) {
   f.desc.value = j?.desc ?? "";
   f.folders.value = (j?.folders ?? (prefillGroup?.path ? [prefillGroup.path] : [])).join(", ");
   // Only worth a control once there is somewhere else to put it.
-  $("jf-space").hidden = !spaces.length;
-  f.space.innerHTML = [null, ...spaces]
-    .map((sp) => `<option value="${esc(sp ?? "")}"${sp === editingSpace ? " selected" : ""}>${esc(sp ?? "Private")}</option>`)
-    .join("");
   f.forward.value = (j?.forward ?? []).join(", ");
   $("oschoices").innerHTML = OS_CHOICES.map((o) => `<option value="${esc(o)}">`).join("");
   renderFolderSuggestions();
@@ -474,16 +458,8 @@ jackForm.addEventListener("submit", async (e) => {
   if (overSsh && port && !/^\d+$/.test(port)) return showErr(jfErr, "ssh port has to be a number");
   if (reach === "rdp" && !/^\d+$/.test(rdp)) return showErr(jfErr, "rdp port has to be a number");
   if (reach === "vnc" && !/^\d+$/.test(vnc)) return showErr(jfErr, "vnc port has to be a number");
-  const target = f.space.value || null;
   try {
-    // The move goes first and carries the raw table: saving into the other file
-    // would bake this space's [defaults] in and drop whatever the sheet can't edit.
-    if (editing && target !== editingSpace) {
-      await invoke("move_jack", { from: editingSpace, to: target, name: editing });
-      editingSpace = target;
-    }
     await invoke("save_jack", {
-      space: target,
       original: editing,
       jack: {
         name: f.name.value.trim(),
@@ -508,7 +484,7 @@ jackForm.addEventListener("submit", async (e) => {
         folders: list2(f.folders.value),
       },
     });
-    for (const f2 of list2(f.folders.value)) pending.delete(gkey({ space: target, path: f2 }));
+    for (const f2 of list2(f.folders.value)) pending.delete(gkey({ path: f2 }));
     closeJack();
     await load();
   } catch (err) { showErr(jfErr, String(err)); }
@@ -516,7 +492,7 @@ jackForm.addEventListener("submit", async (e) => {
 $("jf-cancel").addEventListener("click", closeJack);
 sheetWrap.addEventListener("mousedown", (e) => { if (e.target === sheetWrap) closeJack(); });
 jfDelete.addEventListener("click", () => {
-  const [n, sp] = [editing, editingSpace];
+  const n = editing;
   closeJack();
   removeJack(n, sp);
 });
@@ -524,71 +500,21 @@ jfDelete.addEventListener("click", () => {
 function showErr(el, msg) { el.textContent = msg; el.hidden = false; }
 
 // ── mutations ──────────────────────────────────────────────────────────────
-async function removeJack(name, space) {
+async function removeJack(name) {
   if (!(await ask(`Delete "${name}"? This edits your config file.`, null, "Delete"))) return;
-  try { await invoke("delete_jack", { space, name }); sel = 0; await load(); }
+  try { await invoke("delete_jack", { name }); sel = 0; await load(); }
   catch (e) { alertish(e); }
 }
 
 /// Both bulk actions loop the single-device command rather than adding one of their
-/// own: each device carries the space its file is, so one call per device is what
-/// `config.rs` was always going to do anyway.
-async function moveMarked(js, to) {
-  try {
-    for (const j of js) {
-      if ((j.space ?? null) !== to) await invoke("move_jack", { from: j.space ?? null, to, name: j.name });
-    }
-  } catch (e) { alertish(e); }
-  marked.clear();
-  await load();
-}
-
-async function removeMarked(js) {
-  // Named, so this is a list you can check rather than a number to trust - but only
-  // as far as the sheet can show without becoming a wall.
-  const names = js.slice(0, 8).map((j) => j.name).join(", ");
-  const msg = `Delete ${js.length} devices? This edits your config file.`
-    + `\n\n${names}${js.length > 8 ? `, and ${js.length - 8} more` : ""}`;
-  if (!(await ask(msg, null, "Delete"))) return;
-  try {
-    for (const j of js) await invoke("delete_jack", { space: j.space ?? null, name: j.name });
-  } catch (e) { alertish(e); }
-  marked.clear();
-  sel = 0;
-  await load();
-}
-
-async function newSpace() {
-  const name = await ask("A space is a config file of its own - its devices, folders and "
-    + "defaults are separate from your list.\n\nName it", "", "Create");
-  if (!name) return;
-  try {
-    const slug = await invoke("create_space", { name });
-    group = { space: slug, path: null };
-    expanded.add(gkey(group));
-    await load();
-  } catch (e) { alertish(e); }
-}
-
-async function removeSpace(space) {
-  const n = all.filter((j) => (j.space ?? null) === space).length;
-  const msg = `Delete the space "${space}" and its ${n} device${n === 1 ? "" : "s"}?`
-    + `\n\nThe file is kept beside your config as ${space}.toml.bak.`;
-  if (!(await ask(msg, null, "Delete"))) return;
-  try {
-    await invoke("delete_space", { name: space });
-    if (group?.space === space) group = null;
-    await load();
-  } catch (e) { alertish(e); }
-}
 
 async function newGroup(parent) {
   const name = await ask(parent?.path ? `New folder inside ${parent.path}` : "New folder", "", "Create");
   if (!name) return;
   const leaf = name.replace(/^\/+|\/+$/g, "");
-  const id = { space: parent?.space ?? null, path: parent?.path ? `${parent.path}/${leaf}` : leaf };
+  const id = { path: parent?.path ? `${parent.path}/${leaf}` : leaf };
   pending.set(gkey(id), id);
-  expanded.add(gkey({ space: id.space, path: id.path.split("/")[0] }));
+  expanded.add(gkey({ path: id.path.split("/")[0] }));
   group = id;
   render();
 }
@@ -597,9 +523,9 @@ async function renameGroup(id) {
   const to = await ask(`Rename folder ${id.path} to`, id.path.split("/").pop(), "Rename");
   if (!to) return;
   const parent = id.path.includes("/") ? id.path.slice(0, id.path.lastIndexOf("/")) : "";
-  const next = { space: id.space, path: parent ? `${parent}/${to}` : to };
+  const next = { path: parent ? `${parent}/${to}` : to };
   try {
-    await invoke("rename_group", { space: id.space, from: id.path, to: next.path });
+    await invoke("rename_group", { from: id.path, to: next.path });
     if (pending.delete(gkey(id))) pending.set(gkey(next), next);
     if (sameGroup(group, id)) group = next;
     await load();
@@ -607,14 +533,14 @@ async function renameGroup(id) {
 }
 
 async function removeGroup(id) {
-  const n = all.filter((j) => (j.space ?? null) === id.space
-    && j.folders.some((f) => f === id.path || f.startsWith(id.path + "/"))).length;
+  const n = all.filter((j) =>
+    j.folders.some((f) => f === id.path || f.startsWith(id.path + "/"))).length;
   const msg = `Remove folder "${id.path}" from ${n} device${n === 1 ? "" : "s"}? The devices stay.`;
   if (!(await ask(msg, null, "Remove"))) return;
   try {
-    await invoke("delete_group", { space: id.space, path: id.path });
+    await invoke("delete_group", { path: id.path });
     pending.delete(gkey(id));
-    if (sameGroup(group, id) || (group?.space === id.space && group?.path?.startsWith(id.path + "/"))) group = null;
+    if (sameGroup(group, id) || group?.path?.startsWith(id.path + "/")) group = null;
     await load();
   } catch (e) { alertish(e); }
 }
@@ -632,54 +558,149 @@ function alertish(e) {
 // so it ticks and writes instead - through save_jack, like every other edit.
 let impFound = [];
 
-async function openImport() {
-  impFound = [];
+/// Whatever was found, from either source. `where` is what to call it in the header -
+/// an ssh config has a path, a document handed in through the window has a name.
+async function openImport(r, where) {
   impErr.hidden = true;
-  impList.innerHTML = "";
-  impNote.textContent = "Reading your ssh config…";
-  impOk.disabled = true;
+  $("imp-title").textContent = `Import from ${where}`;
+  $("imp-find").value = "";
   impWrap.hidden = false;
 
-  let r;
-  try {
-    r = await invoke("ssh_hosts");
-  } catch (err) {
-    impNote.textContent = "";
-    return showErr(impErr, String(err));
-  }
-
-  // A host already in the config is shown but not ticked, so running this twice is
+  // A device already in the config is shown but not ticked, so running this twice is
   // safe and you can see what it would have added.
   impFound = r.hosts.map((h) => ({ ...h, here: all.some((j) => j.name === h.name) }));
   const fresh = impFound.filter((h) => !h.here).length;
   impNote.innerHTML =
-    `<b>${impFound.length}</b> host${impFound.length === 1 ? "" : "s"} in ${esc(r.path)}` +
+    `<b>${impFound.length}</b> device${impFound.length === 1 ? "" : "s"} found` +
     `${fresh < impFound.length ? ` · ${impFound.length - fresh} already here` : ""}` +
     r.warnings.map((w) => `<span class="warn">${esc(w)}</span>`).join("");
 
-  impList.innerHTML = impFound.map((h, i) => `
-    <label class="imp-row">
-      <input type="checkbox" data-i="${i}"${h.here ? " disabled" : " checked"}>
-      <span class="imp-name">${esc(h.name)}</span>
-      <span class="imp-host">${esc(h.user ? `${h.user}@${h.host}` : h.host)}${h.port ? `:${h.port}` : ""}</span>
-      ${h.here ? `<span class="imp-tag">already here</span>`
-        : h.forward.length ? `<span class="imp-tag">${h.forward.length} forward${h.forward.length === 1 ? "" : "s"}</span>` : ""}
-    </label>`).join("");
+  // Grouped by the folder they came out of. A document is a customer per folder, and
+  // a hundred rows in one run is a list nobody reads - as headings it is twenty
+  // groups you can tick one at a time.
+  const groups = new Map();
+  impFound.forEach((h, i) => {
+    const key = h.folders?.[0]?.split("/")[0] ?? "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ h, i });
+  });
+  const kind = (h) => h.here ? "already here"
+    : h.rdp ? "rdp" : h.url ? "web"
+    : h.forward?.length ? `${h.forward.length} forward${h.forward.length === 1 ? "" : "s"}` : "ssh";
+
+  impList.innerHTML = [...groups]
+    .sort((a, b) => (a[0] === "" ? 1 : b[0] === "" ? -1 : a[0].localeCompare(b[0])))
+    .map(([folder, rows]) => `
+      <div class="imp-head" data-group="${esc(folder)}">${esc(folder || "No folder")}
+        <span class="n">${rows.length}</span>
+        <button type="button" data-pick="${esc(folder)}">All</button>
+      </div>` + rows.map(({ h, i }) => `
+      <label class="imp-row" data-find="${esc(`${h.name} ${h.host} ${h.user ?? ""} ${h.folders?.join(" ") ?? ""}`.toLowerCase())}">
+        <input type="checkbox" data-i="${i}"${h.here ? " disabled" : " checked"}>
+        <span class="imp-name" data-tip="${esc(h.name)}">${esc(h.name)}</span>
+        <span class="imp-host">${esc(h.user ? `${h.user}@${h.host}` : h.host)}${h.port ? `:${h.port}` : ""}</span>
+        <span class="imp-tag">${esc(kind(h))}</span>
+      </label>`).join("")).join("");
   impOk.disabled = !fresh;
+}
+
+/// Hides rows rather than re-rendering them, so a tick survives typing in the filter -
+/// and a heading goes with the last of its rows.
+$("imp-find").addEventListener("input", (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  for (const head of impList.querySelectorAll(".imp-head")) {
+    let shownHere = 0;
+    for (let el = head.nextElementSibling; el?.classList.contains("imp-row"); el = el.nextElementSibling) {
+      const hit = !q || el.dataset.find.includes(q);
+      el.classList.toggle("gone", !hit);
+      shownHere += hit;
+    }
+    head.classList.toggle("gone", !shownHere);
+  }
+});
+
+/// One folder's worth, which is one customer's worth.
+impList.addEventListener("click", (e) => {
+  const folder = e.target.closest("[data-pick]")?.dataset.pick;
+  if (folder === undefined) return;
+  e.preventDefault();
+  const head = e.target.closest(".imp-head");
+  const boxes = [];
+  for (let el = head.nextElementSibling; el?.classList.contains("imp-row"); el = el.nextElementSibling) {
+    const box = el.querySelector("input:not(:disabled)");
+    if (box && !el.classList.contains("gone")) boxes.push(box);
+  }
+  const to = !boxes.every((b) => b.checked);
+  for (const b of boxes) b.checked = to;
+});
+
+/// The one place an import starts. A file is read here in the window and handed to
+/// Rust as text, so there is no dialog plugin, no new capability, and the app only
+/// ever sees a document somebody chose.
+///
+/// The card carries the state rather than a pill: reading a two-hundred device document
+/// takes long enough that a control which does nothing visible reads as broken, and the
+/// count it lands on is the answer to "did that work".
+async function impCall(card, fn) {
+  const err = $("imp-perr");
+  const go = card.querySelector(".go");
+  err.hidden = true;
+  card.dataset.state = "busy";
+  go.textContent = "Reading…";
+  try {
+    const r = await fn();
+    card.dataset.state = "done";
+    go.innerHTML = `${icon("check")}${r.hosts.length} found`;
+    // Long enough to read, short enough that the sheet isn't sitting there afterwards.
+    setTimeout(() => { closeSettings(); openImport(r, r.what); }, 550);
+  } catch (e) {
+    delete card.dataset.state;
+    go.textContent = go.dataset.idle;
+    showErr(err, String(e));
+  }
+}
+
+$("imp-ssh").addEventListener("click", (e) =>
+  impCall(e.currentTarget, async () => {
+    const r = await invoke("ssh_hosts");
+    return { ...r, what: r.path };
+  }));
+
+$("imp-royal").addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = "";   // so choosing the same file twice still fires
+  if (!file) return;
+  impCall(e.target.closest(".source"), async () => {
+    const r = await invoke("royal_hosts", { src: await file.text() });
+    return { ...r, what: file.name };
+  });
+});
+
+/// Back to "Choose a file…" whenever the pane is opened again, so a card never sits
+/// there claiming a count from last time.
+function resetSources() {
+  for (const c of setWrap.querySelectorAll(".source")) {
+    delete c.dataset.state;
+    const go = c.querySelector(".go");
+    go.textContent = go.dataset.idle;
+  }
 }
 
 const closeImport = () => { impWrap.hidden = true; };
 $("imp-cancel").addEventListener("click", closeImport);
 impWrap.addEventListener("mousedown", (e) => { if (e.target === impWrap) closeImport(); });
+/// Everything the filter is currently showing, so "select all" under a search means
+/// what it says rather than quietly ticking the hundred rows you filtered away.
 $("imp-all").addEventListener("click", () => {
-  const boxes = [...impList.querySelectorAll("input:not(:disabled)")];
+  const boxes = [...impList.querySelectorAll(".imp-row:not(.gone) input:not(:disabled)")];
   const to = !boxes.every((b) => b.checked);
   for (const b of boxes) b.checked = to;
 });
 
 impForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const picked = [...impList.querySelectorAll("input:checked")].map((b) => impFound[+b.dataset.i]);
+  const picked = [...impList.querySelectorAll(".imp-row:not(.gone) input:checked")]
+    .map((b) => impFound[+b.dataset.i]);
   if (!picked.length) return showErr(impErr, "nothing ticked to import");
 
   impOk.disabled = true;
@@ -696,7 +717,9 @@ impForm.addEventListener("submit", async (e) => {
           name: h.name, host: h.host,
           user: h.user ?? null, port: h.port ?? null,
           key: h.key ?? null, jump: h.jump ?? null,
-          folders: [], forward: h.forward,
+          folders: h.folders ?? [], forward: h.forward,
+          rdp: h.rdp ?? null, url: h.url ?? null,
+          os: h.os ?? null, desc: h.desc ?? null,
         },
       });
     } catch { failed.push(h.name); }
@@ -710,7 +733,10 @@ impForm.addEventListener("submit", async (e) => {
 });
 
 // ── settings ───────────────────────────────────────────────────────────────
-async function openSettings() {
+async function openSettings(pane) {
+  // Defended here as well as at the call sites: a pane name that names nothing would
+  // leave the sheet open with an empty right-hand side and no way to tell why.
+  if (!setNav.querySelector(`[data-pane="${CSS.escape(String(pane ?? ""))}"]`)) pane = "devices";
   setErr.hidden = true;
   // The same selector the submit handler writes back through, so a setting that is
   // not a checkbox - theme, font size - is read here rather than assigned `.checked`.
@@ -722,12 +748,11 @@ async function openSettings() {
   const defs = await invoke("defaults").catch(() => ({}));
   for (const k of DEFAULT_KEYS) setForm.elements[`def_${k}`].value = defs[k] ?? "";
   renderSwatches();
-  teamErr.hidden = true;
-  renderTeam();
-  // Land on the thing that needs answering. The sidebar button was already warning
-  // about it, so opening elsewhere would make you hunt for what you clicked it for.
-  showPane(teams.some((t) => TEAM_STUCK[t.state]) ? "team" : "devices");
-  syncTeam();   // seats and state, fresh, while the sheet is already up
+  for (const el of setWrap.querySelectorAll("[data-icon]")) {
+    if (!el.firstChild) el.innerHTML = icon(el.dataset.icon);
+  }
+  resetSources();
+  showPane(pane);
   $("page-openconfig").innerHTML = `${icon("file-pen-line")}Open config file`;
   $("page-checkupdate").innerHTML = `${icon("rotate-cw")}Check for updates`;
   // Last time's answer is not this time's, and the sheet outlives one opening - but
@@ -793,81 +818,7 @@ $("page-openconfig").addEventListener("click", () => invoke("open_config"));
 $("page-checkupdate").addEventListener("click", () => checkUpdates($("update-said")));
 setWrap.addEventListener("mousedown", (e) => { if (e.target === setWrap) closeSettings(); });
 
-// ── spaces ─────────────────────────────────────────────────────────────────
-// A space is a config file; a team space is one with a server behind it. Everything
-// here is one call away from team_sync, the only thing in the app that talks to it.
-function renderTeam() {
-  const byName = new Map(teams.map((t) => [t.space, t]));
-  // Same warning as the sidebar button, on the rail that now stands between them.
-  setNav.querySelector('[data-pane="team"]')
-    .classList.toggle("warn", teams.some((t) => TEAM_STUCK[t.state]));
 
-  $("spaces-list").innerHTML = [null, ...spaces].map((sp) => {
-    const t = sp && byName.get(sp);
-    const n = all.filter((j) => (j.space ?? null) === sp).length;
-    const count = `${n} device${n === 1 ? "" : "s"}`;
-    if (!t) {
-      return `<div class="space-row">
-        <div class="space-name">${icon("box")}${esc(sp ?? "Private")}<span class="space-count">${count}</span></div>
-        <div class="space-note">On this machine only</div>
-        ${sp ? `<div class="btns"><button type="button" class="ghost" data-sact="share" data-space="${esc(sp)}">
-          ${icon("network")}Share with a team…</button></div>` : ""}
-      </div>`;
-    }
-    return `<div class="space-row">
-      <div class="space-name">${icon("network")}${esc(sp)}<span class="space-count">${count}</span></div>
-      <div class="space-note">${esc(teamNote(t))}</div>
-      <div class="mono">${esc(t.url)}</div>
-      <div class="btns">
-        ${t.state === "conflict" ? `
-          <button type="button" class="ghost" data-sact="theirs" data-space="${esc(sp)}">Take the team's list</button>
-          <button type="button" class="ghost" data-sact="mine" data-space="${esc(sp)}">Push mine instead</button>` : ""}
-        ${t.code ? `<button type="button" class="ghost" data-sact="copy" data-space="${esc(sp)}">${icon("copy")}Copy the code</button>` : ""}
-        <button type="button" class="ghost" data-sact="leave" data-space="${esc(sp)}">${icon("unplug")}${t.code ? "Leave the team" : "Stop following"}</button>
-      </div>
-    </div>`;
-  }).join("");
-}
-
-async function teamCall(fn) {
-  teamErr.hidden = true;
-  try {
-    await fn();
-    await load();       // load() runs syncTeam(), which re-renders this pane
-  } catch (e) {
-    // The same actions are on the space's detail pane, where this line sits inside a
-    // sheet nobody has open - so a failed resolve there would say nothing at all.
-    if (setWrap.hidden) alertish(e); else showErr(teamErr, String(e));
-  }
-}
-
-$("team-join").addEventListener("click", () => teamCall(() => invoke("team_join", {
-  name: $("team-name").value.trim() || $("team-code").value.trim().slice(0, 9) || "shared",
-  url: $("team-url").value.trim(),
-  code: $("team-code").value.trim(),
-})));
-
-$("spaces-list").addEventListener("click", async (e) => {
-  const b = e.target.closest("[data-sact]");
-  if (!b) return;
-  const space = b.dataset.space;
-  const t = teams.find((x) => x.space === space);
-  if (b.dataset.sact === "copy") return navigator.clipboard.writeText(t?.code ?? "").catch(() => {});
-  if (b.dataset.sact === "share") {
-    const url = await ask(`Hand "${space}" to a new team - every device in it becomes the `
-      + "team's list.\n\nThe address of your team server", "https://", "Share");
-    if (!url) return;
-    return teamCall(() => invoke("team_create", { space, url: url.trim() }));
-  }
-  if (b.dataset.sact === "leave") {
-    if (!(await ask(`Stop syncing "${space}"? The space stays here as an ordinary `
-      + "config file, with the devices it has now.", null, "Stop"))) return;
-    return teamCall(() => invoke("team_leave", { space }));
-  }
-  teamCall(() => invoke("team_resolve", { space, keep: b.dataset.sact }));
-});
-
-// Every OS actually in use, plus anything already overridden.
 function renderSwatches() {
   const inUse = [...new Set(all.map((j) => osKey(j.os)).filter(Boolean))];
   const keys = [...new Set([...inUse, ...Object.keys(colors)])].sort();
@@ -888,7 +839,7 @@ function renderSwatches() {
 }
 
 // `change`, not `input`: the picker streams a value per frame while you drag it, and
-// each one is a config write and a team sync.
+// each one of those is a config write.
 $("swatches").addEventListener("change", async (e) => {
   const sw = e.target.closest("[data-os]");
   if (!sw || e.target.type !== "color") return;
@@ -905,7 +856,6 @@ async function setColor(os, hex) {
     colors = await invoke("colors");
     renderSwatches();
     render();
-    syncTeam();   // [colors] is the team's, and nothing here goes through load()
   } catch (err) { showErr(setErr, String(err)); }
 }
 
@@ -927,15 +877,11 @@ $("url-scheme").addEventListener("click", () =>
 // Suggestions are a plain datalist, same as the OS field. What you have entered
 // is shown underneath as paths, so nesting is legible without a popup panel.
 function renderFolderSuggestions() {
-  // A folder only means anything inside its own space, so only that space's names
-  // are worth suggesting.
-  const here = all.filter((j) => (j.space ?? null) === (jackForm.elements.space.value || null));
-  const used = [...new Set(here.flatMap((j) => j.folders))].sort();
+  const used = [...new Set(all.flatMap((j) => j.folders))].sort();
   $("folderlist").innerHTML = used.map((f) => `<option value="${esc(f)}">`).join("");
   renderCrumbs();
 }
 
-jackForm.elements.space.addEventListener("change", renderFolderSuggestions);
 
 const enteredFolders = () =>
   jackForm.elements.folders.value.split(",").map((x) => x.trim()).filter(Boolean);

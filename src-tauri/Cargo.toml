@@ -38,7 +38,10 @@ ironrdp-cliprdr = "0.7.0"
 arboard = "3.6.1"
 ironrdp-core = "0.2.1"
 sha2 = "0.11.0"
-# The team server and the web-UI preflight. Blocking, because both already run on a
+# Royal TS documents. A `.rtsz` is XML, not a zip - and the names in a real one have
+# `&amp;` in them, which is exactly the thing a hand-rolled reader gets wrong.
+quick-xml = "0.37"
+# The web-UI preflight and the update check. Blocking, because both already run on a
 # spawn_blocking thread. rustls rather than native-tls to keep the build free of an
 # openssl dependency; it is already here for RDP.
 #

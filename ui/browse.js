@@ -4,10 +4,10 @@
 // ── sidebar tree ───────────────────────────────────────────────────────────
 // A tag of "prod/eu/web" nests three deep; a jack counts toward every ancestor,
 // and toward more than one branch if it carries more than one tag.
-function buildTree(jacks, space) {
+function buildTree(jacks) {
   const root = new Map();
   const placed = jacks.flatMap((j) => j.folders.map((f) => [j, f]));
-  for (const p of pending.values()) if ((p.space ?? null) === space) placed.push([null, p.path]);
+  for (const p of pending.values()) placed.push([null, p.path]);
   for (const [j, folder] of placed) {
     {
       let level = root, path = "";
@@ -23,18 +23,6 @@ function buildTree(jacks, space) {
   return root;
 }
 
-// Your own list always exists, even empty - it's the config file. The rest come
-// from the files beside it rather than from the devices, so a space you just made
-// and haven't filled yet is still there.
-function spacesOf() {
-  const out = [null];
-  const add = (s) => { if (!out.includes(s ?? null)) out.push(s ?? null); };
-  for (const j of all) add(j.space);
-  for (const s of spaces) add(s);
-  for (const p of pending.values()) add(p.space);
-  return out;
-}
-
 // Nested folders sort ahead of flat ones so a hierarchy doesn't get buried among
 // alphabetically-interleaved single names. They are the same kind of thing either
 // way - a folder is just a string a device carries.
@@ -45,35 +33,23 @@ function renderTree() {
     row({ name: "All jacks", members: names(all), children: new Map() }, 0, "layers", live, null),
   ];
 
-  const walk = (level, depth, space) => {
+  const walk = (level, depth) => {
     for (const node of [...level.values()].sort((a, b) => a.name.localeCompare(b.name))) {
-      rows.push(row(node, depth, undefined, live, { space, path: node.path }));
-      if (expanded.has(gkey({ space, path: node.path }))) walk(node.children, depth + 1, space);
+      rows.push(row(node, depth, undefined, live, { path: node.path }));
+      if (expanded.has(gkey({ path: node.path }))) walk(node.children, depth + 1);
     }
   };
 
-  // One space is everyone's normal case, and a header above your only list is a row
-  // that says nothing. The folders sit at the top level until there's a second space.
-  const spaces = spacesOf();
-  const nested = spaces.length > 1;
-  if (nested) rows.push(`<div class="tree-sep"></div>`);
-  for (const space of spaces) {
-    const mine = all.filter((j) => (j.space ?? null) === space);
-    // The space's own folders are its children, so its row folds like any other and
-    // a space with nothing but loose devices correctly has nothing to fold.
-    const tree = buildTree(mine, space);
-    if (nested) {
-      rows.push(row({ name: space ?? "Private", members: names(mine), children: tree },
-                    0, "box", live, { space, path: null }));
-      if (!expanded.has(gkey({ space, path: null }))) continue;
-    }
-    const roots = [...tree.values()].sort(
-      (a, b) => (b.children.size > 0) - (a.children.size > 0) || a.name.localeCompare(b.name),
-    );
-    for (const node of roots) {
-      rows.push(row(node, nested ? 1 : 0, undefined, live, { space, path: node.path }));
-      if (expanded.has(gkey({ space, path: node.path }))) walk(node.children, nested ? 2 : 1, space);
-    }
+  // Nesting sorts ahead of flat, so a hierarchy isn't buried among alphabetically
+  // interleaved single names. They are the same kind of thing either way.
+  const tree = buildTree(all);
+  const roots = [...tree.values()].sort(
+    (a, b) => (b.children.size > 0) - (a.children.size > 0) || a.name.localeCompare(b.name),
+  );
+  if (roots.length) rows.push(`<div class="tree-sep"></div>`);
+  for (const node of roots) {
+    rows.push(row(node, 0, undefined, live, { path: node.path }));
+    if (expanded.has(gkey({ path: node.path }))) walk(node.children, 1);
   }
 
   treeEl.innerHTML = rows.join("");
@@ -86,7 +62,7 @@ function row(node, depth, glyph, live, id) {
   // The dot is always in the layout so it can carry the auto margin; it is only
   // painted when something under this node has a session open.
   const on = live && [...node.members].some((n) => live.has(n));
-  return `<div class="group" data-space="${esc(id?.space ?? "")}" data-path="${esc(id?.path ?? "")}"
+  return `<div class="group" data-path="${esc(id?.path ?? "")}"
        data-group="${id ? "1" : ""}" data-has-kids="${kids}"
        aria-current="${sameGroup(group, id)}" style="padding-left:${8 + depth * 13}px">
     <span class="twist ${kids ? "" : "leaf"} ${open ? "open" : ""}">${icon("chevron-right")}</span>
@@ -111,7 +87,6 @@ function dotState(name) {
 
 const inGroup = (j) =>
   group === null ? true
-  : (j.space ?? null) !== group.space ? false
   : group.path === null ? true
   : j.folders.some((f) => f === group.path || f.startsWith(group.path + "/"));
 
@@ -132,18 +107,10 @@ function render() {
   $("newjack").innerHTML = `${icon("plus")}Device<kbd>${chord("n")}</kbd>`;
   $("newgroup").innerHTML = icon("folder-plus");
   $("newgroup").dataset.tip = "New folder";
-  $("newspace").innerHTML = icon("box");
-  $("newspace").dataset.tip = "New space";
   $("editcfg").innerHTML = icon("file-pen-line");
   $("editcfg").dataset.tip = `Open the config file  ${chord("e")}`;
   $("settings").innerHTML = icon("settings");
   $("settings").dataset.tip = `Settings  ${chord(",")}`;
-  // A stuck sync means your edits are not reaching anyone and it needs an answer from
-  // you - so it shows on the button that leads there, not only inside the sheet.
-  const stuck = teams.map((t) => TEAM_STUCK[t.state]).find(Boolean);
-  $("settings").classList.toggle("warn", !!stuck);
-  if (stuck) $("settings").dataset.tip = stuck;
-
   if (!shown.length) {
     listEl.innerHTML = all.length
       ? `<p class="empty">nothing here</p>`
@@ -155,7 +122,7 @@ function render() {
           <div class="mono">${esc(cfgPath)}</div>
           <div class="btns">
             <button class="primary" data-first="new">${icon("plus")}Add a device</button>
-            <button class="ghost" data-first="import">${icon("download")}Import from ssh config</button>
+            <button class="ghost" data-first="import">${icon("download")}Import a list</button>
             <button class="ghost" data-first="cfg">${icon("file-pen-line")}Open config file</button>
           </div>
         </div>`;
@@ -176,6 +143,17 @@ function render() {
 /// reads as a junction rather than another endpoint, and the count that used to be
 /// its own faint line underneath rides along as a chip instead - one row per device,
 /// not two.
+/// How a device is reached, as one glyph. `primary` arrives already resolved from
+/// `primary()` in Rust, so a config pointing at something the device no longer has has
+/// fallen back to a real answer before it gets here - there is no sixth case.
+const KIND = {
+  ssh:  ["square-terminal", "SSH"],
+  sftp: ["folder", "Files over SSH"],
+  rdp:  ["monitor", "Remote desktop"],
+  vnc:  ["screen-share", "VNC"],
+  web:  ["globe", "Web UI"],
+};
+
 function jackRow(j, i, { nested = false, indent = nested, hub = false, behind = null } = {}) {
   const state = dotState(j.name);
   // `readable()` nudges a brand hex against the *panel*, but the selected row is a
@@ -189,7 +167,10 @@ function jackRow(j, i, { nested = false, indent = nested, hub = false, behind = 
       tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(j.os)}</span>
     <span class="name">${esc(j.name)}</span>
     <span class="host">${esc(j.user ? j.user + "@" + j.host : j.host)}${j.port ? ":" + j.port : ""}</span>
-    ${j.url ? `<span class="web" data-tip="${esc(j.url)}" data-tip-at="right">${icon("globe")}</span>` : ""}
+    <span class="kind" data-tip="${esc((KIND[j.primary] ?? KIND.ssh)[1])}">${
+      icon((KIND[j.primary] ?? KIND.ssh)[0])}</span>
+    ${j.url && j.primary !== "web"
+      ? `<span class="web" data-tip="${esc(j.url)}" data-tip-at="right">${icon("globe")}</span>` : ""}
     ${behind ?? `<span class="folders">${j.folders.map((f) => `<span class="folder">${esc(f.split("/").pop())}</span>`).join("")}</span>`}
   </div>`;
 }
@@ -259,6 +240,10 @@ function mapHtml() {
 }
 
 function renderDetail() {
+  // Anything in here that is being typed into wins over a redraw. The probe sweep
+  // re-renders every thirty seconds, and it used to take a half-written folder note
+  // with it - the pane is rebuilt with innerHTML, so the field and its contents go.
+  if (detailEl.contains(document.activeElement)) return;
   // A live session tab wins: the pane describes what you're typing into.
   const live = activeId !== null ? sessions.get(activeId) : null;
   if (live) return renderJack(all.find((x) => x.name === live.name), live);
@@ -268,7 +253,6 @@ function renderDetail() {
 
 const groupLabel = () =>
   group === null ? "All jacks"
-  : group.path === null ? (group.space ?? "Private")
   : group.path;
 
 function renderGroup() {
@@ -279,19 +263,12 @@ function renderGroup() {
   // Whatever the dots are actually wearing, so the tally and the rows agree.
   const waiting = prefs.probe !== false;
   const open = [...sessions.values()].filter((s) => !s.dead && members.some((j) => j.name === s.name));
-  // A space row has no folder to rename or delete.
+  // "All jacks" is a row too, and it has no folder to rename or delete.
   const real = group !== null && group.path !== null;
-  // ...and a folder is not a space: what makes one a space is which file it is, and
-  // when it belongs to a team, what the sync is doing. Neither was anywhere near the
-  // row you clicked - the file was nowhere at all, the sync two clicks into settings.
-  const space = group !== null && group.path === null ? group.space : undefined;
-  const team = space === undefined ? null : teams.find((t) => t.space === space);
-  const file = space === undefined ? null
-    : spaceFiles.find((f) => (f.space ?? null) === space)?.path;
 
   detailEl.innerHTML = `
     <div class="d-name"><span class="d-os">${icon(
-      real ? "folder-open" : group === null ? "layers" : "box")}</span>${esc(groupLabel())}</div>
+      real ? "folder-open" : "layers")}</span>${esc(groupLabel())}</div>
     <div class="d-desc">${members.length} device${members.length === 1 ? "" : "s"}${
       real && group.path.includes("/") ? ` · in ${esc(group.path.slice(0, group.path.lastIndexOf("/")))}` : ""}</div>
 
@@ -306,24 +283,33 @@ function renderGroup() {
     ${open.length ? `<div class="d-sec">${icon("square-terminal")}Sessions</div>
       <div class="route">${open.map((s) => `<span class="last"><i class="pip"></i>${esc(s.name)}</span>`).join("")}</div>` : ""}
 
-    ${space === undefined ? "" : `<div class="d-sec">${icon("box")}Space</div>
-      <div class="d-row"><dt>kind</dt><dd>${
-        !team ? "On this machine only"
-        : team.code ? "A team's, mirrored through a server"
-        : "Following a published list, read-only"}</dd></div>
-      ${file ? `<div class="d-row"><dt>file</dt><dd>${esc(file)}</dd></div>` : ""}
-      ${team ? `<div class="d-row"><dt>server</dt><dd>${esc(team.url)}</dd></div>
-        <div class="d-row"><dt>sync</dt><dd>${esc(teamNote(team))}</dd></div>` : ""}`}
+    ${!real ? "" : `<div class="d-sec">${icon("file-pen-line")}Notes</div>
+      <textarea class="d-note" id="gnote" rows="4" spellcheck="false"
+        placeholder="What somebody arriving here needs to know."></textarea>`}
 `;
+
+  // Set as a value rather than interpolated: a note is free text somebody wrote, and
+  // a `</textarea>` in it would otherwise end the element.
+  if (real) {
+    const box = $("gnote");
+    box.value = notes.get(group.path) ?? "";
+    // On blur rather than per keystroke: a note is a paragraph, and one config write
+    // per character is a rewrite of the whole file per character.
+    box.addEventListener("blur", async () => {
+      const was = notes.get(group.path) ?? "";
+      if (box.value === was) return;
+      try {
+        await invoke("save_note", { path: group.path, note: box.value });
+        notes.set(group.path, box.value.trim());
+      } catch (e) { alertish(e); }
+    });
+  }
 
   dActions.innerHTML = `
     <button class="primary" data-gact="new">${icon("plus")}Device</button>
     ${real ? `<button class="ghost" data-gact="rename" data-tip="Rename folder">${icon("pencil")}</button>
     <button class="ghost danger" data-gact="del" data-tip="Delete folder" data-tip-at="right">${icon("trash-2")}</button>` : ""}
-    ${team?.state === "conflict" ? `
-      <button class="ghost" data-gact="theirs">Take the team's</button>
-      <button class="ghost" data-gact="mine">Push mine</button>` : ""}
-    ${team ? `<button class="ghost" data-gact="sync" data-tip="Sync now" data-tip-at="right">${icon("rotate-cw")}</button>` : ""}`;
+`;
 }
 
 function renderJack(j, live) {
@@ -444,22 +430,13 @@ function renderDock() {
   const bulk = markedHere();
   if (bulk.length < 2) { dock.hidden = true; dock.innerHTML = ""; return; }
   const ssh = bulk.filter((j) => j.ssh).length;
-  // A hand-dropped `evil".toml` in `spaces/` would inject through `data-a` unescaped,
-  // so the attribute goes through esc() like every other interpolated value. The
-  // label already does; this brings the two halves back in step.
+  // The attribute goes through esc() like every other interpolated value, because a
+  // device name is text somebody else may have written.
   const btn = (a, ic, lbl, extra = "") =>
     `<button type="button" class="ghost" data-a="${esc(a)}"${extra}>${icon(ic)}${esc(lbl)}</button>`;
-  // Up to three spaces get their own button - the target is visible without a second
-  // click. More than that would overflow the pane, so they collapse into one
-  // "Move to…" button that opens the same list the right-click menu carries.
-  const targets = [null, ...spaces];
-  const moves = targets.length <= 3
-    ? targets.map((sp) => btn(`move:${sp ?? ""}`, "box", `Move to ${sp ?? "Private"}`)).join("")
-    : btn("moveto", "box", "Move to…");
   dock.innerHTML = `
     <span class="count"><b>${bulk.length}</b> selected</span>
     ${ssh >= 2 ? btn("bcast", "radio-tower", `Broadcast to ${ssh}`) : ""}
-    ${moves}
     ${btn("del", "trash-2", `Delete ${bulk.length}`, ' data-danger="1"')}`;
   dock.hidden = false;
 }
@@ -472,16 +449,6 @@ $("dock")?.addEventListener("click", (e) => {
   if (!bulk.length) return;
   if (a === "bcast") return openBroadcast(bulk);
   if (a === "del") return removeMarked(bulk);
-  if (a === "moveto") {
-    // Anchored on the button so the menu drops beside it, and the same items the
-    // right-click menu carries - one list means one thing to keep in step.
-    const r = el.getBoundingClientRect();
-    return showCtx(r.left, r.top - 8, `Move ${bulk.length} devices to`,
-      [null, ...spaces].map((sp) => ({
-        icon: "box", label: sp ?? "Private", run: () => moveMarked(bulk, sp),
-      })));
-  }
-  if (a.startsWith("move:")) return moveMarked(bulk, a.slice(5) || null);
 });
 
 /// ⌘-click picks a row out, shift-click takes the run between it and the selected one -

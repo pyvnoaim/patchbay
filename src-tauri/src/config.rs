@@ -241,9 +241,6 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     if j.host.trim().is_empty() {
         return Err(format!("\"{name}\" needs a host"));
     }
-    if name.contains('.') {
-        return Err("a jack name can't contain a dot".into());
-    }
     if let Some(u) = j.url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
         if !crate::is_web_url(u) {
             return Err("a url has to start with http:// or https://".into());
@@ -316,87 +313,38 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     write_doc(path, &doc)
 }
 
-/// Replace the whole config with a document from somewhere else - the team's copy.
-/// Parsed before it lands, so a server handing us something unparseable can't leave
-/// a broken file behind, and written the same temp-and-rename way as every other edit.
-/// No plain `replace()` twin: team.rs is the only caller and it already has the path.
-pub fn replace_at(path: &Path, src: &str) -> Result<(), String> {
-    let doc = src
-        .parse::<DocumentMut>()
-        .map_err(|e| format!("the team's config doesn't parse: {e}"))?;
-    write_doc(path, &doc)
-}
-
-/// Move one device's table between two space files, comments and all. Not a
-/// save-then-delete through `JackInput`: that would bake the source space's
-/// `[defaults]` into the jack and drop any key the sheet can't edit.
-pub fn move_jack_at(from: &Path, to: &Path, name: &str) -> Result<(), String> {
-    if from == to {
-        return Ok(());
+/// A folder's note: the thing people keep a README in the tree for. Blank removes it,
+/// and the whole `[folder]` table goes with the last one - a file full of empty tables
+/// is worse than no feature.
+pub fn set_note_at(file: &Path, folder: &str, note: &str) -> Result<(), String> {
+    let path = folder.trim().trim_matches('/');
+    if path.is_empty() {
+        return Err("a note belongs to a folder".into());
     }
-    let mut src = read_doc(from)?;
-    let table = jack_table(&mut src)?
-        .get(name)
-        .and_then(Item::as_table)
-        .ok_or_else(|| format!("no jack named \"{name}\""))?
-        .clone();
-
-    let mut dst = read_doc(to)?;
-    let jacks = jack_table(&mut dst)?;
-    if jacks.contains_key(name) {
-        return Err(format!("there's already a jack named \"{name}\" there"));
+    let mut doc = read_doc(file)?;
+    match note.trim().is_empty() {
+        true => {
+            if let Some(t) = doc.get_mut("folder").and_then(Item::as_table_mut) {
+                t.remove(path);
+                if t.is_empty() {
+                    doc.remove("folder");
+                }
+            }
+        }
+        false => {
+            let table = doc
+                .entry("folder")
+                .or_insert_with(|| {
+                    let mut t = Table::new();
+                    t.set_implicit(true);
+                    Item::Table(t)
+                })
+                .as_table_mut()
+                .ok_or("`folder` in that file is not a table")?;
+            table[path]["note"] = value(note.trim());
+        }
     }
-    // Rebuilt rather than moved whole: a table carries the position it had in the
-    // old file, which means nothing in the new one. The keys keep their own decor,
-    // and the comment above the jack is carried across by hand.
-    let mut moved = Table::new();
-    for (k, v) in table.iter() {
-        moved.insert(k, v.clone());
-    }
-    if let Some(prefix) = table.decor().prefix().and_then(|p| p.as_str()) {
-        moved.decor_mut().set_prefix(prefix.to_string());
-    }
-    jacks.insert(name, Item::Table(moved));
-
-    // The copy lands first. If the removal then fails the device exists in both
-    // files, which is visible and fixable; the other order loses it.
-    write_doc(to, &dst)?;
-    delete_jack_at(from, name)
-}
-
-/// A space's name becomes a file name, so it is checked as one. No dots, which is
-/// what keeps `..` and a second extension out of it.
-pub fn space_slug(name: &str) -> Result<String, String> {
-    let s = name.trim();
-    if s.is_empty() {
-        return Err("a space needs a name".into());
-    }
-    if s.chars().count() > 40 {
-        return Err("a space name has to be shorter than that".into());
-    }
-    if !s.chars().all(|c| c.is_ascii_alphanumeric() || " -_".contains(c)) {
-        return Err(format!("\"{s}\" can only have letters, digits, spaces, - and _"));
-    }
-    Ok(s.to_string())
-}
-
-pub fn create_space_at(cfg: &Path, name: &str) -> Result<String, String> {
-    let slug = space_slug(name)?;
-    let path = patchbay::space_path(cfg, Some(&slug));
-    if path.exists() {
-        return Err(format!("there's already a space called \"{slug}\""));
-    }
-    write_doc(&path, &DocumentMut::new())?;
-    Ok(slug)
-}
-
-/// Kept as a `.bak`, never unlinked - the file is somebody's device list, and it is
-/// the same reasoning the team code's `backup` runs on.
-pub fn delete_space_at(cfg: &Path, name: &str) -> Result<(), String> {
-    let slug = space_slug(name)?;
-    let path = patchbay::space_path(cfg, Some(&slug));
-    std::fs::rename(&path, path.with_extension("toml.bak"))
-        .map_err(|e| format!("{}: {e}", path.display()))
+    write_doc(file, &doc)
 }
 
 pub fn delete_jack_at(path: &Path, name: &str) -> Result<(), String> {
@@ -645,8 +593,29 @@ pub fn save_color_at(file: &Path, os: &str, hex: Option<&str>) -> Result<(), Str
 }
 
 /// on the jacks that are in it.
+/// A note is hung on a path, so a folder that moves has to take it along and one that
+/// goes has to drop it - otherwise a rename silently orphans what somebody wrote.
+fn move_note(doc: &mut DocumentMut, from: &str, to: Option<&str>) {
+    let Some(table) = doc.get_mut("folder").and_then(Item::as_table_mut) else { return };
+    let moved: Vec<(String, Item)> = table
+        .iter()
+        .filter(|(k, _)| *k == from || k.starts_with(&format!("{from}/")))
+        .map(|(k, v)| (k.to_string(), v.clone()))
+        .collect();
+    for (key, item) in moved {
+        table.remove(&key);
+        if let Some(to) = to {
+            table.insert(&format!("{to}{}", &key[from.len()..]), item);
+        }
+    }
+    if table.is_empty() {
+        doc.remove("folder");
+    }
+}
+
 fn map_folders(file: &Path, path: &str, to: Option<&str>) -> Result<usize, String> {
     let mut doc = read_doc(file)?;
+    move_note(&mut doc, path, to);
     let jacks = jack_table(&mut doc)?;
     let mut touched = 0;
 
@@ -696,6 +665,110 @@ pub fn rename_group_at(file: &Path, from: &str, to: &str) -> Result<usize, Strin
 
 pub fn delete_group_at(file: &Path, path: &str) -> Result<usize, String> {
     map_folders(file, path, None)
+}
+
+/// Spaces were extra config files beside the main one, from when a shared list had to
+/// be a whole file of its own. One list and folders do that job now, so anything still
+/// in `spaces/` is folded in on the way past: each device keeps its devices' folders
+/// with the space's name in front, so `acme` + `prod` becomes `acme/prod` and nothing
+/// that was filed separately ends up mixed in.
+///
+/// Runs once - the files it reads are renamed `.toml.merged` rather than deleted,
+/// because it is somebody's device list and this is the only copy of the split version.
+pub fn fold_spaces_at(cfg: &Path) -> Result<usize, String> {
+    let dir = cfg.with_file_name("spaces");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(0);
+    };
+    let mut files: Vec<std::path::PathBuf> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "toml"))
+        .collect();
+    files.sort();
+    if files.is_empty() {
+        return Ok(0);
+    }
+
+    let mut doc = read_doc(cfg)?;
+    let (mut moved, mut merged) = (0, Vec::new());
+    for file in files {
+        let Some(space) = file.file_stem().and_then(|s| s.to_str()).map(str::to_string) else {
+            continue;
+        };
+        let Ok(src) = std::fs::read_to_string(&file) else { continue };
+        let Ok(from) = src.parse::<DocumentMut>() else {
+            // A file that doesn't parse is left exactly where it is, named in the log
+            // rather than quietly dropped on the floor.
+            eprintln!("patchbay: {} doesn't parse, so it was left alone", file.display());
+            continue;
+        };
+        let Some(jacks) = from.get("jack").and_then(Item::as_table) else { continue };
+        // A space had its own `[defaults]`, which applied to its devices and nobody
+        // else's. There is one `[defaults]` after this, so the inherited keys are
+        // written onto each device on the way over - otherwise a device that leaned on
+        // `user = "root"` in its own file arrives without a user and simply stops
+        // working, which is the worst way for a migration to fail.
+        let defaults = from.get("defaults").and_then(Item::as_table);
+
+        for (name, item) in jacks.iter() {
+            let Some(t) = item.as_table() else { continue };
+            let mut t = t.clone();
+            if let Some(d) = defaults {
+                for (k, v) in d.iter() {
+                    if !t.contains_key(k) {
+                        t.insert(k, v.clone());
+                    }
+                }
+            }
+            // The space becomes the outermost folder, so the split survives as a
+            // branch of the tree instead of as a second file.
+            let key = if t.contains_key("folders") { "folders" } else { "tags" };
+            let mut folders = Array::new();
+            match t.get(key).and_then(Item::as_array) {
+                Some(had) if !had.is_empty() => {
+                    for v in had.iter().filter_map(|v| v.as_str()) {
+                        folders.push(format!("{space}/{v}"));
+                    }
+                }
+                _ => folders.push(space.clone()),
+            }
+            t.remove("tags");
+            t["folders"] = Item::Value(folders.into());
+
+            let table = doc
+                .entry("jack")
+                .or_insert_with(|| {
+                    let mut t = Table::new();
+                    t.set_implicit(true);
+                    Item::Table(t)
+                })
+                .as_table_mut()
+                .ok_or("`jack` in that config is not a table")?;
+            // First wins, the way loading two spaces did: a name already here is the
+            // one you have been using.
+            let mut at = name.to_string();
+            let mut n = 2;
+            while table.contains_key(&at) {
+                at = format!("{name} {n}");
+                n += 1;
+            }
+            table.insert(&at, Item::Table(t));
+            moved += 1;
+        }
+        merged.push(file);
+    }
+    if moved == 0 {
+        return Ok(0);
+    }
+    // The config lands before anything is renamed. The other order loses the devices
+    // outright if this write fails: the files it read would already be `.toml.merged`,
+    // and the list they were folded into was never written.
+    write_doc(cfg, &doc)?;
+    for file in merged {
+        let _ = std::fs::rename(&file, file.with_extension("toml.merged"));
+    }
+    Ok(moved)
 }
 
 #[cfg(test)]
@@ -879,8 +952,80 @@ folders = ["prod/eu/web"]
         let p = scratch("valid");
         assert!(save_jack_at(&p, None, input("", "h")).unwrap_err().contains("needs a name"));
         assert!(save_jack_at(&p, None, input("x", "  ")).unwrap_err().contains("needs a host"));
-        // a dot would nest it under another table
-        assert!(save_jack_at(&p, None, input("a.b", "h")).unwrap_err().contains("dot"));
+    }
+
+    /// The thing people keep a README in the tree for. It hangs on the path, so the
+    /// two things that move a path have to carry it - a rename that orphaned somebody's
+    /// notes would be a silent loss of the only writing in the file.
+    /// The one-way door out of spaces. It has to be lossless in the way that matters:
+    /// every device arrives, and the split it used to have survives as a branch rather
+    /// than dissolving into everyone else's list.
+    #[test]
+    fn spaces_fold_into_the_one_list_and_keep_their_shape() {
+        let cfg = std::env::temp_dir().join(format!("patchbay-{}-fold/patchbay.toml", std::process::id()));
+        let _ = std::fs::remove_dir_all(cfg.parent().unwrap());
+        std::fs::create_dir_all(cfg.with_file_name("spaces")).unwrap();
+        std::fs::write(&cfg, "# mine\n[jack.laptop]\nhost = \"192.168.1.9\"\n").unwrap();
+        std::fs::write(
+            cfg.with_file_name("spaces").join("acme.toml"),
+            "[defaults]\nuser = \"root\"\n\n[jack.db]\nhost = \"10.0.0.5\"\n\
+             [jack.web]\nhost = \"10.0.0.4\"\nuser = \"deploy\"\nfolders = [\"prod\"]\n",
+        )
+        .unwrap();
+        // A name that is already in the main list, which first-wins used to hide.
+        std::fs::write(
+            cfg.with_file_name("spaces").join("lab.toml"),
+            "[jack.laptop]\nhost = \"10.1.1.1\"\n",
+        )
+        .unwrap();
+
+        assert_eq!(fold_spaces_at(&cfg).unwrap(), 3);
+        let jacks = patchbay::parse(&read(&cfg)).unwrap();
+        assert_eq!(jacks.len(), 4);
+        assert!(read(&cfg).contains("# mine"), "the file was re-serialized");
+
+        // A space's `[defaults]` applied to its devices and to nobody else's, and there
+        // is only one `[defaults]` after this - so what they inherited comes with them,
+        // and what they set themselves is left alone.
+        assert_eq!(jacks["db"].user.as_deref(), Some("root"), "an inherited user was dropped");
+        assert_eq!(jacks["web"].user.as_deref(), Some("deploy"), "an inherited user won");
+
+        // The space is the outermost folder now, whether or not there was one before.
+        assert_eq!(jacks["db"].folders.as_deref(), Some(&["acme".to_string()][..]));
+        assert_eq!(jacks["web"].folders.as_deref(), Some(&["acme/prod".to_string()][..]));
+        // Yours is untouched and the other one is beside it under a name of its own.
+        assert_eq!(jacks["laptop"].host, "192.168.1.9");
+        assert_eq!(jacks["laptop 2"].host, "10.1.1.1");
+
+        // The files it read are kept, and it does not run twice.
+        assert!(cfg.with_file_name("spaces").join("acme.toml.merged").exists());
+        assert_eq!(fold_spaces_at(&cfg).unwrap(), 0);
+    }
+
+    #[test]
+    fn a_folder_note_survives_a_rename_and_goes_with_a_delete() {
+        let p = scratch("notes");
+        set_note_at(&p, "prod/eu", "the recovery key is in the safe\nask Anna first").unwrap();
+        assert_eq!(
+            patchbay::notes(&read(&p))["prod/eu"],
+            "the recovery key is in the safe\nask Anna first",
+            "a note has to survive a round trip with its line breaks"
+        );
+
+        rename_group_at(&p, "prod/eu", "prod/emea").unwrap();
+        let after = patchbay::notes(&read(&p));
+        assert!(after.contains_key("prod/emea"), "the note was orphaned by a rename");
+        assert!(!after.contains_key("prod/eu"));
+
+        delete_group_at(&p, "prod/emea").unwrap();
+        assert!(patchbay::notes(&read(&p)).is_empty());
+        assert!(!read(&p).contains("[folder"), "an empty table was left behind");
+
+        // And a blank note is a removal, not a folder with an empty string in it.
+        set_note_at(&p, "prod", "x").unwrap();
+        set_note_at(&p, "prod", "  ").unwrap();
+        assert!(patchbay::notes(&read(&p)).is_empty());
+        assert!(read(&p).contains("keep this comment"), "the file was re-serialized");
     }
 
     #[test]
@@ -1017,53 +1162,4 @@ folders = ["prod/eu/web"]
         assert!(read(&p).contains("[jack.first]"));
     }
 
-    #[test]
-    fn moving_a_jack_carries_its_comment_and_leaves_the_defaults_behind() {
-        let dir = std::env::temp_dir().join(format!("patchbay-{}-move", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let from = dir.join("patchbay.toml");
-        let to = dir.join("spaces/acme.toml");
-        std::fs::write(
-            &from,
-            "[defaults]\nuser = \"root\"\n\n# the old one\n[jack.web]\nhost = \"10.0.0.4\"\nrdp = 3389\n",
-        )
-        .unwrap();
-
-        move_jack_at(&from, &to, "web").unwrap();
-        let landed = read(&to);
-        assert!(landed.contains("[jack.web]"), "{landed}");
-        assert!(landed.contains("# the old one"), "the comment stayed behind: {landed}");
-        // Everything the sheet can't edit comes too, and nothing the source's
-        // [defaults] merely lent it does.
-        assert!(landed.contains("rdp = 3389"), "{landed}");
-        assert!(!landed.contains("user"), "an inherited default was baked in: {landed}");
-        assert!(!read(&from).contains("[jack.web]"), "still in the old file");
-
-        // The same name on both sides is refused rather than silently overwritten.
-        std::fs::write(&from, "[jack.web]\nhost = \"other\"\n").unwrap();
-        assert!(move_jack_at(&from, &to, "web").is_err());
-    }
-
-    #[test]
-    fn a_space_name_cannot_climb_out_of_the_directory_and_deleting_keeps_a_copy() {
-        for bad in ["../evil", "a/b", "sneaky.toml", "", "   "] {
-            assert!(space_slug(bad).is_err(), "{bad:?} was allowed as a space name");
-        }
-        assert_eq!(space_slug("  Acme Ops  ").unwrap(), "Acme Ops");
-
-        let dir = std::env::temp_dir().join(format!("patchbay-{}-spacefiles", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let cfg = dir.join("patchbay.toml");
-        create_space_at(&cfg, "acme").unwrap();
-        let file = dir.join("spaces/acme.toml");
-        assert!(file.exists());
-        assert!(create_space_at(&cfg, "acme").is_err(), "made the same space twice");
-
-        std::fs::write(&file, "[jack.web]\nhost = \"10.0.0.4\"\n").unwrap();
-        delete_space_at(&cfg, "acme").unwrap();
-        assert!(!file.exists());
-        assert!(read(&dir.join("spaces/acme.toml.bak")).contains("[jack.web]"));
-    }
 }

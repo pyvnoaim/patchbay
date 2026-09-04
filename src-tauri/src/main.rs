@@ -8,7 +8,6 @@ mod pty;
 mod rdp;
 mod rdp_session;
 mod sftp;
-mod team;
 mod terminal;
 
 use serde::Serialize;
@@ -32,8 +31,6 @@ struct JackView {
     desc: Option<String>,
     folders: Vec<String>,
     forward: Vec<String>,
-    /// Which space's file this came from; absent is the main config.
-    space: Option<String>,
     /// Ordered hops, first one nearest us - what the detail pane draws as the route.
     hops: Vec<String>,
     command: String,
@@ -47,16 +44,12 @@ struct Probe {
     ms: Option<u64>,
 }
 
-/// The file a space's edits go to. `None` is the main config - your own list.
-fn space_file(space: Option<&str>) -> std::path::PathBuf {
-    patchbay::space_path(&patchbay::config_path(), space)
-}
 
-/// Every space, not just the main config. No config at all is not an error in the
-/// window - it's a first run, and the UI has somewhere to put that; `space_paths`
-/// skips what isn't there. A config that exists but won't parse still is one.
+
+/// No config at all is not an error in the window - it's a first run, and the UI has
+/// somewhere to put that. A config that exists but won't parse still is one.
 fn read() -> Result<patchbay::Jacks, String> {
-    patchbay::load_all(&patchbay::config_path())
+    patchbay::load(&patchbay::config_path())
 }
 
 /// Where ssh keeps its own config, and where ours goes beside it.
@@ -67,7 +60,7 @@ fn ssh_dir() -> Option<PathBuf> {
 /// Keep `~/.ssh/patchbay.conf` current, if it was asked for.
 ///
 /// Called from `jacks` rather than from each of the eight writers: this is the one
-/// place that has already read every space, a team pull changes the list without any
+/// place that has already read the list, and a hand-edit changes it without any
 /// writer here running at all, and a generator that has to be remembered at eight call
 /// sites is a generator that goes stale. Nothing is written when the text hasn't
 /// changed, so a window focus costs a read and a compare.
@@ -106,7 +99,6 @@ fn jacks() -> Result<Vec<JackView>, String> {
             desc: j.desc.clone(),
             key: j.key.clone(),
             folders: j.folders.clone().unwrap_or_default(),
-            space: j.space.clone(),
             forward: j.forward.clone().unwrap_or_default(),
             hops: patchbay::hops(name, &jacks).unwrap_or_default(),
             // Shown in the detail pane, so you always see what you're about to run.
@@ -318,8 +310,8 @@ fn close_session(sessions: tauri::State<'_, pty::Shared>, id: u32) {
 }
 
 #[tauri::command]
-fn save_jack(space: Option<String>, original: Option<String>, jack: config::JackInput) -> Result<(), String> {
-    config::save_jack_at(&space_file(space.as_deref()), original, jack)
+fn save_jack(original: Option<String>, jack: config::JackInput) -> Result<(), String> {
+    config::save_jack_at(&patchbay::config_path(), original, jack)
 }
 
 #[derive(Serialize)]
@@ -333,6 +325,15 @@ struct SshHosts {
 /// list and writes only what gets ticked, through `save_jack` like every other edit.
 /// `~/.ssh/config` only: a picker would be a file dialog for a file that is always
 /// in the same place.
+/// A Royal TS document, read in the window and handed here as text - so there is no
+/// file dialog, no plugin and no new capability, and the app never opens a path it
+/// wasn't given. Parses only, like the ssh side: what gets written is what you tick.
+#[tauri::command]
+fn royal_hosts(src: String) -> Result<SshHosts, String> {
+    let found = import::from_royal_ts(&src)?;
+    Ok(SshHosts { path: String::new(), hosts: found.hosts, warnings: found.warnings })
+}
+
 #[tauri::command]
 fn ssh_hosts() -> Result<SshHosts, String> {
     let path = dirs::home_dir()
@@ -349,62 +350,39 @@ fn ssh_hosts() -> Result<SshHosts, String> {
 }
 
 #[tauri::command]
-fn delete_jack(space: Option<String>, name: String) -> Result<(), String> {
-    config::delete_jack_at(&space_file(space.as_deref()), &name)
+fn delete_jack(name: String) -> Result<(), String> {
+    config::delete_jack_at(&patchbay::config_path(), &name)
 }
 
-/// The spaces beside the config, by name. Listed from the files rather than from the
-/// devices, so a space you just made and haven't filled yet is still there.
+/// The notes hung on folders, by folder path.
 #[tauri::command]
-fn spaces() -> Vec<String> {
-    patchbay::space_paths(&patchbay::config_path())
+fn notes() -> Vec<Note> {
+    let src = std::fs::read_to_string(patchbay::config_path()).unwrap_or_default();
+    patchbay::notes(&src)
         .into_iter()
-        .filter_map(|(space, _)| space)
-        .collect()
-}
-
-/// The file each space *is*. "A space is a config file" is the whole model and until
-/// now nothing on screen said which file - the detail pane names it.
-#[tauri::command]
-fn space_files() -> Vec<SpaceFile> {
-    patchbay::space_paths(&patchbay::config_path())
-        .into_iter()
-        .map(|(space, path)| SpaceFile { space, path: path.display().to_string() })
+        .map(|(path, note)| Note { path, note })
         .collect()
 }
 
 #[derive(serde::Serialize)]
-struct SpaceFile {
-    /// `null` is the main config - your own list, which is a space like any other.
-    space: Option<String>,
+struct Note {
     path: String,
+    note: String,
 }
 
 #[tauri::command]
-fn create_space(name: String) -> Result<String, String> {
-    config::create_space_at(&patchbay::config_path(), &name)
+fn save_note(path: String, note: String) -> Result<(), String> {
+    config::set_note_at(&patchbay::config_path(), &path, &note)
 }
 
 #[tauri::command]
-fn delete_space(name: String) -> Result<(), String> {
-    config::delete_space_at(&patchbay::config_path(), &name)
-}
-
-/// Which file a device lives in is the one thing the jack sheet can't just write -
-/// it has to come out of one document and into another.
-#[tauri::command]
-fn move_jack(from: Option<String>, to: Option<String>, name: String) -> Result<(), String> {
-    config::move_jack_at(&space_file(from.as_deref()), &space_file(to.as_deref()), &name)
+fn rename_group(from: String, to: String) -> Result<usize, String> {
+    config::rename_group_at(&patchbay::config_path(), &from, &to)
 }
 
 #[tauri::command]
-fn rename_group(space: Option<String>, from: String, to: String) -> Result<usize, String> {
-    config::rename_group_at(&space_file(space.as_deref()), &from, &to)
-}
-
-#[tauri::command]
-fn delete_group(space: Option<String>, path: String) -> Result<usize, String> {
-    config::delete_group_at(&space_file(space.as_deref()), &path)
+fn delete_group(path: String) -> Result<usize, String> {
+    config::delete_group_at(&patchbay::config_path(), &path)
 }
 
 /// Only http(s) may be handed to the desktop. `open`/`explorer` will happily launch
@@ -642,7 +620,7 @@ fn web_trusted_at(store: &Path, url: &str) -> bool {
 /// our own stricter check stops hiding a page the webview will now render perfectly.
 ///
 /// Deliberately not in the config: it is this machine's judgement about one device, and
-/// the config is a document the whole team reads.
+/// the config is a document people hand-edit.
 #[tauri::command]
 fn web_trust(url: String) -> Result<(), String> {
     if !is_web_url(&url) {
@@ -1247,42 +1225,6 @@ fn save_settings(next: config::Settings) -> Result<(), String> {
     Ok(())
 }
 
-/// One call for the whole loop - every team space fetched, then pushed or adopted,
-/// whichever applies. The window runs it on focus and after every edit; with no team
-/// spaces it returns an empty list and touches nothing.
-#[tauri::command]
-async fn team_sync() -> Vec<team::Status> {
-    tauri::async_runtime::spawn_blocking(team::sync)
-        .await
-        .unwrap_or_default()
-}
-
-#[tauri::command]
-async fn team_join(name: String, url: String, code: String) -> Result<team::Status, String> {
-    tauri::async_runtime::spawn_blocking(move || team::join(&name, &url, &code))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn team_create(space: String, url: String) -> Result<team::Status, String> {
-    tauri::async_runtime::spawn_blocking(move || team::create(&space, &url))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn team_resolve(space: String, keep: String) -> Result<team::Status, String> {
-    tauri::async_runtime::spawn_blocking(move || team::resolve(&space, &keep))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-fn team_leave(space: String) -> Result<(), String> {
-    team::leave(&space)
-}
-
 /// Files over the existing connection. Each call is its own `sftp` run, sharing one
 /// ssh session through multiplexing - see `sftp.rs`.
 #[tauri::command]
@@ -1651,6 +1593,14 @@ fn main() {
         .manage(rdp_session::Shared::default())
         .manage(PendingLink::default())
         .setup(|app| {
+            // Spaces were extra config files, from when a shared list had to be one.
+            // Anything still in `spaces/` is folded into the list on the way past, so
+            // nobody opens the window to find half their devices missing.
+            match config::fold_spaces_at(&patchbay::config_path()) {
+                Ok(0) => {}
+                Ok(n) => println!("patchbay: folded {n} device(s) out of spaces/ into your list"),
+                Err(e) => eprintln!("patchbay: couldn't fold spaces/ in: {e}"),
+            }
             #[cfg(target_os = "macos")]
             {
                 eject_install_image();
@@ -1721,11 +1671,11 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             jacks, connect, probe, config_path, open_config,
-            save_jack, delete_jack, rename_group, delete_group, open_url, open_link,
-            spaces, space_files, create_space, delete_space, move_jack,
+            save_jack, delete_jack, rename_group, delete_group, notes, save_note,
+            open_url, open_link,
+
             settings, save_settings, set_theme, colors, save_color, defaults, save_defaults, ssh_keys,
-            ssh_hosts, ssh_leftovers, clean_ssh_leftovers,
-            team_sync, team_join, team_create, team_resolve, team_leave,
+            ssh_hosts, royal_hosts, ssh_leftovers, clean_ssh_leftovers,
             open_web_view, place_web_view, close_web_view, web_check, web_trust, web_cert, web_trust_cert,
             open_rdp, open_vnc, open_rdp_session, close_rdp_session, rdp_input,
             tunnels, close_tunnel, open_forwards,

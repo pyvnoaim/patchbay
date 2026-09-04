@@ -9,16 +9,17 @@ $("viewmode").addEventListener("click", () => {
   render();
 });
 $("newjack").addEventListener("click", () => openJack(null, group));
-$("newgroup").addEventListener("click", () => newGroup({ space: group?.space ?? null, path: null }));
-$("newspace").addEventListener("click", () => newSpace());
+$("newgroup").addEventListener("click", () => newGroup({ path: null }));
 $("editcfg").addEventListener("click", () => invoke("open_config"));
-$("settings").addEventListener("click", openSettings);
+// Called, not passed: a listener hands its handler the event, which as a pane name
+// matches nothing and hides every one of them.
+$("settings").addEventListener("click", () => openSettings());
 
 treeEl.addEventListener("click", (e) => {
   const el = e.target.closest(".group");
   if (!el) return;
   // "All jacks" carries no group of its own; every other row does.
-  const id = el.dataset.group ? { space: el.dataset.space || null, path: el.dataset.path || null } : null;
+  const id = el.dataset.group ? { path: el.dataset.path || null } : null;
   // Clicking the triangle folds; clicking the row selects.
   const foldable = el.dataset.hasKids === "true";
   if (e.target.closest(".twist") && foldable) {
@@ -38,7 +39,9 @@ treeEl.addEventListener("click", (e) => {
 listEl.addEventListener("click", (e) => {
   const act = e.target.closest("[data-first]")?.dataset.first;
   if (act === "new") return openJack(null, group);
-  if (act === "import") return openImport();
+  // The first run points at the pane that owns importing, rather than at one of
+  // the two sources - which one you have is not something a blank window knows.
+  if (act === "import") return openSettings("import");
   if (act === "cfg") return invoke("open_config");
   const row = e.target.closest(".jack");
   if (!row) return;
@@ -63,12 +66,6 @@ detailPane.addEventListener("click", async (e) => {
     if (gact === "new") openJack(null, group);
     if (gact === "rename") renameGroup(group);
     if (gact === "del") removeGroup(group);
-    // A space's own actions, on the space's own pane: a sync you asked for, and the
-    // conflict answered where you are looking at it rather than two clicks away.
-    if (gact === "sync") syncTeam();
-    if (gact === "theirs" || gact === "mine") {
-      teamCall(() => invoke("team_resolve", { space: group.space, keep: gact }));
-    }
     return;
   }
   const act = e.target.closest("[data-act]")?.dataset.act;
@@ -185,7 +182,7 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     const bulk = markedHere();
     if (bulk.length > 1) removeMarked(bulk);
-    else removeJack(shown[sel].name, shown[sel].space ?? null);
+    else removeJack(shown[sel].name);
   }
   else if (mod && e.key === "e") { e.preventDefault(); invoke("open_config"); }
   else if (mod && e.key === "r") { e.preventDefault(); load(); }
@@ -211,23 +208,22 @@ async function load() {
     // trips stacked in front of the first paint, and load() runs on every focus.
     // `jacks` is the only one left uncaught - it failing is what the error branch
     // below is for, and Promise.all rejecting is how it still gets there.
-    [prefs, sshKeys, colors, cfgPath, spaces, spaceFiles, tunnels, all] = await Promise.all([
+    let noteRows;
+    [prefs, sshKeys, colors, cfgPath, tunnels, noteRows, all] = await Promise.all([
       invoke("settings").catch(() => ({})),
       sshKeys.length ? sshKeys : invoke("ssh_keys").catch(() => []),
       invoke("colors").catch(() => ({})),
       invoke("config_path").catch(() => ""),
-      invoke("spaces").catch(() => []),
-      invoke("space_files").catch(() => []),
       invoke("tunnels").catch(() => []),
+      invoke("notes").catch(() => []),
       invoke("jacks"),
     ]);
+    notes = new Map(noteRows.map((n) => [n.path, n.note]));
     // Open the first level once, on the first load only - doing it every time
     // would re-open folders the moment the window regains focus.
     if (!seeded) {
       for (const j of all) {
-        const space = j.space ?? null;
-        expanded.add(gkey({ space, path: null }));
-        for (const f of j.folders) expanded.add(gkey({ space, path: f.split("/")[0] }));
+        for (const f of j.folders) expanded.add(gkey({ path: f.split("/")[0] }));
       }
       seeded = true;
     }
@@ -235,24 +231,11 @@ async function load() {
     applySidebar(prefs.sidebar);
     render();
     refreshProbes();
-    syncTeam();
   } catch (e) {
     treeEl.innerHTML = "";
     listEl.innerHTML = `<p class="empty">${esc(e)}</p>`;
   }
   reveal();
-}
-
-/// Push what we changed, take what they changed. Deliberately not awaited by load():
-/// a team server that has gone away must not hold the list up for a timeout, and with
-/// no team configured this returns without touching the network at all.
-async function syncTeam() {
-  teams = await invoke("team_sync").catch(() => []);
-  renderTeam();
-  // A pull rewrote a space under whatever just read it. One reload, and the next
-  // sync says nothing changed, so this can't loop.
-  if (teams.some((t) => t.changed)) return load();
-  render();
 }
 
 const PROBE_EVERY = 30_000;

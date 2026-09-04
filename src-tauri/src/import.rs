@@ -13,7 +13,7 @@ use crate::patchbay::{self, Jack, Jacks};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, Default, PartialEq, Serialize)]
 pub struct Imported {
     pub name: String,
     pub host: String,
@@ -21,6 +21,14 @@ pub struct Imported {
     pub port: Option<u16>,
     pub key: Option<String>,
     pub jump: Option<String>,
+    /// Set by the Royal TS side, which has a tree to bring across. An ssh config has
+    /// no folders in it, so that import leaves these alone.
+    #[serde(default)]
+    pub folders: Vec<String>,
+    pub rdp: Option<u16>,
+    pub url: Option<String>,
+    pub os: Option<String>,
+    pub desc: Option<String>,
     /// `LocalForward`, `RemoteForward` and `DynamicForward`, spelled the way
     /// `patchbay::forward_arg` reads them back. A tunnel someone set up once is part of
     /// how they reach that host, so importing without it imports half a jack.
@@ -112,6 +120,7 @@ impl Walk {
                 key: self.block.get("identityfile").cloned(),
                 jump: jump.clone(),
                 forward: forwards.clone(),
+                ..Imported::default()
             });
         }
         self.block.clear();
@@ -321,6 +330,260 @@ pub fn host_names(src: &str) -> HashSet<String> {
     out
 }
 
+// ── Royal TS ────────────────────────────────────────────────────────────────
+// A `.rtsz` is XML, despite the z: one flat list of objects under `<RTSZDocument>`,
+// each carrying an `ID` and a `ParentID`. The tree is those pointers rather than the
+// nesting, so a folder path is a walk up the parents and not something the document
+// spells out anywhere.
+//
+// Read with quick-xml rather than by hand for one reason that shows up in every real
+// document: a customer called `H&S - Hart & Smith` is `H&amp;S` in the file.
+
+/// One object as it stands in the document, before anything is decided about it.
+#[derive(Default)]
+struct Node {
+    tag: String,
+    id: String,
+    parent: String,
+    fields: HashMap<String, String>,
+}
+
+impl Node {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.fields.get(key).map(String::as_str).filter(|v| !v.trim().is_empty())
+    }
+    fn num(&self, key: &str) -> Option<u16> {
+        self.get(key)?.trim().parse().ok()
+    }
+    fn yes(&self, key: &str) -> bool {
+        self.get(key).is_some_and(|v| v.eq_ignore_ascii_case("true"))
+    }
+}
+
+/// Every object in the file, in document order. Depth is the only thing separating an
+/// object from its own fields: objects sit at depth 1 under the root, values at 2.
+fn objects(src: &str) -> Result<Vec<Node>, String> {
+    use quick_xml::events::Event;
+    let mut rd = quick_xml::Reader::from_str(src);
+    rd.config_mut().trim_text(true);
+    // A half-written document is a truncated one, and importing the first half of
+    // somebody's list silently is worse than refusing it.
+    rd.config_mut().check_end_names = true;
+
+    let (mut out, mut depth, mut field, mut root) =
+        (Vec::<Node>::new(), 0usize, String::new(), String::new());
+    loop {
+        match rd.read_event() {
+            Err(e) => return Err(format!("that document doesn't parse: {e}")),
+            Ok(Event::Eof) => break,
+            Ok(Event::Start(e)) => {
+                depth += 1;
+                let name = String::from_utf8_lossy(e.local_name().as_ref()).into_owned();
+                match depth {
+                    1 => root = name,
+                    2 => out.push(Node { tag: name, ..Node::default() }),
+                    3 => field = name,
+                    _ => {}
+                }
+            }
+            Ok(Event::End(_)) => depth = depth.saturating_sub(1),
+            Ok(Event::Text(t)) if depth == 3 => {
+                if let (Some(node), Ok(v)) = (out.last_mut(), t.unescape()) {
+                    node.fields.insert(field.clone(), v.into_owned());
+                }
+            }
+            _ => {}
+        }
+    }
+    // Ending inside an element is a truncated file - a half-finished download, or a
+    // sync that landed mid-write. quick-xml is happy to stop there, and importing the
+    // first half of somebody's list without saying so is the worst of the options.
+    if depth != 0 {
+        return Err("that document stops half way through - is it still copying?".into());
+    }
+    // Named rather than sniffed: an ssh config or somebody's exported bookmarks would
+    // otherwise import as nothing at all and look like an empty document.
+    if root != "RTSZDocument" {
+        return Err("that isn't a Royal TS document".into());
+    }
+    for n in out.iter_mut() {
+        n.id = n.fields.get("ID").cloned().unwrap_or_default();
+        n.parent = n.fields.get("ParentID").cloned().unwrap_or_default();
+    }
+    Ok(out)
+}
+
+/// The folders above a node, outermost first, and whether the walk passed through the
+/// trash on the way up. Deleted things are still in the file, and importing somebody's
+/// bin back onto their screen is the wrong kind of thorough.
+fn place(by_id: &HashMap<&str, &Node>, node: &Node) -> (Vec<String>, bool) {
+    let (mut path, mut binned, mut seen) = (Vec::new(), false, HashSet::new());
+    let mut at = node.parent.as_str();
+    while let Some(p) = by_id.get(at) {
+        if !seen.insert(at) {
+            break; // a parent loop is a corrupt file, not an infinite one
+        }
+        match p.tag.as_str() {
+            "RoyalFolder" => path.push(p.get("Name").unwrap_or("unnamed").to_string()),
+            "RoyalTrash" => binned = true,
+            _ => {}
+        }
+        at = p.parent.as_str();
+    }
+    path.reverse();
+    (path, binned)
+}
+
+/// What patchbay calls the same thing. A Royal TS name only has to be unique among its
+/// siblings, so a document with twenty customers holds twenty `DC1`s - and a jack name
+/// is a key. The customer goes in front only where it has to, so most names stay short.
+fn unique(
+    name: &str,
+    folders: &[String],
+    taken: &mut HashSet<String>,
+    clashes: &HashSet<String>,
+) -> String {
+    let base = match (clashes.contains(name), folders.first()) {
+        (true, Some(top)) => format!("{top} {name}"),
+        _ => name.to_string(),
+    };
+    let mut out = base.clone();
+    let mut n = 2;
+    while !taken.insert(out.clone()) {
+        out = format!("{base} {n}");
+        n += 1;
+    }
+    out
+}
+
+/// A web connection's address is whatever somebody typed into Royal TS, which is a URL
+/// about half the time and a bare address the rest. patchbay needs both a host to probe
+/// and an http(s) url to open, so the missing half is filled in - https, because these
+/// are appliances and every one of them redirects there anyway.
+fn web_parts(uri: &str) -> (String, String) {
+    let url = match uri.starts_with("http://") || uri.starts_with("https://") {
+        true => uri.to_string(),
+        false => format!("https://{uri}"),
+    };
+    let host = url
+        .split("://")
+        .nth(1)
+        .unwrap_or(uri)
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or(uri)
+        .rsplit('@')
+        .next()
+        .unwrap_or(uri);
+    // A port in the address is part of reaching the web UI, not of reaching the host.
+    (host.split(':').next().unwrap_or(host).to_string(), url)
+}
+
+/// A Royal TS document in, jacks out. Parses only, like the ssh-config side: the window
+/// shows what it found and writes what you tick, through `save_jack` like any edit.
+pub fn from_royal_ts(src: &str) -> Result<Found, String> {
+    let nodes = objects(src)?;
+    let by_id: HashMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+
+    let clashes: HashSet<String> = {
+        let mut seen = HashSet::new();
+        nodes
+            .iter()
+            .filter(|n| n.tag.ends_with("Connection"))
+            .filter_map(|n| n.get("Name"))
+            .filter(|name| !seen.insert(name.to_string()))
+            .map(str::to_string)
+            .collect()
+    };
+
+    let (mut hosts, mut warnings, mut taken) = (Vec::new(), Vec::new(), HashSet::new());
+    let (mut binned, mut serial, mut secrets, mut guessed) = (0usize, 0usize, 0usize, 0usize);
+    let mut unknown: HashMap<String, usize> = HashMap::new();
+
+    for n in &nodes {
+        if n.get("CredentialPassword").is_some() {
+            secrets += 1;
+        }
+        if !n.tag.ends_with("Connection") {
+            continue;
+        }
+        let (folders, in_trash) = place(&by_id, n);
+        if in_trash {
+            binned += 1;
+            continue;
+        }
+        let Some(name) = n.get("Name") else { continue };
+        let Some(uri) = n.get("URI") else {
+            warnings.push(format!("\"{name}\" has no address, so it was left out"));
+            continue;
+        };
+        // Neither is an ssh session, and patchbay has nothing to open them with.
+        if n.yes("IsTelnetConnection") || n.yes("IsSerialPortConnection") {
+            serial += 1;
+            continue;
+        }
+
+        let mut j = Imported {
+            name: unique(name, &folders, &mut taken, &clashes),
+            user: n.get("CredentialUsername").map(str::to_string),
+            desc: n.get("Description").map(str::to_string),
+            folders: match folders.is_empty() {
+                true => vec![],
+                false => vec![folders.join("/")],
+            },
+            ..Imported::default()
+        };
+        // Named, never guessed. A document has connection types patchbay has no answer
+        // for, and turning one of those into an ssh device would import something that
+        // simply fails when you click it - a line in the warnings is the honest answer.
+        match n.tag.as_str() {
+            // Terminal Services and Hyper-V are both RDP with a different front end.
+            "RoyalRDSConnection" | "RoyalTerminalServicesConnection" | "RoyalHyperVConnection" => {
+                j.host = uri.to_string();
+                j.rdp = Some(n.num("RDPPort").unwrap_or(3389));
+                j.os = Some("windows".into());
+            }
+            "RoyalWebConnection" => {
+                let (host, url) = web_parts(uri);
+                guessed += !uri.starts_with("http") as usize;
+                j.host = host;
+                j.url = Some(url);
+            }
+            "RoyalSSHConnection" => {
+                j.host = uri.to_string();
+                j.port = n.num("Port").filter(|p| *p != 22);
+            }
+            other => {
+                *unknown.entry(other.to_string()).or_default() += 1;
+                continue;
+            }
+        }
+        hosts.push(j);
+    }
+
+    for (n, what) in [
+        (binned, "in the trash, left there"),
+        (serial, "telnet or serial, which patchbay doesn't open"),
+        (guessed, "web addresses with no scheme, so https was assumed"),
+    ] {
+        if n > 0 {
+            warnings.push(format!("{n} {what}"));
+        }
+    }
+    if secrets > 0 {
+        warnings.push(format!(
+            "{secrets} stored passwords not imported - patchbay keeps none, and yours stay in Royal TS"
+        ));
+    }
+    let mut left = unknown.into_iter().collect::<Vec<_>>();
+    left.sort();
+    for (tag, n) in left {
+        let kind = tag.trim_start_matches("Royal").trim_end_matches("Connection");
+        warnings.push(format!("{n} {kind} connection(s) skipped - patchbay has no way to open one"));
+    }
+    Ok(Found { hosts, warnings })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -366,6 +629,7 @@ Match host *.internal
                 key: Some("~/.ssh/ops".into()),
                 jump: None,
                 forward: vec![],
+                ..Imported::default()
             }
         );
 
@@ -507,5 +771,140 @@ Match host *.internal
         let f = from_ssh_config("HOST one\n  hostname=10.0.0.7\n  USER  bob\n");
         assert_eq!(f.hosts[0].host, "10.0.0.7");
         assert_eq!(f.hosts[0].user.as_deref(), Some("bob"));
+    }
+}
+
+#[cfg(test)]
+mod royal_tests {
+    use super::*;
+
+    /// A document shaped exactly like a real one: objects flat under the root, joined
+    /// by ParentID, with the two things a hand-rolled reader gets wrong - an entity in
+    /// a name, and a connection sitting in the trash.
+    const DOC: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<RTSZDocument>
+  <RoyalDocument><ID>doc</ID><Name>Acme</Name></RoyalDocument>
+  <RoyalTrash><ID>bin</ID><Name>Trash</Name><ParentID>doc</ParentID></RoyalTrash>
+  <RoyalFolder><ID>f1</ID><Name>H&amp;S</Name><ParentID>doc</ParentID></RoyalFolder>
+  <RoyalFolder><ID>f2</ID><Name>Server</Name><ParentID>f1</ParentID></RoyalFolder>
+  <RoyalFolder><ID>f3</ID><Name>Acme</Name><ParentID>doc</ParentID></RoyalFolder>
+  <RoyalRDSConnection><ID>c1</ID><Name>DC1</Name><ParentID>f2</ParentID>
+    <URI>10.80.0.50</URI><RDPPort>3389</RDPPort>
+    <CredentialUsername>administrator</CredentialUsername>
+    <CredentialPassword>xTFOawIB==</CredentialPassword></RoyalRDSConnection>
+  <RoyalRDSConnection><ID>c2</ID><Name>DC1</Name><ParentID>f3</ParentID>
+    <URI>10.9.0.50</URI><RDPPort>3390</RDPPort></RoyalRDSConnection>
+  <RoyalSSHConnection><ID>c3</ID><Name>edge</Name><ParentID>f3</ParentID>
+    <URI>10.9.0.1</URI><Port>22</Port>
+    <CredentialUsername>ops</CredentialUsername></RoyalSSHConnection>
+  <RoyalSSHConnection><ID>c4</ID><Name>console</Name><ParentID>f3</ParentID>
+    <URI>10.9.0.2</URI><IsSerialPortConnection>True</IsSerialPortConnection></RoyalSSHConnection>
+  <RoyalWebConnection><ID>c5</ID><Name>NAS</Name><ParentID>f3</ParentID>
+    <URI>10.9.0.20:5001</URI></RoyalWebConnection>
+  <RoyalWebConnection><ID>c6</ID><Name>Proxmox</Name><ParentID>f3</ParentID>
+    <URI>https://10.9.0.30:8006/#v1</URI><Description>the hypervisor</Description></RoyalWebConnection>
+  <RoyalTerminalServicesConnection><ID>c8</ID><Name>ts</Name><ParentID>f3</ParentID>
+    <URI>10.9.0.60</URI></RoyalTerminalServicesConnection>
+  <RoyalVncConnection><ID>c9</ID><Name>kvm</Name><ParentID>f3</ParentID>
+    <URI>10.9.0.70</URI></RoyalVncConnection>
+  <RoyalWebConnection><ID>c7</ID><Name>gone</Name><ParentID>bin</ParentID>
+    <URI>10.9.0.99</URI></RoyalWebConnection>
+</RTSZDocument>"#;
+
+    fn find<'a>(f: &'a Found, name: &str) -> &'a Imported {
+        f.hosts.iter().find(|h| h.name == name).unwrap_or_else(|| panic!("no {name}: {:?}",
+            f.hosts.iter().map(|h| &h.name).collect::<Vec<_>>()))
+    }
+
+    #[test]
+    fn a_document_becomes_devices_with_the_way_in_they_already_had() {
+        let f = from_royal_ts(DOC).unwrap();
+        assert_eq!(f.hosts.len(), 6, "{:?}", f.hosts.iter().map(|h| &h.name).collect::<Vec<_>>());
+
+        // Terminal Services is RDP with a different front end, not an ssh box.
+        assert_eq!(find(&f, "ts").rdp, Some(3389));
+        // And a type with no answer here is named rather than turned into something
+        // that would simply fail when clicked.
+        assert!(!f.hosts.iter().any(|h| h.name == "kvm"), "a VNC connection was guessed at");
+        assert!(f.warnings.iter().any(|w| w.contains("Vnc")), "{:?}", f.warnings);
+
+        // The tree is ParentID pointers, and the entity has to survive the walk.
+        let dc = find(&f, "H&S DC1");
+        assert_eq!(dc.folders, ["H&S/Server"]);
+        assert_eq!(dc.host, "10.80.0.50");
+        assert_eq!(dc.rdp, Some(3389));
+        assert_eq!(dc.user.as_deref(), Some("administrator"));
+        assert_eq!(dc.os.as_deref(), Some("windows"));
+
+        // Two `DC1`s in one document: a jack name is a key, so the customer goes in
+        // front of both rather than one of them quietly winning.
+        assert_eq!(find(&f, "Acme DC1").rdp, Some(3390));
+
+        // A name nothing collides with is left alone.
+        let ssh = find(&f, "edge");
+        assert_eq!((ssh.host.as_str(), ssh.port), ("10.9.0.1", None), "port 22 is not worth writing");
+
+        // A web address with no scheme gets one, and the port belongs to the url.
+        let nas = find(&f, "NAS");
+        assert_eq!(nas.url.as_deref(), Some("https://10.9.0.20:5001"));
+        assert_eq!(nas.host, "10.9.0.20", "the probe wants a host, not a url");
+
+        let pve = find(&f, "Proxmox");
+        assert_eq!(pve.url.as_deref(), Some("https://10.9.0.30:8006/#v1"));
+        assert_eq!(pve.host, "10.9.0.30");
+        assert_eq!(pve.desc.as_deref(), Some("the hypervisor"));
+    }
+
+    /// The three things that must never come across, each said out loud rather than
+    /// dropped quietly.
+    #[test]
+    fn the_bin_the_serial_port_and_the_passwords_stay_behind() {
+        let f = from_royal_ts(DOC).unwrap();
+        assert!(!f.hosts.iter().any(|h| h.name == "gone"), "the trash was imported");
+        assert!(!f.hosts.iter().any(|h| h.name == "console"), "a serial port was imported");
+
+        let said = f.warnings.join(" | ");
+        assert!(said.contains("trash"), "{said}");
+        assert!(said.contains("serial"), "{said}");
+        assert!(said.contains("passwords"), "{said}");
+        assert!(said.contains("https was assumed"), "{said}");
+    }
+
+    #[test]
+    fn a_document_that_is_not_one_says_so_rather_than_importing_nothing() {
+        // Something else entirely, and something cut off half way.
+        assert!(from_royal_ts("<opml><body/></opml>").unwrap_err().contains("Royal TS"));
+        assert!(from_royal_ts("<RTSZDocument><RoyalFolder><ID>f").is_err());
+        // A real but empty one is not an error, it just has nothing in it.
+        assert_eq!(from_royal_ts("<RTSZDocument></RTSZDocument>").unwrap().hosts.len(), 0);
+    }
+}
+
+#[cfg(test)]
+mod royal_smoke {
+    use super::*;
+    /// Run against a real document by pointing this at one:
+    ///   ROYAL_TS_DOC=/path/to/doc.rtsz cargo test royal_smoke -- --nocapture
+    /// Skipped otherwise, so nobody's document is a prerequisite for the suite.
+    #[test]
+    fn a_real_document_reads() {
+        let Ok(path) = std::env::var("ROYAL_TS_DOC") else { return };
+        let src = std::fs::read_to_string(&path).expect("read the document");
+        let f = from_royal_ts(&src).expect("parse");
+        let (rdp, web, ssh) = (
+            f.hosts.iter().filter(|h| h.rdp.is_some()).count(),
+            f.hosts.iter().filter(|h| h.url.is_some()).count(),
+            f.hosts.iter().filter(|h| h.rdp.is_none() && h.url.is_none()).count(),
+        );
+        let folders: std::collections::BTreeSet<_> =
+            f.hosts.iter().flat_map(|h| h.folders.clone()).collect();
+        println!("\n{} devices: {rdp} rdp, {web} web, {ssh} ssh", f.hosts.len());
+        println!("{} folders, deepest {}", folders.len(),
+            folders.iter().map(|f| f.matches('/').count() + 1).max().unwrap_or(0));
+        println!("qualified names: {}", f.hosts.iter().filter(|h| h.name.contains(' ')).count());
+        for w in &f.warnings { println!("  warning: {w}"); }
+        assert!(f.hosts.iter().all(|h| !h.host.trim().is_empty()), "a device with no host");
+        let names: std::collections::HashSet<_> = f.hosts.iter().map(|h| &h.name).collect();
+        assert_eq!(names.len(), f.hosts.len(), "two devices ended up with one name");
     }
 }

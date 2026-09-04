@@ -16,7 +16,7 @@ const askBody = askForm.querySelector(".sheet-body");
 const setWrap = $("setwrap"), setForm = $("setform"), setErr = $("set-err");
 const impWrap = $("importwrap"), impForm = $("importform"), impList = $("imp-list");
 const impNote = $("imp-note"), impErr = $("imp-err"), impOk = $("imp-ok");
-const teamErr = $("team-err"), setNav = $("setnav");
+const setNav = $("setnav");
 const upWrap = $("uptoast"), upText = $("up-text"), upInstall = $("up-install"), upClose = $("up-close");
 // When the last check answered, as a clock time. The launch check says nothing when
 // there is nothing to install, so without this the settings pane cannot tell "current"
@@ -31,16 +31,15 @@ if (isMac) document.body.dataset.os = "macos";
 // Shortcut labels: ⌘K on macOS, Ctrl+K everywhere else. The handler already accepts both.
 const chord = (k) => (isMac ? `⌘${k.toUpperCase()}` : `Ctrl+${k.toUpperCase()}`);
 
-// Anything keyed by a folder needs the space too - two spaces can both have a "prod".
-// Sets and Maps only; the space and path travel to Rust separately, never as this.
-const gkey = (g) => (g ? `${g.space ?? ""}\u0000${g.path ?? ""}` : "");
+// A folder is keyed by its path, and `null` is the row above all of them. Sets and
+// Maps only - the path travels to Rust on its own, never as this.
+const gkey = (g) => (g ? (g.path ?? "") : "");
 const sameGroup = (a, b) => gkey(a) === gkey(b);
 
 let all = [];                 // every jack, in file order
 let shown = [];               // what the middle column currently lists
 let probes = new Map();       // name -> { target, ms }
-// The selected row: { space, path }. `path` null is a whole space, and `group`
-// itself null is every jack in every space.
+// The selected row: { path }. `group` itself null is every device.
 let group = null;
 let expanded = new Set();     // open rows, by gkey
 let sel = 0;
@@ -50,10 +49,10 @@ let sel = 0;
 let marked = new Set();
 let palSel = 0;
 let editing = null;   // jack name being edited, or null when adding
-let editingSpace = null;      // which space's file that save lands in
 // Folders only exist because a jack carries the tag, so a brand-new empty one is
 // held here until something lands in it. Dropped on reload, which is honest.
-let pending = new Map();      // gkey -> { space, path }
+let pending = new Map();      // gkey -> { path }
+let notes = new Map();        // folder path -> the note hung on it
 let seeded = false;           // the tree's initial expansion is a one-off
 let lastProbe = 0;            // epoch ms of the last sweep, for the throttle below
 let detailMode = "jack";      // what the right pane describes: "jack" or "group"
@@ -64,39 +63,8 @@ let listMode = "list";
 let prefs = {};               // [settings] from the config
 let colors = {};              // [colors] overrides, os key -> hex
 let cfgPath = "";             // where the config lives, shown on first run
-let spaces = [];              // the extra config files beside it, by name
-let spaceFiles = [];          // { space, path } - which file each space actually is
 let sshKeys = [];             // private keys found in ~/.ssh, to suggest in the key field
 let tunnels = [];             // live ssh -L forwards holding RDP open
-let teams = [];               // last answer from team_sync, one per team space
-
-// The team states that need an answer from you rather than just time, and what to say
-// about each. One map, because three places ask "is the sync stuck" and a second copy
-// is how they end up disagreeing about `error`.
-const TEAM_STUCK = {
-  conflict: "Your list and the team's have both changed",
-  blocked: "The team is out of seats, so your edits stay here",
-  error: "The team sync is stuck on this config",
-  readonly: "You edited a read-only space, so those changes stay here",
-};
-
-/// What a team space's sync is doing, as a sentence. Here rather than in either of
-/// the two panes that show it, for the same reason TEAM_STUCK is here: a second copy
-/// is how the settings sheet and the detail pane end up telling you different things.
-function teamNote(t) {
-  const seats = `${t.seats} seat${t.seats === 1 ? "" : "s"}${t.paid ? "" : ", free up to three"}`;
-  return {
-    conflict: "This space and the team's have both changed since they last agreed. Pick one - "
-      + `whichever you drop is kept beside it as ${t.space}.toml.bak.`,
-    blocked: `${t.error ?? ""} Your edits stay on this machine until the team has room for them.`,
-    offline: `Not reaching the server: ${t.error ?? ""} - the list still works, and changes go up when it answers.`,
-    // Nothing is wrong with it: it is a subscription, and only an edit makes it awkward.
-    readonly: `${t.error ?? "read-only"} - undo them, or copy the devices you want into a space of your own.`,
-    // Nothing to do with the server, so don't blame it: this machine's own copy is
-    // in the way, and nothing syncs either direction until it's readable again.
-    error: `${t.error ?? "the sync stopped here"} - nothing is going up or coming down until that's sorted.`,
-  }[t.state] ?? `In sync · ${seats}`;
-}
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 

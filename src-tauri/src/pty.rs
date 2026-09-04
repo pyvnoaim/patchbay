@@ -73,7 +73,7 @@ pub fn spawn(
 }
 
 /// A session log is a transcript of whatever ran, which can hold anything the
-/// remote box printed - owner-only, the same reasoning as `team.toml`.
+/// remote box printed - owner-only, because a session log is not a shared thing.
 #[cfg(unix)]
 fn open_log(path: &std::path::Path) -> std::io::Result<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;

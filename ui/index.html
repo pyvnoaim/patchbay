@@ -13,7 +13,6 @@
       <div class="drag" data-tauri-drag-region></div>
       <nav id="tree"></nav>
       <div class="side-foot">
-        <button class="flat" id="newspace"></button>
         <button class="flat" id="newgroup"></button>
         <button class="flat" id="settings"></button>
         <button class="flat" id="editcfg"></button>
@@ -99,8 +98,6 @@
           </span></label>
         <label class="f wide"><span>OS / kind</span><input name="os" spellcheck="false" list="oschoices" placeholder="ubuntu, synology, proxmox…"></label>
         <datalist id="oschoices"></datalist>
-        <label class="f wide" id="jf-space" hidden><span>Space</span>
-          <select name="space"></select></label>
         <label class="f wide"><span>Folders</span>
           <input name="folders" spellcheck="false" list="folderlist" placeholder="prod/eu/web, customer-facing">
           <datalist id="folderlist"></datalist></label>
@@ -127,7 +124,7 @@
           <button type="button" data-pane="devices" data-icon="server">Devices</button>
           <button type="button" data-pane="defaults" data-icon="layers">Defaults</button>
           <button type="button" data-pane="appearance" data-icon="monitor">Appearance</button>
-          <button type="button" data-pane="team" data-icon="network">Spaces</button>
+          <button type="button" data-pane="import" data-icon="download">Import</button>
           <button type="button" data-pane="updates" data-icon="rotate-cw">Updates</button>
           <button type="button" data-pane="config" data-icon="file-pen-line">Config file</button>
         </nav>
@@ -182,29 +179,28 @@
           <div class="swatches" id="swatches"></div>
         </section>
 
-        <section class="pane" data-pane="team" hidden>
-          <div class="d-sec">Spaces</div>
-          <p class="page-note">A space is a config file of its own. Yours never leaves this machine;
-          a team space is the same file, mirrored through a server you run.</p>
-          <div id="spaces-list"></div>
-
-          <!-- Joining is a once-a-year errand, so it folds away rather than standing
-               under the spaces you actually have. `details` because the browser
-               already knows how to open and close one. -->
-          <details class="drop">
-            <summary>Join a team</summary>
-            <div class="grid2">
-              <label class="f wide"><span>Team server</span><input id="team-url" spellcheck="false" placeholder="https://patchbay.example"></label>
-              <label class="f wide"><span>Team code</span><input id="team-code" spellcheck="false" placeholder="from whoever made the team"></label>
-              <label class="f wide"><span>Call the space</span><input id="team-name" spellcheck="false" placeholder="acme"></label>
-            </div>
-            <p class="page-note">No code? Point the address at a TOML file someone publishes -
-            a raw git URL will do - for a read-only copy.</p>
-            <div class="btns">
-              <button type="button" class="primary" id="team-join">Join</button>
-            </div>
-            <p class="sheet-err" id="team-err" hidden></p>
-          </details>
+        <section class="pane" data-pane="import" hidden>
+          <div class="d-sec">Import</div>
+          <div class="sources">
+            <!-- The file is read in the window and handed to Rust as text: no dialog
+                 plugin, no new capability, and the app only ever sees a document
+                 somebody chose. `.rtsz` is XML despite the z. -->
+            <label class="source">
+              <input type="file" id="imp-royal" accept=".rtsz,.rts,.xml" hidden>
+              <span class="si" data-icon="file-pen-line"></span>
+              <b>Royal TS</b>
+              <span>a <code>.rtsz</code> document</span>
+              <span class="go" data-idle="Choose a file…">Choose a file…</span>
+            </label>
+            <button type="button" class="source" id="imp-ssh">
+              <span class="si" data-icon="square-terminal"></span>
+              <b>ssh config</b>
+              <span><code>~/.ssh/config</code></span>
+              <span class="go" data-idle="Read it">Read it</span>
+            </button>
+          </div>
+          <p class="page-note">You tick what comes across. Passwords never do.</p>
+          <p class="sheet-err" id="imp-perr" hidden></p>
         </section>
 
         <section class="pane" data-pane="updates" hidden>
@@ -260,9 +256,12 @@
 
   <div id="importwrap" hidden>
     <form class="sheet imp" id="importform" autocomplete="off">
-      <div class="sheet-head">Import from ssh config</div>
-      <div class="sheet-body">
+      <div class="sheet-head" id="imp-title">Import</div>
+      <div class="imp-top">
         <p class="imp-note" id="imp-note"></p>
+        <input id="imp-find" class="imp-find" spellcheck="false" placeholder="Filter by name, address or folder">
+      </div>
+      <div class="sheet-body">
         <div class="imp-list" id="imp-list"></div>
       </div>
       <p class="sheet-err" id="imp-err" hidden></p>
