@@ -322,12 +322,53 @@
     return '<span style="color:var(--up)">up</span> &middot; ' + r.via + " &middot; " + r.ms + "ms";
   }
 
+  /* Marks, and the dock they raise. The same gesture as the app: cmd-click picks a
+     row out without moving the selection, shift-click takes the run between, and a
+     plain click drops the lot. It is here because a screenshot cannot show a gesture,
+     and this is the one thing in the window you would never guess at. */
+  var dock = document.getElementById("w-dock");
+  var ICON = {
+    bcast: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/></svg>',
+    del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  };
+
+  function rows() {
+    return [].slice.call(list.querySelectorAll(".w-jack"));
+  }
+  function paintDock() {
+    var marks = rows().filter(function (r) { return r.hasAttribute("data-mark"); });
+    if (marks.length < 2) { dock.hidden = true; return; }
+    // Only the ones patchbay would actually open a shell on, the way the app counts.
+    var ssh = marks.filter(function (r) { return !r.querySelector(".w-web"); }).length;
+    dock.innerHTML = '<span class="count"><b>' + marks.length + "</b> selected</span>" +
+      (ssh > 1 ? '<span class="a">' + ICON.bcast + "Broadcast to " + ssh + "</span>" : "") +
+      '<span class="a danger">' + ICON.del + "Delete " + marks.length + "</span>";
+    dock.hidden = false;
+  }
+
   list.addEventListener("click", function (e) {
     var jack = e.target.closest(".w-jack");
     if (!jack || !list.contains(jack)) return;
     var name = jack.querySelector(".w-name").textContent;
     var d = DATA[name];
     if (!d) return;
+
+    if (e.metaKey || e.ctrlKey) {
+      // The selection stays put, which is what makes it the anchor for a shift-click.
+      jack.toggleAttribute("data-mark");
+      return paintDock();
+    }
+    if (e.shiftKey) {
+      var all = rows();
+      var from = all.indexOf(list.querySelector(".w-jack[data-sel]"));
+      var to = all.indexOf(jack);
+      if (from < 0) from = to;
+      all.slice(Math.min(from, to), Math.max(from, to) + 1)
+        .forEach(function (r) { r.setAttribute("data-mark", ""); });
+      return paintDock();
+    }
+    rows().forEach(function (r) { r.removeAttribute("data-mark"); });
+    paintDock();
 
     list.querySelectorAll(".w-jack[data-sel]").forEach(function (j) { j.removeAttribute("data-sel"); });
     jack.setAttribute("data-sel", "");
