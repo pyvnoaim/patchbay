@@ -185,6 +185,12 @@ const hit = (j, f) =>
 let recent = [];
 try { recent = JSON.parse(localStorage.recent ?? "[]"); } catch { /* nothing to remember with */ }
 if (!Array.isArray(recent)) recent = [];
+// The tabs that were open when the window last closed, reopened on the next launch.
+// Read here, before the first renderTabs writes today's empty strip over it.
+let lastTabs = [];
+try { lastTabs = JSON.parse(localStorage.tabs ?? "[]"); } catch { /* nothing to remember with */ }
+if (!Array.isArray(lastTabs)) lastTabs = [];
+
 function used(name) {
   recent = [name, ...recent.filter((n) => n !== name)].slice(0, 40);
   try { localStorage.recent = JSON.stringify(recent); } catch { /* nothing to remember with */ }

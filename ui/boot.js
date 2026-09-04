@@ -10,7 +10,7 @@ $("viewmode").addEventListener("click", () => {
 });
 $("newjack").addEventListener("click", () => openJack(null, group));
 $("newgroup").addEventListener("click", () => newGroup({ path: null }));
-$("editcfg").addEventListener("click", () => invoke("open_config"));
+$("editcfg").addEventListener("click", () => invoke("open_config").catch(alertish));
 // Called, not passed: a listener hands its handler the event, which as a pane name
 // matches nothing and hides every one of them.
 $("settings").addEventListener("click", () => openSettings());
@@ -24,16 +24,8 @@ treeEl.addEventListener("click", (e) => {
   const foldable = el.dataset.hasKids === "true";
   if (e.target.closest(".twist") && foldable) {
     expanded.has(gkey(id)) ? expanded.delete(gkey(id)) : expanded.add(gkey(id));
-  } else {
-    group = id;
-    if (foldable) expanded.add(gkey(id));
-    sel = 0;
-    // A different list is a different set of rows; marks made in the last one are not
-    // an answer to anything here.
-    marked.clear();
-    detailMode = "group";   // the pane describes the folder, not its first device
-  }
-  render();
+    render();
+  } else pickGroup(id, foldable);
 });
 
 listEl.addEventListener("click", (e) => {
@@ -42,7 +34,7 @@ listEl.addEventListener("click", (e) => {
   // The first run points at the pane that owns importing, rather than at one of
   // the two sources - which one you have is not something a blank window knows.
   if (act === "import") return openSettings("import");
-  if (act === "cfg") return invoke("open_config");
+  if (act === "cfg") return invoke("open_config").catch(alertish);
   const row = e.target.closest(".jack");
   if (!row) return;
   // The map draws a jump host that isn't one of your devices as a row with nothing
@@ -85,10 +77,13 @@ detailPane.addEventListener("click", async (e) => {
     refreshTunnels();
   }
   if (act === "untunnel") {
-    for (const t of tunnels.filter((x) => x.jack === j.name)) await invoke("close_tunnel", { id: t.id });
+    try {
+      for (const t of tunnels.filter((x) => x.jack === j.name)) await invoke("close_tunnel", { id: t.id });
+    } catch (e) { alertish(e); }
     refreshTunnels();
   }
   if (act === "edit") openJack(j);
+  if (act === "dup") openJack({ ...j, name: "" });
   if (act === "copy") {
     const btn = e.target.closest("[data-act]");
     try { await navigator.clipboard.writeText(j.command); btn.innerHTML = icon("check"); }
@@ -98,6 +93,7 @@ detailPane.addEventListener("click", async (e) => {
 });
 
 presultsEl.addEventListener("click", (e) => {
+  if (e.target.closest("[data-adhoc]")) { const q = adhoc(); closePalette(); return connect(q); }
   const row = e.target.closest("[data-pi]");
   if (!row) return;
   const j = palMatches()[+row.dataset.pi];
@@ -112,12 +108,13 @@ document.addEventListener("keydown", (e) => {
 
   // A sheet is modal: let it have the keyboard, bar Escape.
   if (sheetOpen()) {
+    if (!askWrap.hidden && mod && askAgain === e.key) { e.preventDefault(); return closeAsk(true); }
     if (e.key === "Escape") {
       e.preventDefault();
       if (!askWrap.hidden) closeAsk(null);
       else if (!setWrap.hidden) closeSettings();
       else if (!impWrap.hidden) closeImport();
-      else closeJack();
+      else leaveJack();
     }
     return;
   }
@@ -158,6 +155,7 @@ document.addEventListener("keydown", (e) => {
     else if (e.key === "ArrowDown") { e.preventDefault(); palSel = (palSel + 1) % Math.max(1, rows.length); renderPalette(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); palSel = (palSel - 1 + rows.length) % Math.max(1, rows.length); renderPalette(); }
     else if (e.key === "Enter" && rows[palSel]) { e.preventDefault(); const n = rows[palSel].name; closePalette(); primary(n); }
+    else if (e.key === "Enter" && adhoc()) { e.preventDefault(); const q = adhoc(); closePalette(); connect(q); }
     return;
   }
 
@@ -167,9 +165,16 @@ document.addEventListener("keydown", (e) => {
     if (mod && e.key === "w") { e.preventDefault(); closeSession(activeId); }
     return;
   }
+  // A folder note is the one text box outside a sheet: a letter typed into it is
+  // the note's, not the palette's, and Backspace is not a delete of the device.
+  if (e.target.closest("input, textarea")) {
+    if (e.key === "Escape") e.target.blur();
+    return;
+  }
 
   if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "n")) { e.preventDefault(); move(1); }
   else if (e.key === "ArrowUp" || (e.ctrlKey && e.key === "p")) { e.preventDefault(); move(-1); }
+  else if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); stepTree(e.key === "ArrowLeft" ? -1 : 1); }
   else if (e.key === "Enter" && shown[sel]) { e.preventDefault(); primary(shown[sel].name); }
   else if (e.key === "Escape") {
     // Two-stage: marks first, folder and selection second. Escape used to do all
@@ -184,7 +189,7 @@ document.addEventListener("keydown", (e) => {
     if (bulk.length > 1) removeMarked(bulk);
     else removeJack(shown[sel].name);
   }
-  else if (mod && e.key === "e") { e.preventDefault(); invoke("open_config"); }
+  else if (mod && e.key === "e") { e.preventDefault(); invoke("open_config").catch(alertish); }
   else if (mod && e.key === "r") { e.preventDefault(); load(); }
   // Just start typing, like fzf - the palette opens carrying the keystroke.
   else if (!mod && !e.altKey && e.key.length === 1) { e.preventDefault(); openPalette(e.key); }
@@ -328,6 +333,25 @@ listen("menu:check-update", () => checkUpdates(setWrap.hidden ? null : $("update
 listen("open:link", ({ payload: name }) => primary(name))
   .catch(() => { /* no capability, so a link only works on a cold start */ });
 
+/// The window's close button, held by Rust until the window has answered: a live
+/// session is asked about, the way one tab is. Quitting is `app.exit`, so the tunnels
+/// are still closed on the way out.
+listen("window:close", async () => {
+  const live = liveSessions().length;
+  if (live && !(await ask(`Quit with ${live} live session${live === 1 ? "" : "s"}?`, null, "Quit"))) return;
+  invoke("quit");
+}).catch(() => { /* no capability - and then the close is held with nobody to answer it */ });
+
+/// Last time's tabs, in last time's order, for the devices that still exist. One at a
+/// time so the strip is in that order, and back on the list when done: the window
+/// opens as a list with sessions behind it, not on whichever shell was opened last.
+async function restoreTabs() {
+  const open = { term: openSession, web: openWebSession, sftp: openFilesSession };
+  const back = lastTabs.filter((t) => open[t.kind] && all.some((j) => j.name === t.name));
+  for (const t of back) await open[t.kind](t.name);
+  if (back.length) { activeId = null; showTab(); render(); }
+}
+
 async function takeLink() {
   const name = await invoke("take_link").catch(() => null);
   if (name) primary(name);
@@ -345,7 +369,7 @@ async function offerSshCleanup() {
 }
 
 // Behind the first paint: the window is for the device list, not for an errand.
-load().then(takeLink).then(offerUpdate).then(offerSshCleanup);
+load().then(restoreTabs).then(takeLink).then(offerUpdate).then(offerSshCleanup);
 setInterval(refreshProbes, PROBE_EVERY);
 // The config is a file you edit by hand, so pick up changes when the window comes back.
 window.addEventListener("focus", load);

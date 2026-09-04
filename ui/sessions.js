@@ -233,7 +233,24 @@ async function openSession(name, task = null, bcast = null) {
   term.focus();
 }
 
-function closeSession(id) {
+/// A tab worth asking about before it goes: a shell or a desktop still connected. A
+/// web page, a file listing, a ping and anything already dead are not - closing those
+/// loses nothing, and a question there is a question people learn to click through.
+const isLive = (s) => !s.dead && ((s.kind === "term" && !s.task) || s.kind === "rdp");
+const liveSessions = () => [...sessions.values()].filter(isLive);
+
+async function closeSession(id) {
+  const s = sessions.get(id);
+  if (!s) return;
+  if (isLive(s)) {
+    askAgain = "w";
+    if (!(await ask(`Close the session on "${s.name}"?`, null, "Close"))) return;
+  }
+  dropSession(id);
+}
+
+// The close without the question, for a caller that has already asked.
+function dropSession(id) {
   const s = sessions.get(id);
   if (!s) return;
   const closer = { rdp: "close_rdp_session", web: "close_web_view" }[s.kind] ?? "close_session";
@@ -796,8 +813,14 @@ function renderTabs() {
       </div>`);
       continue;
     }
+    // A shell tab wears its device's mark, the way the row does - six shells on six
+    // boxes tell apart at a glance. At the kind-icon's opacity, so it says which
+    // rather than shouts; the colour is `readable()`'s, never a raw brand hex.
+    const os = s.kind === "term" && !s.task ? all.find((j) => j.name === s.name)?.os : undefined;
+    const tint = os && osColor(os);
     chips.push(`<div class="tab ${s.dead ? "dead" : ""}" data-id="${s.id}" aria-selected="${s.id === activeId}">
       <span class="dot ${s.dead ? "down" : "up"}"></span>
+      ${os ? `<span class="tabkind"${tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(os)}</span>` : ""}
       ${s.kind === "rdp" ? `<span class="tabkind">${icon("monitor")}</span>` : ""}
       ${s.kind === "web" ? `<span class="tabkind">${icon("globe")}</span>` : ""}
       ${s.kind === "sftp" ? `<span class="tabkind">${icon("folder")}</span>` : ""}
@@ -820,6 +843,17 @@ function renderTabs() {
     }
   }
   markTabOverflow();
+  rememberTabs();
+}
+
+/// Shells, pages and file listings come back on the next launch; a desktop asks for
+/// a password on the way in, a ping is over, a broadcast is a gesture, and a dead tab
+/// already closed itself. Stored like `recent`: a habit, not part of the list.
+function rememberTabs() {
+  const open = [...sessions.values()]
+    .filter((s) => !s.dead && !s.bcast && !s.task && s.kind !== "rdp")
+    .map((s) => ({ kind: s.kind, name: s.name }));
+  try { localStorage.tabs = JSON.stringify(open); } catch { /* nothing to remember with */ }
 }
 
 /// The strip hides its scrollbar, so a tab past the edge is a tab that simply isn't
@@ -867,8 +901,11 @@ function toggleBroadcast(gid) {
   renderTabs();
 }
 
-function closeBroadcast(gid) {
-  for (const s of [...sessions.values()]) if (s.bcast?.gid === gid) closeSession(s.id);
+async function closeBroadcast(gid) {
+  const panes = [...sessions.values()].filter((s) => s.bcast?.gid === gid);
+  const live = panes.filter(isLive).length;
+  if (live && !(await ask(`Close ${live} live session${live === 1 ? "" : "s"}?`, null, "Close"))) return;
+  for (const s of panes) dropSession(s.id);
 }
 
 addEventListener("resize", () => {

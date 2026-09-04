@@ -94,7 +94,7 @@ you already define is left to you, and turning it off takes the line and the fil
 
 It goes the other way too: `patchbay://web-01` in a runbook or an alert opens that
 device. A link carries a device *name*, resolved against your own config - never an
-address, so a link can't point you at a machine you don't have. macOS for now.
+address, so a link can't point you at a machine you don't have.
 
 ## Folders and web UIs
 

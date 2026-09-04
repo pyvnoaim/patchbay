@@ -10,6 +10,18 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- Closing a tab, a broadcast group or the window with a live session in it asks
+  first; a second ⌘W is the yes. A page, a file listing or a finished session closes
+  without a question.
+- A device sheet with something typed into it asks before Escape or a click outside
+  throws it away.
+- Duplicate is a button on the device's pane now, not just a right-click item.
+- Left and Right arrows walk the folder tree: fold, unfold, step up or down.
+- **Quick connect.** Type `user@host` or `host:2222` into the search and press Enter:
+  a session, no record. Your `~/.ssh/config` still applies; nothing else does.
+- The tabs you had open come back on the next launch: shells, web pages and file
+  listings, in the same order. A remote desktop asks for a password, so it doesn't.
+- A shell's tab carries its device's mark, so six shells on six boxes tell apart.
 - The search palette puts the devices you opened most recently first. The list itself
   keeps the order you filed it in.
 - **Import a Royal TS document.** Point patchbay at a `.rtsz` and it reads the lot:
@@ -32,8 +44,8 @@ it back. Nothing is retyped anywhere.
   Click a pane to focus it and one keystroke goes there instead; the tab's broadcast
   toggle turns fan-out on and off without closing anything. Marks a NAS's web UI along
   with the ssh boxes? The web ones are left out and named.
-- A bulk-action bar appears when you mark two or more devices: move them, broadcast to
-  them, or delete them without hunting for the right-click menu.
+- A bulk-action bar appears when you mark two or more devices: broadcast to them or
+  delete them without hunting for the right-click menu.
 - A device whose address begins with `-` is refused rather than handed to `ssh`, which
   would have read it as an option. Nothing in a config file is executed as written, and
   now that holds for a ping or traceroute through a jump too.
@@ -51,7 +63,8 @@ it back. Nothing is retyped anywhere.
 - A **Map** view beside the list: devices grouped by the route to them, so a bastion
   and everything behind it sit together however you filed them. A bastion that isn't
   answering says so once, instead of every device behind it looking broken on its own.
-- `patchbay://web-01` in a runbook or an alert opens that device. macOS for now.
+- `patchbay://web-01` in a runbook or an alert opens that device, on every desktop.
+  A second copy launched by a link hands it to the one already running.
 - A device still being checked has a dot that says so, rather than looking the same
   as one nothing is checking.
 - The file browser writes as well as reads: rename, delete, and a new folder to
@@ -62,8 +75,7 @@ it back. Nothing is retyped anywhere.
   write `-R 9000:localhost:9000` or `-D 1080` in the same field. Importing an ssh
   config brings `RemoteForward` and `DynamicForward` across too.
 - Find in a session: ⌘F, or Ctrl+Shift+F, searches that terminal's scrollback.
-- ⌘-click and shift-click pick out several devices at once, to delete them or
-  move them to another folder in one go.
+- ⌘-click and shift-click pick out several devices at once, to act on them in one go.
 - A device's forwards can be held open on their own, without a session, from the
   Forwards section of its pane.
 - Importing an ssh config brings `LocalForward` lines across as forwards.

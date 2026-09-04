@@ -94,7 +94,7 @@ document.addEventListener("contextmenu", (e) => {
       ...(j.vnc ? [{ icon: "screen-share", label: "VNC", key: ent("vnc"), run: () => openVnc(j.name) }] : []),
       // sftp rides the ssh connection, so it is offered exactly where ssh is.
       ...(j.ssh ? [{ icon: "folder", label: "Browse files", key: ent("sftp"), run: () => openFilesSession(j.name) }] : []),
-      { icon: "copy", label: "Copy ssh command", run: () => navigator.clipboard.writeText(j.command).catch(() => {}) },
+      { icon: "copy", label: "Copy ssh command", run: () => navigator.clipboard.writeText(j.command).catch(alertish) },
       "-",
       { icon: "plug", label: "Ping", run: () => openSession(j.name, "ping") },
       { icon: "waypoints", label: "Trace route", run: () => openSession(j.name, "trace") },
@@ -110,8 +110,6 @@ document.addEventListener("contextmenu", (e) => {
     return showCtx(e.clientX, e.clientY, "All devices", [
       { icon: "plus", label: "New device here…", run: () => openJack(null, { path: null }) },
       { icon: "folder-plus", label: "New folder…", run: () => newGroup({ path: null }) },
-      "-",
-      // Your own list is the config file; there is no version of it to remove.
     ]);
   }
 
@@ -149,7 +147,7 @@ document.addEventListener("contextmenu", (e) => {
       ]),
       { icon: "download", label: entry.dir ? "Download folder" : "Download",
         run: () => downloadFile(s, entry.name, entry.dir) },
-      { icon: "copy", label: "Copy path", run: () => navigator.clipboard.writeText(path).catch(() => {}) },
+      { icon: "copy", label: "Copy path", run: () => navigator.clipboard.writeText(path).catch(alertish) },
       "-",
       { icon: "pencil", label: "Rename…", run: () => renameFile(s, entry) },
       { icon: "trash-2", label: "Delete", danger: true, run: () => removeFile(s, entry) },
@@ -160,7 +158,7 @@ document.addEventListener("contextmenu", (e) => {
     { icon: "plus", label: "New device…", run: () => openJack(null, group) },
     { icon: "folder-plus", label: "New folder…", run: () => newGroup({ path: null }) },
     "-",
-    { icon: "file-pen-line", label: "Open config file", run: () => invoke("open_config") },
+    { icon: "file-pen-line", label: "Open config file", run: () => invoke("open_config").catch(alertish) },
   ]);
 });
 window.addEventListener("blur", hideCtx);
@@ -169,6 +167,10 @@ window.addEventListener("resize", hideCtx);
 
 // ── ask (one-line prompt) ──────────────────────────────────────────────────
 let askResolve = null;
+// The key that answers the open question with yes, when the question was asked by a
+// chord: ⌘W twice closes the session, so a confirm is a repeat and not a reach for
+// the mouse. Set by the asker, cleared with the sheet.
+let askAgain = null;
 // A prompt when there is something to type, a plain confirmation when `value` is
 // null. Pre-filling a box with the answer and then checking you typed it back is
 // ceremony, not a safeguard - the button label already says what will happen.
@@ -192,7 +194,7 @@ function ask(title, value = "", okLabel = "OK", type = "text", user = null) {
   else { askInput.focus(); askInput.select(); }
   return new Promise((res) => (askResolve = res));
 }
-function closeAsk(v) { askWrap.hidden = true; askResolve?.(v); askResolve = null; }
+function closeAsk(v) { askWrap.hidden = true; askAgain = null; askResolve?.(v); askResolve = null; }
 askForm.addEventListener("submit", (e) => {
   e.preventDefault();
   if (askBody.hidden) return closeAsk(true);
@@ -441,8 +443,18 @@ function openJack(j, prefillGroup) {
   jackFields();
   sheetWrap.hidden = false;
   f.name.focus();
+  jfWas = jfState();
 }
+// What the sheet holds, as one string: same after typing means nothing to lose.
+const jfState = () => JSON.stringify([...new FormData(jackForm)]);
+let jfWas = "";
 const closeJack = () => { sheetWrap.hidden = true; };
+/// Escape and the backdrop, the two ways out that are not a decision: a sheet with
+/// something typed into it asks first. Save and Cancel are decisions and don't.
+async function leaveJack() {
+  if (jfState() !== jfWas && !(await ask("Discard what you typed?", null, "Discard"))) return;
+  closeJack();
+}
 const list2 = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
 
 jackForm.addEventListener("submit", async (e) => {
@@ -490,11 +502,11 @@ jackForm.addEventListener("submit", async (e) => {
   } catch (err) { showErr(jfErr, String(err)); }
 });
 $("jf-cancel").addEventListener("click", closeJack);
-sheetWrap.addEventListener("mousedown", (e) => { if (e.target === sheetWrap) closeJack(); });
+sheetWrap.addEventListener("mousedown", (e) => { if (e.target === sheetWrap) leaveJack(); });
 jfDelete.addEventListener("click", () => {
   const n = editing;
   closeJack();
-  removeJack(n, sp);
+  removeJack(n);
 });
 
 function showErr(el, msg) { el.textContent = msg; el.hidden = false; }
@@ -507,7 +519,8 @@ async function removeJack(name) {
 }
 
 /// Both bulk actions loop the single-device command rather than adding one of their
-
+/// own: a config rewrite per device is fine at the sizes a list has, and one path
+/// through `config.rs` is one path to get right.
 async function removeMarked(js) {
   // Named, so this is a list you can check rather than a number to trust - but only
   // as far as the sheet can show without becoming a wall.
@@ -515,9 +528,14 @@ async function removeMarked(js) {
   const msg = `Delete ${js.length} devices? This edits your config file.`
     + `\n\n${names}${js.length > 8 ? `, and ${js.length - 8} more` : ""}`;
   if (!(await ask(msg, null, "Delete"))) return;
-  try {
-    for (const j of js) await invoke("delete_jack", { name: j.name });
-  } catch (e) { alertish(e); }
+  // One refusal doesn't abandon the rest: the ones it could delete are gone either
+  // way, so the honest answer names what is still there.
+  const failed = [];
+  for (const j of js) {
+    try { await invoke("delete_jack", { name: j.name }); }
+    catch { failed.push(j.name); }
+  }
+  if (failed.length) alertish(`could not delete ${failed.join(", ")}`);
   marked.clear();
   sel = 0;
   await load();
@@ -775,9 +793,10 @@ async function openSettings(pane) {
   $("update-said").textContent = lastChecked ? `Checked at ${lastChecked}` : "Not checked yet.";
   invoke("app_version")
     .then((v) => ($("appversion").textContent = `patchbay ${v}`))
-    .catch(() => {});
+    .catch(() => ($("appversion").textContent = "patchbay"));
+  // Already in state from the first load; a second ask is a second way to be blank.
+  $("cfgpath").textContent = cfgPath;
   setWrap.hidden = false;
-  try { $("cfgpath").textContent = await invoke("config_path"); } catch { /* shown blank */ }
 }
 const closeSettings = () => { setWrap.hidden = true; };
 
@@ -801,7 +820,9 @@ const DEFAULT_KEYS = ["user", "port", "key", "jump"];
 
 setForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const next = {};
+  // Over the current prefs, not from nothing: the sidebar width has no field here,
+  // and a save that forgot it handed Rust its default and snapped the column back.
+  const next = { ...prefs };
   for (const el of setForm.querySelectorAll("input[type=checkbox]")) next[el.name] = el.checked;
   next.theme = setForm.elements.theme.value;
   next.font_size = parseFloat(setForm.elements.font_size.value);
@@ -829,7 +850,7 @@ setForm.addEventListener("submit", async (e) => {
   } catch (err) { showErr(setErr, String(err)); }
 });
 $("set-cancel").addEventListener("click", closeSettings);
-$("page-openconfig").addEventListener("click", () => invoke("open_config"));
+$("page-openconfig").addEventListener("click", () => invoke("open_config").catch(alertish));
 $("page-checkupdate").addEventListener("click", () => checkUpdates($("update-said")));
 setWrap.addEventListener("mousedown", (e) => { if (e.target === setWrap) closeSettings(); });
 

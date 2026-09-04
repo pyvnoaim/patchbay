@@ -392,7 +392,8 @@ function renderJack(j, live) {
     ${j.url && j.primary !== "web" ? `<button class="ghost" data-act="web" data-tip="Open web UI">${icon("globe")}</button>` : ""}
     ${j.rdp && j.primary !== "rdp" ? `<button class="ghost" data-act="rdp" data-tip="Remote desktop">${icon("monitor")}</button>` : ""}
     ${j.vnc && j.primary !== "vnc" ? `<button class="ghost" data-act="vnc" data-tip="VNC">${icon("screen-share")}</button>` : ""}
-    <button class="ghost" data-act="edit" data-tip="Edit device">${icon("pencil")}</button>`;
+    <button class="ghost" data-act="edit" data-tip="Edit device">${icon("pencil")}</button>
+    <button class="ghost" data-act="dup" data-tip="Duplicate device">${icon("copy-plus")}</button>`;
 }
 
 // Selection must not rebuild the list: replacing innerHTML destroys the row under
@@ -479,6 +480,34 @@ const markedHere = () => shown.filter((j) => marked.has(j.name));
 
 const move = (d) => select(sel + d);
 
+/// A folder row taken as the list: the click and the arrow keys land here.
+function pickGroup(id, foldable) {
+  group = id;
+  if (foldable) expanded.add(gkey(id));
+  sel = 0;
+  // A different list is a different set of rows; marks made in the last one are not
+  // an answer to anything here.
+  marked.clear();
+  detailMode = "group";   // the pane describes the folder, not its first device
+  render();
+}
+
+/// Left folds the folder you are in, or steps up a row; Right unfolds it, or steps
+/// down one - the tree idiom of every file browser, over the rows the sidebar drew.
+function stepTree(d) {
+  const rows = [...treeEl.querySelectorAll(".group")];
+  const at = rows.findIndex((r) => r.getAttribute("aria-current") === "true");
+  const cur = rows[at];
+  const id = cur?.dataset.group ? { path: cur.dataset.path } : null;
+  const open = id && cur.dataset.hasKids === "true" && expanded.has(gkey(id));
+  if (id && cur.dataset.hasKids === "true" && (d < 0) === !!open) {
+    open ? expanded.delete(gkey(id)) : expanded.add(gkey(id));
+    return render();
+  }
+  const next = rows[at + d];
+  if (next) pickGroup(next.dataset.group ? { path: next.dataset.path } : null, false);
+}
+
 /// In a tab, like a terminal and like RDP. "Open in browser" is still on the context
 /// menu, and `web_check` offers it when the page is one a webview can't show - an
 /// appliance's self-signed certificate has no click-through here, only in a browser.
@@ -559,10 +588,23 @@ function palMatches() {
   const rank = (j) => { const i = recent.indexOf(j.name); return i < 0 ? recent.length : i; };
   return all.filter((j) => hit(j, f)).sort((a, b) => rank(a) - rank(b)).slice(0, 40);
 }
+/// What the palette offers when nothing matches: `user@host`, `host:2222`, typed and
+/// opened without a record. One word, because that is all ssh gets - Rust applies the
+/// same guard a config'd host gets, so this is a shortcut past the sheet, not past it.
+const adhoc = () => {
+  const q = pq.value.trim();
+  return q && !/\s/.test(q) && !q.startsWith("-") && !palMatches().length ? q : null;
+};
 function renderPalette() {
   const rows = palMatches();
   palSel = Math.min(palSel, Math.max(0, rows.length - 1));
-  presultsEl.innerHTML = rows.length
+  const quick = adhoc();
+  presultsEl.innerHTML = quick
+    ? `<div class="jack" data-adhoc="1" aria-selected="true">
+        <span class="os">${icon("square-terminal")}</span>
+        <span class="name">${esc(quick)}</span>
+        <span class="host">quick connect</span></div>`
+    : rows.length
     ? rows.map((j, i) => {
         // Same rule as the list: the selected row is a solid block of accent, and a
         // brand colour tuned against the panel disappears on it.
