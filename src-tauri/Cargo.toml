@@ -70,6 +70,11 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.5"
 
+[lints.clippy]
+# A command's parameters are its IPC contract with the window; a struct would only
+# move the list.
+too_many_arguments = "allow"
+
 [profile.release]
 opt-level = "s"
 lto = true

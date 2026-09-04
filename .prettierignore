@@ -1,0 +1,8 @@
+# Generated or third-party; regenerate with `npm run icons` / `npm run brands` / `npm run vendor`.
+ui/gen/
+ui/vendor/
+src-tauri/gen/
+src-tauri/target/
+node_modules/
+package-lock.json
+*.md
