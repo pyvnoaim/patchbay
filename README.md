@@ -69,7 +69,8 @@ command line, and the window shows it before it runs.
 ```sh
 npm run dev          # the app window, against dev/patchbay.toml
 npm run build        # patchbay.app / .exe / .deb
-npm test             # the app and the server
+npm test             # cargo test
+npm run check        # formatting and lints, what CI runs
 ```
 
 `npm run dev` needs Rust (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`) -
