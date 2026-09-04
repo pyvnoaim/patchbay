@@ -10,6 +10,7 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- Clicking the empty space under the list clears the marks; the selection stays.
 - Closing a tab, a broadcast group or the window with a live session in it asks
   first; a second ⌘W is the yes. A page, a file listing or a finished session closes
   without a question.

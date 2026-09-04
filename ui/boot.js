@@ -1,6 +1,5 @@
-// Classic script, no bundler - see the load order in ui/index.html.
-// Loaded last: wires the keyboard and starts everything, so every function
-// the handlers reach is already defined.
+// Wires the keyboard and starts everything. Loaded last, so every function the
+// handlers reach is already defined; see the load order in ui/index.html.
 
 // ── events ─────────────────────────────────────────────────────────────────
 searchBtn.addEventListener("click", () => openPalette());
@@ -11,14 +10,12 @@ $("viewmode").addEventListener("click", () => {
 $("newjack").addEventListener("click", () => openJack(null, group));
 $("newgroup").addEventListener("click", () => newGroup({ path: null }));
 $("editcfg").addEventListener("click", () => invoke("open_config").catch(alertish));
-// Called, not passed: a listener hands its handler the event, which as a pane name
-// matches nothing and hides every one of them.
+// Called, not passed: the event would arrive as the pane name and match nothing.
 $("settings").addEventListener("click", () => openSettings());
 
 treeEl.addEventListener("click", (e) => {
   const el = e.target.closest(".group");
   if (!el) return;
-  // "All jacks" carries no group of its own; every other row does.
   const id = el.dataset.group ? { path: el.dataset.path || null } : null;
   // Clicking the triangle folds; clicking the row selects.
   const foldable = el.dataset.hasKids === "true";
@@ -31,24 +28,25 @@ treeEl.addEventListener("click", (e) => {
 listEl.addEventListener("click", (e) => {
   const act = e.target.closest("[data-first]")?.dataset.first;
   if (act === "new") return openJack(null, group);
-  // The first run points at the pane that owns importing, rather than at one of
-  // the two sources - which one you have is not something a blank window knows.
   if (act === "import") return openSettings("import");
   if (act === "cfg") return invoke("open_config").catch(alertish);
   const row = e.target.closest(".jack");
-  if (!row) return;
-  // The map draws a jump host that isn't one of your devices as a row with nothing
-  // behind it. There is nothing to select, connect to or delete there.
+  // Clicking under the rows clears the marks and keeps the selection.
+  if (!row) {
+    if (marked.size) {
+      marked.clear();
+      paintRows();
+    }
+    return;
+  }
+  // The map draws a jump host that isn't a device as a row with nothing behind it.
   if (row.dataset.i === undefined) return;
   const i = +row.dataset.i;
   if (e.metaKey || e.ctrlKey) return markToggle(i);
   if (e.shiftKey) return markRange(i);
-  // A plain click is about one device, so it drops whatever was picked out - the same
-  // thing clicking away does in every other list.
   marked.clear();
   select(i);
-  // e.detail is the click count, so this survives a re-render landing mid-gesture
-  // in a way a separate dblclick listener does not.
+  // e.detail is the click count, so this survives a re-render landing mid-gesture.
   if (e.detail === 2) primary(shown[sel].name);
 });
 
@@ -72,43 +70,65 @@ detailPane.addEventListener("click", async (e) => {
   if (act === "vnc") openVnc(j.name);
   if (act === "files") openFilesSession(j.name);
   if (act === "forward") {
-    try { await invoke("open_forwards", { name: j.name }); }
-    catch (e) { alertish(e); }
+    try {
+      await invoke("open_forwards", { name: j.name });
+    } catch (e) {
+      alertish(e);
+    }
     refreshTunnels();
   }
   if (act === "untunnel") {
     try {
-      for (const t of tunnels.filter((x) => x.jack === j.name)) await invoke("close_tunnel", { id: t.id });
-    } catch (e) { alertish(e); }
+      for (const t of tunnels.filter((x) => x.jack === j.name))
+        await invoke("close_tunnel", { id: t.id });
+    } catch (e) {
+      alertish(e);
+    }
     refreshTunnels();
   }
   if (act === "edit") openJack(j);
   if (act === "dup") openJack({ ...j, name: "" });
   if (act === "copy") {
     const btn = e.target.closest("[data-act]");
-    try { await navigator.clipboard.writeText(j.command); btn.innerHTML = icon("check"); }
-    catch { btn.innerHTML = icon("circle-off"); }
+    try {
+      await navigator.clipboard.writeText(j.command);
+      btn.innerHTML = icon("check");
+    } catch {
+      btn.innerHTML = icon("circle-off");
+    }
     setTimeout(() => (btn.innerHTML = icon("copy")), 900);
   }
 });
 
 presultsEl.addEventListener("click", (e) => {
-  if (e.target.closest("[data-adhoc]")) { const q = adhoc(); closePalette(); return connect(q); }
+  if (e.target.closest("[data-adhoc]")) {
+    const q = adhoc();
+    closePalette();
+    return connect(q);
+  }
   const row = e.target.closest("[data-pi]");
   if (!row) return;
   const j = palMatches()[+row.dataset.pi];
   closePalette();
   connect(j.name);
 });
-pq.addEventListener("input", () => { palSel = 0; renderPalette(); });
-paletteEl.addEventListener("mousedown", (e) => { if (e.target === paletteEl) closePalette(); });
+pq.addEventListener("input", () => {
+  palSel = 0;
+  renderPalette();
+});
+paletteEl.addEventListener("mousedown", (e) => {
+  if (e.target === paletteEl) closePalette();
+});
 
 document.addEventListener("keydown", (e) => {
   const mod = e.metaKey || e.ctrlKey;
 
-  // A sheet is modal: let it have the keyboard, bar Escape.
+  // A sheet is modal: it has the keyboard, bar Escape.
   if (sheetOpen()) {
-    if (!askWrap.hidden && mod && askAgain === e.key) { e.preventDefault(); return closeAsk(true); }
+    if (!askWrap.hidden && mod && askAgain === e.key) {
+      e.preventDefault();
+      return closeAsk(true);
+    }
     if (e.key === "Escape") {
       e.preventDefault();
       if (!askWrap.hidden) closeAsk(null);
@@ -118,88 +138,140 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
-  // An open menu is modal like a sheet: without this, typing behind it opens the
-  // palette on top of the menu you were still reading.
+  // An open context menu is modal like a sheet.
   if (!ctxEl.hidden) {
     const rows = [...ctxEl.querySelectorAll(".ctx-item")];
     const at = rows.findIndex((r) => r.classList.contains("on"));
-    if (e.key === "Escape") { e.preventDefault(); hideCtx(); }
-    else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      hideCtx();
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const step = e.key === "ArrowDown" ? 1 : -1;
       const to = ((at < 0 ? (step > 0 ? -1 : 0) : at) + step + rows.length) % rows.length;
       rows.forEach((r, i) => r.classList.toggle("on", i === to));
-    } else if (e.key === "Enter" && rows[at]) { e.preventDefault(); rows[at].click(); }
+    } else if (e.key === "Enter" && rows[at]) {
+      e.preventDefault();
+      rows[at].click();
+    }
     return;
   }
 
-  if (mod && e.key === "k") { e.preventDefault(); return palOpen() ? closePalette() : openPalette(); }
-  if (mod && e.key === "n") { e.preventDefault(); return openJack(null, group); }
-  if (mod && e.key === ",") { e.preventDefault(); return openSettings(); }
-  if (mod && e.key === "[") { e.preventDefault(); return cycleSession(-1); }
-  if (mod && e.key === "]") { e.preventDefault(); return cycleSession(1); }
-  // The one chord a session gives up, and on macOS only: Ctrl+F is readline's own
-  // forward-char, so elsewhere it is Ctrl+Shift+F, which is how every Linux terminal
-  // spells find. It does nothing outside a session, where ⌘K is already the search.
+  if (mod && e.key === "k") {
+    e.preventDefault();
+    return palOpen() ? closePalette() : openPalette();
+  }
+  if (mod && e.key === "n") {
+    e.preventDefault();
+    return openJack(null, group);
+  }
+  if (mod && e.key === ",") {
+    e.preventDefault();
+    return openSettings();
+  }
+  if (mod && e.key === "[") {
+    e.preventDefault();
+    return cycleSession(-1);
+  }
+  if (mod && e.key === "]") {
+    e.preventDefault();
+    return cycleSession(1);
+  }
+  // Find is ⌘F on macOS and Ctrl+Shift+F elsewhere: plain Ctrl+F is readline's
+  // forward-char, and a session owns the keyboard.
   if (e.key.toLowerCase() === "f" && (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && e.shiftKey)) {
     e.preventDefault();
     return toggleFind();
   }
 
-  // Above the session guard on purpose: the palette is modal and holds the focus,
-  // so those keys were never ssh's to begin with. Below it, Escape could not close
-  // the palette at all while a tab was open.
+  // Above the session guard on purpose: the palette is modal, so these keys were
+  // never ssh's, and Escape must still close it while a tab is open.
   if (palOpen()) {
     const rows = palMatches();
-    if (e.key === "Escape") { e.preventDefault(); closePalette(); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); palSel = (palSel + 1) % Math.max(1, rows.length); renderPalette(); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); palSel = (palSel - 1 + rows.length) % Math.max(1, rows.length); renderPalette(); }
-    else if (e.key === "Enter" && rows[palSel]) { e.preventDefault(); const n = rows[palSel].name; closePalette(); primary(n); }
-    else if (e.key === "Enter" && adhoc()) { e.preventDefault(); const q = adhoc(); closePalette(); connect(q); }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closePalette();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      palSel = (palSel + 1) % Math.max(1, rows.length);
+      renderPalette();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      palSel = (palSel - 1 + rows.length) % Math.max(1, rows.length);
+      renderPalette();
+    } else if (e.key === "Enter" && rows[palSel]) {
+      e.preventDefault();
+      const n = rows[palSel].name;
+      closePalette();
+      primary(n);
+    } else if (e.key === "Enter" && adhoc()) {
+      e.preventDefault();
+      const q = adhoc();
+      closePalette();
+      connect(q);
+    }
     return;
   }
 
-  // A live session owns the keyboard - every keystroke belongs to ssh, not to us.
-  // Only the window-level shortcuts above and these get intercepted.
+  // A live session owns the keyboard: only the window-level chords above and ⌘W
+  // are intercepted; every other keystroke belongs to ssh.
   if (activeId !== null) {
-    if (mod && e.key === "w") { e.preventDefault(); closeSession(activeId); }
+    if (mod && e.key === "w") {
+      e.preventDefault();
+      closeSession(activeId);
+    }
     return;
   }
-  // A folder note is the one text box outside a sheet: a letter typed into it is
-  // the note's, not the palette's, and Backspace is not a delete of the device.
+  // A folder note is the one text box outside a sheet; its keystrokes are its own.
   if (e.target.closest("input, textarea")) {
     if (e.key === "Escape") e.target.blur();
     return;
   }
 
-  if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "n")) { e.preventDefault(); move(1); }
-  else if (e.key === "ArrowUp" || (e.ctrlKey && e.key === "p")) { e.preventDefault(); move(-1); }
-  else if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); stepTree(e.key === "ArrowLeft" ? -1 : 1); }
-  else if (e.key === "Enter" && shown[sel]) { e.preventDefault(); primary(shown[sel].name); }
-  else if (e.key === "Escape") {
-    // Two-stage: marks first, folder and selection second. Escape used to do all
-    // three at once, which threw the highlighted row back to the top the moment
-    // you cleared a batch you'd finished with.
-    if (marked.size) { marked.clear(); paintRows(); }
-    else { group = null; sel = 0; render(); }
-  }
-  else if (shown[sel] && (e.key === "Backspace" || e.key === "Delete")) {
+  if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "n")) {
+    e.preventDefault();
+    move(1);
+  } else if (e.key === "ArrowUp" || (e.ctrlKey && e.key === "p")) {
+    e.preventDefault();
+    move(-1);
+  } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    e.preventDefault();
+    stepTree(e.key === "ArrowLeft" ? -1 : 1);
+  } else if (e.key === "Enter" && shown[sel]) {
+    e.preventDefault();
+    primary(shown[sel].name);
+  } else if (e.key === "Escape") {
+    // Two-stage: marks first, folder and selection second.
+    if (marked.size) {
+      marked.clear();
+      paintRows();
+    } else {
+      group = null;
+      sel = 0;
+      render();
+    }
+  } else if (shown[sel] && (e.key === "Backspace" || e.key === "Delete")) {
     e.preventDefault();
     const bulk = markedHere();
     if (bulk.length > 1) removeMarked(bulk);
     else removeJack(shown[sel].name);
+  } else if (mod && e.key === "e") {
+    e.preventDefault();
+    invoke("open_config").catch(alertish);
+  } else if (mod && e.key === "r") {
+    e.preventDefault();
+    load();
   }
-  else if (mod && e.key === "e") { e.preventDefault(); invoke("open_config").catch(alertish); }
-  else if (mod && e.key === "r") { e.preventDefault(); load(); }
-  // Just start typing, like fzf - the palette opens carrying the keystroke.
-  else if (!mod && !e.altKey && e.key.length === 1) { e.preventDefault(); openPalette(e.key); }
+  // Just start typing: the palette opens carrying the keystroke.
+  else if (!mod && !e.altKey && e.key.length === 1) {
+    e.preventDefault();
+    openPalette(e.key);
+  }
 });
 
 // ── load ───────────────────────────────────────────────────────────────────
-/// The window opens on an empty grid while the first load() fetches, so #app waits
-/// hidden and arrives with its contents already in it. The class comes back off
-/// once it has played: the lists are innerHTML and render() runs on every window
-/// focus, so a rule left on the body would re-stagger every row on every alt-tab.
+// #app waits hidden until the first load() so it arrives with its contents. The
+// intro class comes off once played, or every re-render would re-stagger the rows.
 function reveal() {
   if (!appEl.hidden) return;
   appEl.hidden = false;
@@ -209,10 +281,8 @@ function reveal() {
 
 async function load() {
   try {
-    // Eight independent reads of the same config. Serially they were eight round
-    // trips stacked in front of the first paint, and load() runs on every focus.
-    // `jacks` is the only one left uncaught - it failing is what the error branch
-    // below is for, and Promise.all rejecting is how it still gets there.
+    // In parallel: load() runs on every focus and sits in front of the first paint.
+    // Only `jacks` is left uncaught; its failure is what the error branch is for.
     let noteRows;
     [prefs, sshKeys, colors, cfgPath, tunnels, noteRows, all] = await Promise.all([
       invoke("settings").catch(() => ({})),
@@ -224,8 +294,7 @@ async function load() {
       invoke("jacks"),
     ]);
     notes = new Map(noteRows.map((n) => [n.path, n.note]));
-    // Open the first level once, on the first load only - doing it every time
-    // would re-open folders the moment the window regains focus.
+    // Open the first level on the first load only, or focus would re-open folders.
     if (!seeded) {
       for (const j of all) {
         for (const f of j.folders) expanded.add(gkey({ path: f.split("/")[0] }));
@@ -244,112 +313,114 @@ async function load() {
 }
 
 const PROBE_EVERY = 30_000;
+// Throttled: load() runs on every focus and a sweep opens a socket to every jack.
+// Skipped in the background too, except for the first sweep, so a window that opens
+// behind something else still gets its dots.
 async function refreshProbes() {
-  // Throttled because load() runs on every window focus, and a sweep opens a
-  // socket to every jack. Alt-tabbing shouldn't hammer the whole estate.
   if (prefs.probe === false) return;
-  // And nothing at all while the window is in the background: the interval below
-  // outlives your attention, and a socket to every host every 30s is a cost the
-  // machine pays for a pane no one is reading. Coming back calls load(), which
-  // calls this - so the dots are current the moment they're looked at again.
-  // The first sweep goes ahead either way: a window that opens behind something
-  // else, or on the other screen, would otherwise show no dots at all until clicked.
   if (lastProbe && !document.hasFocus()) return;
   if (Date.now() - lastProbe < PROBE_EVERY) return;
   lastProbe = Date.now();
   try {
     probes = new Map((await invoke("probe")).map((p) => [p.name, p]));
     render();
-  } catch { /* a failed sweep just leaves the dots hollow */ }
+  } catch {
+    /* a failed sweep just leaves the dots hollow */
+  }
 }
 
 // ── sidebar width ──────────────────────────────────────────────────────────
 const SIDE_DEFAULT = 208;
 
-/// Clamped here as well as in Rust: this is the one that stops you dragging your own
-/// list off the screen, and the config could always have been edited by hand.
+// Clamped here as well as in Rust: the config can be hand-edited.
 const applySidebar = (px) =>
   document.documentElement.style.setProperty(
-    "--side-w", `${Math.round(Math.min(480, Math.max(150, px || SIDE_DEFAULT)))}px`);
+    "--side-w",
+    `${Math.round(Math.min(480, Math.max(150, px || SIDE_DEFAULT)))}px`,
+  );
 
-/// The width as it now stands, written once. Both ways of changing it end here.
+// Write the width once a drag ends, not sixty times a second.
 function keepSidebar() {
   const px = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--side-w"));
-  // The config is a file people hand-edit, not somewhere to put sixty writes a second.
   if (px !== prefs.sidebar) {
     prefs = { ...prefs, sidebar: px };
     invoke("save_settings", { next: prefs }).catch(alertish);
   }
-  // The panes either side just changed size, and xterm sizes itself to its host.
+  // xterm sizes itself to its host, which just changed.
   dispatchEvent(new Event("resize"));
 }
 
 const grip = $("sidegrip");
-// The divider convention everywhere else: double-click puts it back.
-grip.addEventListener("dblclick", () => { applySidebar(SIDE_DEFAULT); keepSidebar(); });
+// Double-click puts the divider back.
+grip.addEventListener("dblclick", () => {
+  applySidebar(SIDE_DEFAULT);
+  keepSidebar();
+});
 grip.addEventListener("pointerdown", (e) => {
-  // Or the pointer picks up the text either side of it on the way past.
+  // Or the drag selects the text either side of it.
   e.preventDefault();
   grip.setPointerCapture(e.pointerId);
   grip.classList.add("on");
   const move = (ev) => applySidebar(ev.clientX);
   grip.addEventListener("pointermove", move);
-  // Not pointerup: a drag that crosses a web tab is a drag over an OS view above the
-  // page, which takes the pointer with it. Losing the capture is the one thing that
-  // happens either way, so it is what finishes the drag.
-  grip.addEventListener("lostpointercapture", () => {
-    grip.removeEventListener("pointermove", move);
-    grip.classList.remove("on");
-    keepSidebar();
-  }, { once: true });
+  // Not pointerup: a drag crossing a web tab (an OS view above the page) loses the
+  // pointer, and losing the capture is what happens either way.
+  grip.addEventListener(
+    "lostpointercapture",
+    () => {
+      grip.removeEventListener("pointermove", move);
+      grip.classList.remove("on");
+      keepSidebar();
+    },
+    { once: true },
+  );
 });
 
 // ── update ─────────────────────────────────────────────────────────────────
-/// Once per launch, and never in the way - see the pill in edit.js. An endpoint that
-/// can't be reached and an app that is already current both say nothing: the check
-/// runs on every launch, so the next one can raise it.
+// Once per launch, quiet unless there is something to install.
 async function offerUpdate() {
   if (prefs.check_updates === false) return;
-  // `undefined` is the endpoint failing, `null` is it answering "nothing new" - the
-  // second is a check that happened and the settings pane says so.
+  // `undefined` is the endpoint failing, `null` is it answering "nothing new".
   const offer = await invoke("update_check").catch(() => undefined);
   if (offer !== undefined) checkedNow();
   if (offer) showUpdate(offer);
 }
 
-// The macOS menu's "Check for Updates…" - it only says it was asked for; what a
-// check looks like belongs to the window.
-// The menu bar still works with a sheet open, and the pill is *behind* a sheet - so
-// when settings is up, the answer goes to the line beside its button instead.
-listen("menu:check-update", () => checkUpdates(setWrap.hidden ? null : $("update-said")))
-  .catch(() => { /* no capability, so the settings button is the only way in */ });
+// The macOS menu's "Check for Updates…". The pill sits behind a sheet, so with
+// settings open the answer goes beside its button instead.
+listen("menu:check-update", () => checkUpdates(setWrap.hidden ? null : $("update-said"))).catch(
+  () => {
+    /* no capability, so the settings button is the only way in */
+  },
+);
 
-/// `patchbay://web-01` from a runbook, a ticket or an alert. Rust has already resolved
-/// it against this machine's config - the window only ever sees a name it already has,
-/// and opens it the way Enter would.
-///
-/// Asked for once as well as listened for: macOS launches the app to deliver the first
-/// link, and that arrives while this file is still fetching the list.
-listen("open:link", ({ payload: name }) => primary(name))
-  .catch(() => { /* no capability, so a link only works on a cold start */ });
+// A `patchbay://` link. Rust has already resolved it to a name in this config; the
+// window opens it the way Enter would. See `takeLink` for one that arrived early.
+listen("open:link", ({ payload: name }) => primary(name)).catch(() => {
+  /* no capability, so a link only works on a cold start */
+});
 
-/// The window's close button, held by Rust until the window has answered: a live
-/// session is asked about, the way one tab is. Quitting is `app.exit`, so the tunnels
-/// are still closed on the way out.
+// The close button, held by Rust until the window answers: a live session is asked
+// about. `quit` is `app.exit`, so tunnels are still closed on the way out.
 listen("window:close", async () => {
   const live = liveSessions().length;
-  if (live && !(await ask(`Quit with ${live} live session${live === 1 ? "" : "s"}?`, null, "Quit"))) return;
+  if (live && !(await ask(`Quit with ${live} live session${live === 1 ? "" : "s"}?`, null, "Quit")))
+    return;
   invoke("quit");
-}).catch(() => { /* no capability - and then the close is held with nobody to answer it */ });
+}).catch(() => {
+  /* no capability - and then the close is held with nobody to answer it */
+});
 
-/// Last time's tabs, in last time's order, for the devices that still exist. One at a
-/// time so the strip is in that order, and back on the list when done: the window
-/// opens as a list with sessions behind it, not on whichever shell was opened last.
+// Last time's tabs, in order, for devices that still exist. Ends back on the list.
 async function restoreTabs() {
   const open = { term: openSession, web: openWebSession, sftp: openFilesSession };
   const back = lastTabs.filter((t) => open[t.kind] && all.some((j) => j.name === t.name));
   for (const t of back) await open[t.kind](t.name);
-  if (back.length) { activeId = null; showTab(); render(); }
+  if (back.length) {
+    activeId = null;
+    showTab();
+    render();
+  }
 }
 
 async function takeLink() {
@@ -357,31 +428,28 @@ async function takeLink() {
   if (name) primary(name);
 }
 
-/// A previous install left `~/.ssh/patchbay.conf` and the `Include` line in
-/// `~/.ssh/config` behind - uninstall on macOS is drag-to-trash, and the app can't
-/// clean up when it isn't there. On launch, if the setting has been off since
-/// (re)install and either leftover is here, offer to sweep. Silent if the setting is
-/// on: then it isn't a leftover, it's the feature working.
+// Offer to sweep what a previous install left in `~/.ssh` while the setting is off.
 async function offerSshCleanup() {
   const left = await invoke("ssh_leftovers").catch(() => null);
   if (!left) return;
   showSshLeftover(left);
 }
 
-// Behind the first paint: the window is for the device list, not for an errand.
+// Errands run behind the first paint.
 load().then(restoreTabs).then(takeLink).then(offerUpdate).then(offerSshCleanup);
 setInterval(refreshProbes, PROBE_EVERY);
-// The config is a file you edit by hand, so pick up changes when the window comes back.
+// The config is hand-edited, so reload on focus.
 window.addEventListener("focus", load);
-// Not `matchMedia`: with a theme pinned, the page's own `color-scheme` fixes what
-// `prefers-color-scheme` reports, so the machine changing its mind fires nothing.
+// Not `matchMedia`: with a theme pinned, our own `color-scheme` fixes what
+// `prefers-color-scheme` reports.
 listen("tauri://theme-changed", () => {
   if (prefs.theme !== "light" && prefs.theme !== "dark") applyTheme();
-}).catch(() => { /* no capability, so the theme only follows on reload */ });
+}).catch(() => {
+  /* no capability, so the theme only follows on reload */
+});
 
 // ── tooltips ───────────────────────────────────────────────────────────────
-// One element at body level so it escapes every overflow:hidden ancestor -
-// a sheet clips a ::after tooltip, which is how this started.
+// One element at body level, so no overflow:hidden ancestor clips it.
 const tipEl = $("tip");
 let tipTimer = null;
 let tipFor = null;
@@ -395,12 +463,10 @@ function hideTip() {
 document.addEventListener("mouseover", (e) => {
   const el = e.target.closest("[data-tip]");
   if (!el || !el.dataset.tip) return hideTip();
-  // Crossing from the icon to the button's own padding is another `mouseover` for
-  // the same control, not a new tooltip.
+  // Icon to padding is another `mouseover` for the same control, not a new tooltip.
   if (el === tipFor) return;
   clearTimeout(tipTimer);
-  // Once one is up, the next follows the pointer straight away: a wait between two
-  // adjacent buttons reads as a flicker rather than as patience.
+  // Once one is up, the next follows the pointer straight away.
   const wait = tipEl.classList.contains("on") ? 0 : 150;
   tipFor = el;
   tipTimer = setTimeout(() => {
@@ -408,39 +474,41 @@ document.addEventListener("mouseover", (e) => {
     const t = el.getBoundingClientRect();
     const r = tipEl.getBoundingClientRect();
     const gap = 7;
-    // Above unless there is no room, and never past a window edge. `tipAt` is only for
-    // the few that sit hard against an edge and would otherwise be clamped anyway -
-    // centred is the default, and a button with room to centre should use it.
+    // Above unless there is no room, never past a window edge. `tipAt` is for the few
+    // controls hard against an edge.
     const below = t.top - r.height - gap < 4;
     const at = el.dataset.tipAt;
-    let left = at === "left" ? t.left : at === "right" ? t.right - r.width : t.left + (t.width - r.width) / 2;
+    let left =
+      at === "left"
+        ? t.left
+        : at === "right"
+          ? t.right - r.width
+          : t.left + (t.width - r.width) / 2;
     left = Math.max(6, Math.min(left, innerWidth - r.width - 6));
     const top = below ? t.bottom + gap : t.top - r.height - gap;
 
-    // A web tab is an OS-level view above the page, so a tooltip landing on it is
-    // simply not drawn - an invisible element that still thinks it's showing. Flip to
-    // the other side if that side is clear, and otherwise don't pretend: every tooltip
-    // that can land there labels a control you can already see.
+    // A web tab is an OS view above the page: a tooltip landing on it is not drawn.
+    // Flip to the other side if clear, otherwise skip it.
     const web = webViewRect();
-    const hits = (y) => web && t.left < web.right && t.left + r.width > web.left
-      && y < web.bottom && y + r.height > web.top;
+    const hits = (y) =>
+      web &&
+      t.left < web.right &&
+      t.left + r.width > web.left &&
+      y < web.bottom &&
+      y + r.height > web.top;
     let y = top;
     if (hits(y)) {
       const flipped = below ? t.top - r.height - gap : t.bottom + gap;
       if (hits(flipped) || flipped < 4) return hideTip();
       y = flipped;
     }
-    // Placed before it is shown: made visible first, it paints one frame wherever the
-    // last tooltip was.
+    // Placed before it is shown, or it paints one frame where the last one was.
     tipEl.style.left = `${Math.round(left)}px`;
     tipEl.style.top = `${Math.round(y)}px`;
     tipEl.classList.add("on");
-    // Long enough not to flash at everything the pointer crosses on the way somewhere,
-    // short enough that stopping on a button feels answered rather than waited on.
   }, wait);
 });
-// Only when the pointer actually leaves the control - `mouseout` also fires on the way
-// from a button's icon to its padding, and hiding there is the flicker.
+// Only when the pointer leaves the control: `mouseout` also fires from icon to padding.
 document.addEventListener("mouseout", (e) => {
   const el = e.target.closest("[data-tip]");
   if (el && !el.contains(e.relatedTarget)) hideTip();
