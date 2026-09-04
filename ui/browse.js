@@ -457,6 +457,11 @@ $("dock")?.addEventListener("click", (e) => {
 function markToggle(i) {
   const n = shown[i]?.name;
   if (!n) return;
+  // The first ⌘-click picks out a *second* row: the one already selected is the first,
+  // the way it is in every other list and the way shift-click below has always treated
+  // it. Without this the dock counted two while three rows were lit, and the blue one -
+  // the most emphatic of the three - was the one Delete would have spared.
+  if (!marked.size && i !== sel && shown[sel]) marked.add(shown[sel].name);
   marked.has(n) ? marked.delete(n) : marked.add(n);
   // sel stays put: ⌘-click picks a row out of a group without moving the highlighted
   // one, which is what makes it an anchor for shift-click. Moving sel here also
@@ -478,12 +483,14 @@ const move = (d) => select(sel + d);
 /// menu, and `web_check` offers it when the page is one a webview can't show - an
 /// appliance's self-signed certificate has no click-through here, only in a browser.
 async function openWeb(name) {
+  used(name);
   await openWebSession(name);
 }
 
 /// In a tab, like a terminal. "Open in Windows App" on the context menu is still
 /// the handoff, for when someone wants their own client's settings.
 async function openRdp(name) {
+  used(name);
   await openRdpSession(name);
   await refreshTunnels();
 }
@@ -491,10 +498,12 @@ async function openRdp(name) {
 // No tab of our own: the OS opens whatever registered `vnc://`, the way the system
 // RDP client is handed a `.rdp`.
 async function openVnc(name) {
+  used(name);
   try { await invoke("open_vnc", { name }); } catch (e) { alertish(e); }
 }
 
 async function handOffRdp(name) {
+  used(name);
   try {
     await invoke("open_rdp", { name });
     await refreshTunnels();
@@ -519,6 +528,7 @@ function primary(name) {
 
 // In-app unless the preference says otherwise; `inTerminal` forces the handoff.
 async function connect(name, inTerminal = prefs.connect_in_terminal === true) {
+  used(name);
   if (!inTerminal) return openSession(name);
   try {
     await invoke("connect", { name });
@@ -540,9 +550,14 @@ function openPalette(seed = "") {
 }
 function closePalette() { paletteEl.hidden = true; }
 
+/// Recency first, file order behind it - the sort is stable, so devices you have never
+/// opened keep the order the config puts them in. Only the palette does this: the list
+/// is where your own filing lives, and rows that move under you while you read them
+/// would be a worse list, not a smarter one.
 function palMatches() {
   const f = pq.value.trim().toLowerCase();
-  return all.filter((j) => hit(j, f)).slice(0, 40);
+  const rank = (j) => { const i = recent.indexOf(j.name); return i < 0 ? recent.length : i; };
+  return all.filter((j) => hit(j, f)).sort((a, b) => rank(a) - rank(b)).slice(0, 40);
 }
 function renderPalette() {
   const rows = palMatches();

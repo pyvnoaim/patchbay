@@ -431,6 +431,7 @@ termsEl.addEventListener("click", async (e) => {
 // sftp in a tab. Ordinary HTML, unlike the web tab: nothing here is a foreign page,
 // so it lives in our own webview and behaves like the rest of the app.
 async function openFilesSession(name) {
+  used(name);
   const key = `sftp:${name}`;
   if (showOpen(key)) return;
   const id = nextId++;

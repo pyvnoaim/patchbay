@@ -176,3 +176,16 @@ function osColor(os) {
 const hit = (j, f) =>
   !f || j.name.toLowerCase().includes(f) || j.host.toLowerCase().includes(f) ||
   (j.desc ?? "").toLowerCase().includes(f) || j.folders.some((x) => x.toLowerCase().includes(f));
+
+// The names you have actually opened, most recent first, so the palette answers with
+// the box you were on ninety seconds ago rather than with whatever the file lists
+// first. `localStorage` and not the config: this is a habit rather than part of the
+// list, it changes several times an hour, and the config is a file people hand-edit.
+// A name that no longer exists just never matches - there is nothing to prune.
+let recent = [];
+try { recent = JSON.parse(localStorage.recent ?? "[]"); } catch { /* nothing to remember with */ }
+if (!Array.isArray(recent)) recent = [];
+function used(name) {
+  recent = [name, ...recent.filter((n) => n !== name)].slice(0, 40);
+  try { localStorage.recent = JSON.stringify(recent); } catch { /* nothing to remember with */ }
+}
