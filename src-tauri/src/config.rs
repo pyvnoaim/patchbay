@@ -146,6 +146,15 @@ fn write_doc(path: &Path, doc: &DocumentMut) -> Result<(), String> {
     std::fs::rename(&tmp, &path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// An empty file where there was none, so "Open config file" on a first run opens an
+/// editor rather than doing nothing - `open` on a missing path exits quietly.
+pub fn ensure_exists(path: &Path) -> Result<(), String> {
+    if path.exists() {
+        return Ok(());
+    }
+    write_doc(path, &DocumentMut::new())
+}
+
 /// toml_edit hangs the lines above a table on that table, so removing one deletes
 /// the comments sitting over it - including a file header that was never about it.
 /// Hands them back for `rehome_comments` instead.
@@ -530,6 +539,7 @@ pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
     t["os_colors"] = value(s.os_colors);
     t["check_updates"] = value(s.check_updates);
     t["log_sessions"] = value(s.log_sessions);
+    t["write_ssh_config"] = value(s.write_ssh_config);
     // Both are read straight back out by the window - one onto the root element, one
     // into xterm - so they are narrowed here rather than wherever they land.
     t["theme"] = value(match s.theme.as_str() {
@@ -841,6 +851,13 @@ folders = ["prod/eu/web"]
 
         save_settings_at(&p, &Settings { log_sessions: true, ..Settings::default() }).unwrap();
         assert!(load_settings_at(&p).log_sessions);
+    }
+
+    #[test]
+    fn the_ssh_config_switch_survives_a_save() {
+        let p = scratch("write_ssh_config");
+        save_settings_at(&p, &Settings { write_ssh_config: true, ..Settings::default() }).unwrap();
+        assert!(load_settings_at(&p).write_ssh_config);
     }
 
     #[test]

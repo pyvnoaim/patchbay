@@ -134,8 +134,14 @@ pub fn parse(src: &str) -> Result<Jacks, String> {
         .collect())
 }
 
+/// No file is an empty list, not an error: it is what a first launch looks like, and
+/// the window has a page for that. A file that exists but won't parse is still one.
 pub fn load(path: &Path) -> Result<Jacks, String> {
-    let src = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let src = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Jacks::default()),
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    };
     parse(&src).map_err(|e| format!("{}: {e}", path.display()))
 }
 
@@ -349,6 +355,29 @@ pub fn resolve(query: &str, jacks: &Jacks) -> Result<String, String> {
     }
 }
 
+/// `user@host:2222` typed into the palette, as an argv - a connection without a
+/// record, for the box you will touch once. Nothing here is looked up: no defaults,
+/// no jump, no key; `~/.ssh/config` is the place those live for a host like this.
+/// The same `dest` guard as a config'd host, because this is argv all the same.
+pub fn adhoc_args(query: &str) -> Result<Vec<String>, String> {
+    let q = query.trim();
+    let (target, port) = match q.rsplit_once(':') {
+        Some((t, p)) if p.chars().all(|c| c.is_ascii_digit()) && !p.is_empty() => (t, Some(p)),
+        _ => (q, None),
+    };
+    if target.is_empty() || q.chars().any(char::is_whitespace) {
+        return Err(format!("no jack matching \"{q}\""));
+    }
+    let target = dest(target.to_string())?;
+    let mut args = Vec::new();
+    if let Some(p) = port {
+        args.push("-p".into());
+        args.push(p.into());
+    }
+    args.push(target);
+    Ok(args)
+}
+
 /// How a device is reached: "ssh", "rdp", "vnc" or "web". The sheet's radio, resolved in
 /// one place so the CLI refuses what the window wouldn't offer. `primary` is still read
 /// for configs that set several, and ignored when it names something the device lost.
@@ -410,6 +439,25 @@ mod tests {
             "#,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_quick_connect_is_the_query_and_nothing_else() {
+        assert_eq!(adhoc_args("root@10.0.0.5").unwrap(), vec!["root@10.0.0.5"]);
+        assert_eq!(adhoc_args("box:2222").unwrap(), vec!["-p", "2222", "box"]);
+        assert!(adhoc_args("-oProxyCommand=id").is_err());
+        assert!(adhoc_args("two words").is_err());
+        assert!(adhoc_args(":22").is_err());
+    }
+
+    #[test]
+    fn a_missing_config_is_a_first_run_not_an_error() {
+        let p = std::env::temp_dir().join(format!("patchbay-{}-missing.toml", std::process::id()));
+        let _ = std::fs::remove_file(&p);
+        assert!(load(&p).unwrap().is_empty());
+        std::fs::write(&p, "[jack.x]\nhost = 1\n").unwrap();
+        assert!(load(&p).is_err());
+        let _ = std::fs::remove_file(&p);
     }
 
     /// The website's hero panel lets you edit this config and shows the argv it
