@@ -93,7 +93,9 @@ pub fn open(args: &[String]) -> Result<(), String> {
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn open(args: &[String]) -> Result<(), String> {
     let cmd = command_line(args);
-    // ponytail: first terminal that launches wins; add $TERMINAL when someone's isn't here.
+    // $TERMINAL first: the one convention there is, and the only way to pick one the
+    // list below doesn't know. `-e` is what every emulator that isn't listed accepts.
+    let own = std::env::var("TERMINAL").ok().filter(|t| !t.is_empty());
     let candidates: [(&str, &[&str]); 7] = [
         ("x-terminal-emulator", &["-e"]),
         ("gnome-terminal", &["--"]),
@@ -103,7 +105,20 @@ pub fn open(args: &[String]) -> Result<(), String> {
         ("foot", &[]),
         ("xterm", &["-e"]),
     ];
-    for (bin, flags) in candidates {
+    let flags_for = |bin: &str| -> &[&str] {
+        let base = std::path::Path::new(bin)
+            .file_name()
+            .map(|b| b.to_string_lossy());
+        candidates
+            .iter()
+            .find(|(b, _)| Some(*b) == base.as_deref())
+            .map_or(&["-e"], |(_, f)| f)
+    };
+    let tried = own
+        .iter()
+        .map(|t| (t.as_str(), flags_for(t)))
+        .chain(candidates.iter().map(|(b, f)| (*b, *f)));
+    for (bin, flags) in tried {
         let ok = Command::new(bin)
             .args(flags)
             .args(["sh", "-c", cmd.as_str()])
@@ -114,7 +129,7 @@ pub fn open(args: &[String]) -> Result<(), String> {
         }
     }
     Err(
-        "no terminal emulator found - tried gnome-terminal, konsole, alacritty, kitty, foot, xterm"
+        "no terminal emulator found - set $TERMINAL, or install gnome-terminal, konsole, alacritty, kitty, foot or xterm"
             .into(),
     )
 }
