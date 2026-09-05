@@ -1,4 +1,8 @@
 :root {
+  /* ui-monospace is WebKit only; WebView2 and older webkitgtk walk the list. */
+  --mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, "Cascadia Mono", Consolas, "DejaVu Sans Mono",
+    monospace;
   --fg: #f0f0f4;
   --fg-dim: #9c9ca8;
   --fg-faint: #6d6d78;
@@ -1096,7 +1100,7 @@ button,
   font-size: 11px;
 }
 .mono {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-family: var(--mono);
   font-size: 11px;
   line-height: 1.5;
   background: var(--row);
@@ -1396,7 +1400,7 @@ button.flat:hover {
   white-space: pre-line;
 }
 #ask-title .cmd {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-family: var(--mono);
   font-size: 11.5px;
   font-weight: 450;
 }
@@ -1543,7 +1547,7 @@ button.flat:hover {
 .imp-host {
   color: var(--fg-dim);
   font-size: 11.5px;
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-family: var(--mono);
 }
 .imp-tag {
   flex: none;
@@ -1670,7 +1674,7 @@ button.danger:hover {
   font-size: 12.5px;
 }
 .empty code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--mono);
   color: var(--fg-dim);
 }
 
@@ -2194,7 +2198,7 @@ button:disabled {
 }
 .opt code,
 .page-note code {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-family: var(--mono);
   font-size: 11.5px;
   color: var(--fg);
 }
@@ -2639,7 +2643,7 @@ body.intro #uptoast {
   margin-top: 5px;
 }
 #sl-list code {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-family: var(--mono);
   font-size: 11px;
   background: var(--row);
   border-radius: 4px;
@@ -2665,7 +2669,7 @@ body.intro #uptoast {
   margin-top: 5px;
 }
 #up-notes code {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-family: var(--mono);
   font-size: 11px;
   background: var(--row);
   border-radius: 4px;

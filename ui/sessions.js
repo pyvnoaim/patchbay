@@ -41,7 +41,7 @@ function restyleTerminals() {
 
 function makeTerm(host) {
   const term = new Terminal({
-    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace',
+    fontFamily: getComputedStyle(document.documentElement).getPropertyValue("--mono").trim(),
     fontSize: termFont(),
     // Exactly 1: any leading turns box-drawing rules in a TUI into dashed lines.
     lineHeight: 1,
