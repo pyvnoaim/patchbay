@@ -53,8 +53,14 @@ const msgWrap = $("msg"),
 
 const isMac = navigator.userAgent.includes("Mac");
 if (isMac) document.body.dataset.os = "macos";
-// Shortcut labels: ⌘K on macOS, Ctrl+K elsewhere.
-const chord = (k) => (isMac ? `⌘${k.toUpperCase()}` : `Ctrl+${k.toUpperCase()}`);
+// Shortcut labels: ⌘K on macOS, Ctrl+Shift+K elsewhere. Shift because a session owns
+// plain Ctrl: Ctrl+W is a shell's delete-word and Ctrl+[ is its Escape.
+const chord = (k) => (isMac ? `⌘${k.toUpperCase()}` : `Ctrl+Shift+${k.toUpperCase()}`);
+/** Whether a keydown carries the window's modifier, and which key it names: Shift
+ *  changes what `key` says, so punctuation is read off the physical key. */
+const chorded = (e) => (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && e.shiftKey);
+const chordKey = (e) =>
+  ({ BracketLeft: "[", BracketRight: "]", Comma: ",", Slash: "/" })[e.code] ?? e.key.toLowerCase();
 
 // The key for a folder in Sets and Maps; null is the row above all of them. Rust gets
 // the path itself, never this.

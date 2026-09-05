@@ -143,7 +143,8 @@ Repeated listings share one ssh session, so only the first one authenticates.
 - **Marks.** ⌘-click and shift-click pick out several devices; a dock appears to move,
   delete or **broadcast** to them - every ssh mark as a pane in one tab, one keystroke
   reaching all of them.
-- **Find** in a session: ⌘F, or Ctrl+Shift+F elsewhere, searches that terminal's scrollback.
+- **Find** in a session: ⌘F searches that terminal's scrollback. Every window chord is
+  Ctrl+Shift off macOS, because plain Ctrl+anything belongs to the shell you are in.
 - **Session logs**, off by default, append each session's output to `logs/` beside the config.
 - **Updates** are checked once at launch, downloaded only when you say so, and never
   restart you: the button becomes `Restart`, a second click, because it takes your

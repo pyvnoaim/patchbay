@@ -184,11 +184,12 @@ paletteEl.addEventListener("mousedown", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  const mod = e.metaKey || e.ctrlKey;
+  const mod = chorded(e);
+  const key = mod ? chordKey(e) : e.key;
 
   // A sheet is modal: it has the keyboard, bar Escape.
   if (sheetOpen()) {
-    if (!askWrap.hidden && mod && askAgain === e.key) {
+    if (!askWrap.hidden && mod && askAgain === key) {
       e.preventDefault();
       return closeAsk(true);
     }
@@ -220,29 +221,27 @@ document.addEventListener("keydown", (e) => {
     return;
   }
 
-  if (mod && e.key === "k") {
+  if (mod && key === "k") {
     e.preventDefault();
     return palOpen() ? closePalette() : openPalette();
   }
-  if (mod && e.key === "n") {
+  if (mod && key === "n") {
     e.preventDefault();
     return openJack(null, group);
   }
-  if (mod && e.key === ",") {
+  if (mod && key === ",") {
     e.preventDefault();
     return openSettings();
   }
-  if (mod && e.key === "[") {
+  if (mod && key === "[") {
     e.preventDefault();
     return cycleSession(-1);
   }
-  if (mod && e.key === "]") {
+  if (mod && key === "]") {
     e.preventDefault();
     return cycleSession(1);
   }
-  // Find is ⌘F on macOS and Ctrl+Shift+F elsewhere: plain Ctrl+F is readline's
-  // forward-char, and a session owns the keyboard.
-  if (e.key.toLowerCase() === "f" && (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && e.shiftKey)) {
+  if (mod && key === "f") {
     e.preventDefault();
     return toggleFind();
   }
@@ -279,7 +278,7 @@ document.addEventListener("keydown", (e) => {
   // A live session owns the keyboard: only the window-level chords above and ⌘W
   // are intercepted; every other keystroke belongs to ssh.
   if (activeId !== null) {
-    if (mod && e.key === "w") {
+    if (mod && key === "w") {
       e.preventDefault();
       closeSession(activeId);
     }
@@ -318,18 +317,18 @@ document.addEventListener("keydown", (e) => {
     const bulk = markedHere();
     if (bulk.length > 1) removeMarked(bulk);
     else removeJack(shown[sel].name);
-  } else if (mod && e.key === "e") {
+  } else if (mod && key === "e") {
     e.preventDefault();
     invoke("open_config").catch(alertish);
-  } else if (mod && e.key === "r") {
+  } else if (mod && key === "r") {
     e.preventDefault();
     load();
-  } else if ((e.key === "?" && !mod) || (mod && e.key === "/")) {
+  } else if ((e.key === "?" && !mod) || (mod && key === "/")) {
     e.preventDefault();
     openSettings("keys");
   }
   // Just start typing: the palette opens carrying the keystroke.
-  else if (!mod && !e.altKey && e.key.length === 1) {
+  else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) {
     e.preventDefault();
     openPalette(e.key);
   }

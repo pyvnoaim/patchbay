@@ -1251,7 +1251,7 @@ async function openRdpSession(name) {
       const code = SCANCODES[e.code];
       if (code === undefined) return;
       // Window chords stay ours; everything else belongs to the remote desktop.
-      if ((e.metaKey || e.ctrlKey) && ["w", "k", "n", "[", "]"].includes(e.key)) return;
+      if (chorded(e) && ["w", "k", "n", "[", "]"].includes(chordKey(e))) return;
       e.preventDefault();
       send("key", code, 0, down);
     });

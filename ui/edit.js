@@ -1008,7 +1008,7 @@ function keysHtml() {
     [
       "In a session",
       [
-        ["Find in the scrollback", [isMac ? "⌘F" : "Ctrl+Shift+F"]],
+        ["Find in the scrollback", [chord("f")]],
         ["Run it again, or reconnect, once it has ended", ["⏎"]],
       ],
     ],
