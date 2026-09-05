@@ -1471,8 +1471,9 @@ footer {
   background: var(--fill-hi);
   border-radius: 6px;
   padding: 8px 9px;
+  /* One command, wrapped at the box: not pre-wrap, which painted the markup's indentation
+     until the script's first fill. */
   word-break: break-all;
-  white-space: pre-wrap;
   color: var(--ink);
 }
 .w-cmd {
