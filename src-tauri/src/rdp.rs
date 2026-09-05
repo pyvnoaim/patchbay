@@ -240,6 +240,27 @@ pub fn write_file(name: &str, body: &str) -> Result<std::path::PathBuf, String> 
     Ok(path)
 }
 
+/// Hand the `.rdp` to the system client. On Linux xfreerdp is tried by name first:
+/// it takes a `.rdp` file as its argument but registers no MIME type, so `xdg-open`
+/// only finds it through Remmina, and otherwise lands the file in a text editor.
+/// `/cert:tofu` because xfreerdp asks about an unknown certificate on its terminal,
+/// and spawned from here it has none; first-use pinning is what `rdp_session.rs`
+/// does with `rdp_known_hosts` too, and a changed certificate is still refused.
+pub fn hand_off(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    for bin in ["xfreerdp3", "xfreerdp"] {
+        if Command::new(bin)
+            .arg(path)
+            .arg("/cert:tofu")
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+    }
+    crate::commands::os_open(path.as_os_str())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

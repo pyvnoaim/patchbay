@@ -76,7 +76,7 @@ pub async fn open_rdp(
         let (addr, resolved, user) = rdp_address(&shared, &name)?;
         let body = rdp::rdp_file(&addr, user.as_deref())?;
         let path = rdp::write_file(&resolved, &body)?;
-        os_open(path.as_os_str())?;
+        rdp::hand_off(&path)?;
         Ok(addr)
     })
     .await

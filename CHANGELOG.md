@@ -14,6 +14,8 @@ it back. Nothing is retyped anywhere.
   fit, so text is sharp and there are no black bars.
 - A config file patchbay creates starts with every key as a comment, so opening it by
   hand on a first run shows what goes in it rather than a blank page.
+- On Linux, "Open in system client" for a remote desktop tries xfreerdp before asking
+  the desktop what opens a `.rdp`, which without Remmina was a text editor.
 - Deleting a device offers Undo for a few seconds. It goes back where it was, with
   everything it had.
 - Drag a device onto a folder in the sidebar to file it there. Or right-click ▸ Move to
