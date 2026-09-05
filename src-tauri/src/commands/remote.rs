@@ -259,18 +259,38 @@ pub async fn open_forwards(
     .await
 }
 
+/// The live tunnels, plus a line for each one that died since the last ask, so the
+/// window can say so rather than show a port that stopped answering.
+#[derive(Serialize)]
+pub struct TunnelList {
+    live: Vec<TunnelView>,
+    ended: Vec<String>,
+}
+
 #[tauri::command]
-pub fn tunnels(state: tauri::State<'_, rdp::SharedTunnels>) -> Vec<TunnelView> {
-    state
-        .list()
-        .into_iter()
-        .map(|(id, jack, local, via)| TunnelView {
-            id,
-            jack,
-            local,
-            via,
-        })
-        .collect()
+pub fn tunnels(state: tauri::State<'_, rdp::SharedTunnels>) -> TunnelList {
+    let (live, ended) = state.list();
+    TunnelList {
+        live: live
+            .into_iter()
+            .map(|(id, jack, local, via)| TunnelView {
+                id,
+                jack,
+                local,
+                via,
+            })
+            .collect(),
+        ended: ended
+            .into_iter()
+            .map(|(jack, why)| {
+                if why.is_empty() {
+                    format!("the tunnel to {jack} ended")
+                } else {
+                    format!("the tunnel to {jack} ended: {why}")
+                }
+            })
+            .collect(),
+    }
 }
 
 #[tauri::command]

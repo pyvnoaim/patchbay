@@ -3,7 +3,7 @@
 //! parameter on macOS, which is why it is a file.
 
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::net::{Shutdown, TcpListener, TcpStream, ToSocketAddrs};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -70,19 +70,64 @@ fn accepts(port: u16, limit: Duration) -> bool {
 }
 
 /// The readiness check for a tunnel with no local port (all `-R`): ssh with
-/// `ExitOnForwardFailure` exits on a refused bind, so still running means up.
-/// ponytail: a bind that fails later carries nothing; reading ssh's stderr is the upgrade.
-fn still_running(child: &mut Child) -> bool {
-    std::thread::sleep(Duration::from_millis(1200));
-    matches!(child.try_wait(), Ok(None))
+/// `ExitOnForwardFailure` exits on a refused bind, so still running means up. Waits
+/// for it to be up rather than a flat sleep, so a fast exit answers fast.
+fn still_running(child: &mut Child, limit: Duration) -> bool {
+    let deadline = Instant::now() + limit;
+    while Instant::now() < deadline {
+        if !matches!(child.try_wait(), Ok(None)) {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    true
+}
+
+/// What ssh said, kept for the error a failed tunnel shows. Read on its own thread:
+/// a pipe nobody drains blocks ssh once it fills.
+type Said = Arc<Mutex<Vec<String>>>;
+
+fn read_stderr(child: &mut Child) -> Said {
+    let said: Said = Arc::default();
+    if let Some(err) = child.stderr.take() {
+        let sink = said.clone();
+        std::thread::spawn(move || {
+            for line in std::io::BufReader::new(err).lines().map_while(Result::ok) {
+                let mut s = sink.lock().unwrap();
+                // The last few lines are the reason; warnings above them are not.
+                if s.len() == 8 {
+                    s.remove(0);
+                }
+                s.push(line);
+            }
+        });
+    }
+    said
+}
+
+/// ssh's own words for a failure, after its noise. Empty when it said nothing.
+fn last_word(said: &Said) -> String {
+    said.lock()
+        .unwrap()
+        .iter()
+        .rev()
+        .find(|l| !l.trim().is_empty() && !l.starts_with("Warning: Permanently added"))
+        .cloned()
+        .unwrap_or_default()
 }
 
 pub struct Tunnel {
     child: Child,
+    said: Said,
     pub jack: String,
     pub local: u16,
     pub via: String,
 }
+
+/// A live tunnel as the window sees it: id, jack, local port, route.
+pub type Live = (u32, String, u16, String);
+/// A tunnel found dead: jack, and ssh's last line.
+pub type Ended = (String, String);
 
 #[derive(Default)]
 pub struct Tunnels(Mutex<HashMap<u32, Tunnel>>);
@@ -98,42 +143,63 @@ impl Tunnels {
         local: u16,
         via: String,
     ) -> Result<(), String> {
-        let child = Command::new("ssh")
+        let mut child = Command::new("ssh")
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("could not start the tunnel: {e}"))?;
+        let said = read_stderr(&mut child);
 
         let mut t = Tunnel {
             child,
+            said,
             jack: jack.to_string(),
             local,
             via: via.clone(),
         };
         let up = match local {
-            0 => still_running(&mut t.child),
+            0 => still_running(&mut t.child, Duration::from_millis(1500)),
             p => accepts(p, Duration::from_secs(12)),
         };
         if !up {
             let _ = t.child.kill();
             let _ = t.child.wait();
-            return Err(format!(
-                "the tunnel to {jack} never came up - check you can reach {via}"
-            ));
+            let why = last_word(&t.said);
+            return Err(if why.is_empty() {
+                format!("the tunnel to {jack} never came up - check you can reach {via}")
+            } else {
+                format!("the tunnel to {jack} never came up: {why}")
+            });
         }
         self.0.lock().unwrap().insert(id, t);
         Ok(())
     }
 
-    pub fn list(&self) -> Vec<(u32, String, u16, String)> {
-        self.0
-            .lock()
-            .unwrap()
+    /// Live tunnels, and the ones found dead on the way: an ssh that exited since the
+    /// check (a bind refused later, the far end gone) is dropped and reported with its
+    /// last line, so the list never shows a port nothing is behind.
+    pub fn list(&self) -> (Vec<Live>, Vec<Ended>) {
+        let mut held = self.0.lock().unwrap();
+        let dead: Vec<u32> = held
+            .iter_mut()
+            .filter_map(|(id, t)| (!matches!(t.child.try_wait(), Ok(None))).then_some(id))
+            .copied()
+            .collect();
+        let ended = dead
+            .into_iter()
+            .filter_map(|id| held.remove(&id))
+            .map(|mut t| {
+                let _ = t.child.wait();
+                (t.jack, last_word(&t.said))
+            })
+            .collect();
+        let live = held
             .iter()
             .map(|(id, t)| (*id, t.jack.clone(), t.local, t.via.clone()))
-            .collect()
+            .collect();
+        (live, ended)
     }
 
     pub fn close(&self, id: u32) {
@@ -215,9 +281,27 @@ mod tests {
     #[cfg(not(windows))]
     fn a_tunnel_with_no_local_port_is_judged_by_ssh_still_being_alive() {
         let mut dead = Command::new("sh").arg("-c").arg("exit 0").spawn().unwrap();
-        assert!(!still_running(&mut dead));
+        assert!(!still_running(&mut dead, Duration::from_millis(1200)));
         let mut alive = Command::new("sh").arg("-c").arg("sleep 5").spawn().unwrap();
-        assert!(still_running(&mut alive));
+        assert!(still_running(&mut alive, Duration::from_millis(300)));
         let _ = alive.kill();
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn a_failed_tunnel_says_what_ssh_said() {
+        let mut child = Command::new("sh")
+            .args(["-c", "echo 'Warning: Permanently added x' >&2; echo 'bind: Address already in use' >&2; exit 1"])
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let said = read_stderr(&mut child);
+        let _ = child.wait();
+        // The reader thread is a step behind the exit; give it a moment, not a guess.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while last_word(&said).is_empty() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(last_word(&said), "bind: Address already in use");
     }
 }
