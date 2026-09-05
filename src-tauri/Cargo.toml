@@ -36,6 +36,9 @@ x509-cert = "0.2"
 ironrdp-input = "0.7.0"
 ironrdp-cliprdr = "0.7.0"
 arboard = "3.6.1"
+# "Edit here" learns of a save from the OS (FSEvents, inotify, ReadDirectoryChangesW)
+# rather than a thread per open file stat-ing it every two seconds.
+notify = "8"
 ironrdp-core = "0.2.1"
 sha2 = "0.11.0"
 # Royal TS documents. A `.rtsz` is XML, not a zip - and the names in a real one have
@@ -69,6 +72,13 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.5"
+# The change counter behind `clipboard::stamp()`: one integer per poll tick instead of
+# reading the clipboard's text. Already in the tree through arboard; only the feature is new.
+objc2-app-kit = { version = "0.3", features = ["NSPasteboard"] }
+
+[target.'cfg(windows)'.dependencies]
+# Same counter, Windows' one. Already in the tree through tauri.
+windows-sys = { version = "0.60", features = ["Win32_System_DataExchange"] }
 
 [lints.clippy]
 # A command's parameters are its IPC contract with the window; a struct would only
