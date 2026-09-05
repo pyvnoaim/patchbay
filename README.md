@@ -25,7 +25,16 @@ Linux and Windows.
 
 You need an `ssh` on your PATH. On Windows that means the OpenSSH Client, which ships
 with Windows 10/11 - if it's missing, enable it under Settings → Apps → Optional
-Features.
+Features. Its agent is a service that is off by default, so keys with a passphrase ask
+for it on every connection until you turn it on, once, in an administrator PowerShell:
+
+```powershell
+Set-Service ssh-agent -StartupType Automatic; Start-Service ssh-agent; ssh-add
+```
+
+The `.deb` wants Ubuntu 22.04 or newer, or anything else with `libwebkit2gtk-4.1`; the
+AppImage carries its own. "Open in Terminal" uses `$TERMINAL` if it is set, otherwise
+the first of gnome-terminal, konsole, alacritty, kitty, foot or xterm it finds.
 
 ## Config
 
@@ -120,9 +129,11 @@ folders = ["acme/prod"]
 
 A device's web UI opens in a tab, beside your terminals. Appliances are usually reached
 by IP, so their certificate names something else and the page would be blank with no
-explanation - patchbay says which certificate and why, and can hand it to your system's
-trust store the way the browser's **Always trust** does. Plain `http` works too, but
-only to your own network; a public one goes to the browser.
+explanation - patchbay says which certificate and why, and on macOS and Windows can hand
+it to your system's trust store the way the browser's **Always trust** does. Linux has
+no one store the webview reads, so there a device with a self-signed certificate is
+one for your browser. Plain `http` works too, but only to your own network; a public
+one goes to the browser.
 
 ## Files
 
@@ -133,14 +144,16 @@ file to rename or delete it, or **Edit here** to open it in whatever this machin
 it with - saving puts it straight back.
 
 Same connection as everything else - your agent, your `~/.ssh/config`, your jump chain.
-Repeated listings share one ssh session, so only the first one authenticates.
+Repeated listings share one ssh session, so only the first one authenticates. Windows'
+ssh can't share one, so there each listing authenticates on its own, and a device that
+wants a password typed can't be browsed - it needs a key or the agent.
 
 ## In the window
 
 - **Map** beside the list groups devices by the route to them, so a bastion and
   everything behind it sit together however they are filed. A bastion that isn't
   answering says so once.
-- **Marks.** ⌘-click and shift-click pick out several devices; a dock appears to move,
+- **Marks.** ⌘-click (Ctrl-click elsewhere) and shift-click pick out several devices; a dock appears to move,
   delete or **broadcast** to them - every ssh mark as a pane in one tab, one keystroke
   reaching all of them.
 - **Find** in a session: ⌘F searches that terminal's scrollback. Every window chord is
@@ -159,12 +172,13 @@ here and never will be: a session is `/usr/bin/ssh` on a pty, in a tab.
 Remote desktop is a tab too. That one decodes RDP itself - IronRDP, pure Rust,
 painted onto a canvas - so there is still no FreeRDP and no embedded graphics
 toolkit, which was always the actual objection. "Remote desktop in system client"
-hands a `.rdp` file to mstsc / Windows App / xfreerdp if you'd rather.
+hands a `.rdp` file to mstsc, Windows App or xfreerdp if you'd rather.
 
 VNC is a handoff and only a handoff: `vnc = 5900` opens `vnc://` with whatever viewer
-the machine already has - Screen Sharing on macOS - over the same forwarded port when
-the device is behind a bastion. A second protocol decoder in here would have to earn
-its place, and one screen-sharing tab already exists.
+the machine already has - Screen Sharing on macOS, Remmina on most Linux desktops, and
+on Windows whichever viewer you installed and let claim the scheme - over the same
+forwarded port when the device is behind a bastion. A second protocol decoder in here
+would have to earn its place, and one screen-sharing tab already exists.
 
 Files are `sftp`, the binary, not a library. A web UI is a webview showing the device's
 own page, not something we render. The pattern holds: patchbay knows where your machines
