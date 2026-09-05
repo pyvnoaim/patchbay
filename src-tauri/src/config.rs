@@ -31,7 +31,8 @@ pub struct JackInput {
 fn read_doc(path: &Path) -> Result<DocumentMut, String> {
     let src = match std::fs::read_to_string(path) {
         Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        // The first write, whichever sheet it comes from, starts from the template.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => FIRST_RUN.into(),
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
     src.parse::<DocumentMut>()
@@ -135,12 +136,39 @@ fn write_doc(path: &Path, doc: &DocumentMut) -> Result<(), String> {
     std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// Create an empty file on a first run: the desktop opener does nothing for a missing path.
+/// What a first run finds when it opens the file by hand: every key, commented out, so
+/// the list stays empty until someone means it. `[defaults]` is real and last, with no
+/// keys under it: comments with no key after them are trailing decor, and a new table
+/// lands above those.
+const FIRST_RUN: &str = r#"# patchbay - your devices, one file. Uncomment a block to start.
+# https://github.com/pyvnoaim/patchbay
+#
+# [jack.bastion]
+# host = "bastion.example.com"
+# port = 2222
+# os = "debian"         # picks the icon; the names are under Settings > Appearance
+# folders = ["prod"]    # a list: "prod/eu/web" nests, and a device can sit in several
+#
+# [jack.web]
+# host = "10.0.0.4"
+# user = "deploy"
+# jump = "bastion"      # another device's name, or a raw host; chains follow the jumps
+# forward = ["8080:localhost:80"]
+# url = "https://10.0.0.4"   # opens as a tab
+# rdp = 3389            # or vnc = 5900; remote desktop through the jump chain
+# desc = "what someone arriving here should know"
+
+# Inherited by every device that doesn't set its own: user = "root", key = "~/.ssh/id_ed25519".
+[defaults]
+"#;
+
+/// The desktop opener does nothing for a missing path, so a first run gets the
+/// commented template rather than a blank page.
 pub fn ensure_exists(path: &Path) -> Result<(), String> {
     if path.exists() {
         return Ok(());
     }
-    write_doc(path, &DocumentMut::new())
+    write_doc(path, &read_doc(path)?)
 }
 
 /// Remove a table and hand back the comments above it for `rehome_comments`: toml_edit
@@ -1403,6 +1431,28 @@ folders = ["prod/eu/web"]
         ));
         let _ = std::fs::remove_dir_all(p.parent().unwrap());
         save_jack_at(&p, None, input("first", "10.0.0.1")).unwrap();
-        assert!(read(&p).contains("[jack.first]"));
+        let s = read(&p);
+        assert!(s.starts_with("# patchbay - your devices"), "got {s}");
+        assert!(s.contains("[jack.first]"));
+    }
+
+    #[test]
+    fn first_run_template_is_empty_and_survives_the_first_save() {
+        let p = std::env::temp_dir().join(format!("patchbay-{}-firstrun.toml", std::process::id()));
+        let _ = std::fs::remove_file(&p);
+        ensure_exists(&p).unwrap();
+        assert!(patchbay::load(&p).unwrap().is_empty());
+        save_jack_at(&p, None, input("web", "10.0.0.4")).unwrap();
+        let s = read(&p);
+        assert!(s.starts_with("# patchbay - your devices"));
+        assert!(s.contains("# rdp = 3389"));
+        assert!(
+            s.ends_with("[defaults]\n\n[jack.web]\nhost = \"10.0.0.4\"\n"),
+            "got {s}"
+        );
+        assert_eq!(patchbay::load(&p).unwrap().len(), 1);
+        ensure_exists(&p).unwrap(); // a second call leaves the file alone
+        assert_eq!(read(&p), s);
+        std::fs::remove_file(&p).unwrap();
     }
 }
