@@ -1,6 +1,6 @@
 //! `[settings]`, `[defaults]`, `[colors]`, the theme, and the config file itself.
 
-use super::{os_open, ssh_dir};
+use super::{blocking, list_file, os_open, ssh_dir};
 use crate::{config, patchbay};
 
 #[tauri::command]
@@ -9,27 +9,50 @@ pub fn settings() -> config::Settings {
 }
 
 #[tauri::command]
-pub fn save_settings(next: config::Settings) -> Result<(), String> {
-    // `jacks` only ever writes the ssh include, so turning the switch off has to
-    // remove it here.
-    let was = config::load_settings().write_ssh_config;
-    config::save_settings(&next)?;
-    if was && !next.write_ssh_config {
-        if let Some(dir) = ssh_dir() {
-            config::remove_ssh_include(&dir)?;
+pub async fn save_settings(next: config::Settings) -> Result<(), String> {
+    blocking(move || {
+        let was = config::load_settings();
+        // Pointing at a list that isn't there yet seeds it with this machine's, before
+        // the setting is written: a seed that fails leaves the setting as it was. Only
+        // for a path just typed: a share that is away must not block the theme.
+        if let Some(l) = next
+            .list
+            .as_deref()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && next.list != was.list)
+        {
+            let path = std::path::PathBuf::from(patchbay::expand(l));
+            if !path.is_absolute() {
+                return Err(format!("\"{l}\" isn't a full path to a file"));
+            }
+            if !path.exists() {
+                config::seed_list_at(&patchbay::config_path(), &path)?;
+            } else if !path.is_file() {
+                return Err(format!("{} is a folder, not a file", path.display()));
+            }
         }
-    }
-    Ok(())
+        // `jacks` only ever writes the ssh include, so turning the switch off has to
+        // remove it here.
+        config::save_settings(&next)?;
+        if was.write_ssh_config && !next.write_ssh_config {
+            if let Some(dir) = ssh_dir() {
+                config::remove_ssh_include(&dir)?;
+            }
+        }
+        Ok(())
+    })
+    .await
+}
+
+/// `[defaults]` is part of the list: a shared `user` there is everyone's.
+#[tauri::command]
+pub async fn defaults() -> Result<config::Defaults, String> {
+    blocking(|| Ok(config::load_defaults_at(&list_file()?))).await
 }
 
 #[tauri::command]
-pub fn defaults() -> config::Defaults {
-    config::load_defaults()
-}
-
-#[tauri::command]
-pub fn save_defaults(next: config::Defaults) -> Result<(), String> {
-    config::save_defaults(&next)
+pub async fn save_defaults(next: config::Defaults) -> Result<(), String> {
+    blocking(move || config::save_defaults_at(&list_file()?, &next)).await
 }
 
 #[tauri::command]
@@ -105,16 +128,32 @@ pub fn clean_ssh_leftovers() -> Result<(), String> {
     config::remove_ssh_include(&dir)
 }
 
-#[tauri::command]
-pub fn config_path() -> String {
-    patchbay::config_path().display().to_string()
+#[derive(serde::Serialize)]
+pub struct Paths {
+    /// Where the devices are: the shared list, or the own config.
+    list: String,
+    /// This machine's config, which is where `[settings]` and `[colors]` always are.
+    own: String,
 }
 
 #[tauri::command]
-pub fn open_config() -> Result<(), String> {
-    let p = patchbay::config_path();
-    config::ensure_exists(&p)?;
-    os_open(p.as_os_str())
+pub fn config_path() -> Paths {
+    Paths {
+        list: patchbay::list_path().display().to_string(),
+        own: patchbay::config_path().display().to_string(),
+    }
+}
+
+/// Opens the list, which is what "the config" means to someone editing devices by
+/// hand. Only the own config is created on the way: a missing shared list is an error.
+#[tauri::command]
+pub async fn open_config() -> Result<(), String> {
+    blocking(|| {
+        let p = list_file()?;
+        config::ensure_exists(&p)?;
+        os_open(p.as_os_str())
+    })
+    .await
 }
 
 #[cfg(test)]

@@ -26,6 +26,49 @@ pub struct JackInput {
     pub folders: Vec<String>,
     #[serde(default)]
     pub forward: Vec<String>,
+    /// What the sheet was opened on (`stamp_of`); a table that hashes differently now was
+    /// changed by someone else since.
+    pub stamp: Option<String>,
+}
+
+/// One number for a table as written, so an edit can say what it was made against. Only
+/// ever compared inside one run of the app, so `DefaultHasher` is enough.
+pub fn stamp_of(item: &Item) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::hash::DefaultHasher::new();
+    item.to_string().hash(&mut h);
+    h.finish().to_string()
+}
+
+/// The stamp of every table under `[jack]` or `[folder]`, by name. Empty for a file
+/// that won't parse: the list will fail on its own, with a better message.
+pub fn stamps_at(path: &Path, under: &str) -> std::collections::HashMap<String, String> {
+    stamps(&std::fs::read_to_string(path).unwrap_or_default(), under)
+}
+
+pub fn stamps(src: &str, under: &str) -> std::collections::HashMap<String, String> {
+    let Ok(doc) = src.parse::<DocumentMut>() else {
+        return Default::default();
+    };
+    doc.get(under)
+        .and_then(Item::as_table)
+        .map(|t| {
+            t.iter()
+                .map(|(name, item)| (name.to_string(), stamp_of(item)))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn stale(what: &str, stamp: Option<&str>, current: Option<&Item>) -> Result<(), String> {
+    let Some(sent) = stamp else { return Ok(()) };
+    let now = current.map(stamp_of).unwrap_or_default();
+    if sent != now {
+        return Err(format!(
+            "\"{what}\" was changed by someone else since you opened it. Saving again replaces their change."
+        ));
+    }
+    Ok(())
 }
 
 fn read_doc(path: &Path) -> Result<DocumentMut, String> {
@@ -289,6 +332,9 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
 
     let mut doc = read_doc(path)?;
     let jacks = jack_table(&mut doc)?;
+    if let Some(o) = original.as_deref() {
+        stale(o, j.stamp.as_deref(), jacks.get(o))?;
+    }
 
     let renaming = original.as_deref().is_some_and(|o| o != name);
     if (original.is_none() || renaming) && jacks.contains_key(&name) {
@@ -347,12 +393,18 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
 
 /// Set or clear a folder's note. A blank note removes it, and the `[folder]` table goes
 /// with the last one.
-pub fn set_note_at(file: &Path, folder: &str, note: &str) -> Result<(), String> {
+pub fn set_note_at(
+    file: &Path,
+    folder: &str,
+    note: &str,
+    stamp: Option<&str>,
+) -> Result<(), String> {
     let path = folder.trim().trim_matches('/');
     if path.is_empty() {
         return Err("a note belongs to a folder".into());
     }
     let mut doc = read_doc(file)?;
+    stale(path, stamp, doc.get("folder").and_then(|f| f.get(path)))?;
     match note.trim().is_empty() {
         true => {
             if let Some(t) = doc.get_mut("folder").and_then(Item::as_table_mut) {
@@ -510,6 +562,10 @@ pub struct Settings {
     /// Sidebar width in px. Clamped on save; a column wider than the window leaves no list.
     #[serde(default = "sidebar")]
     pub sidebar: f64,
+    /// A shared list somewhere else: the devices, `[defaults]` and folder notes are read
+    /// and written there instead. Everything else in this file stays this machine's.
+    #[serde(default)]
+    pub list: Option<String>,
 }
 
 fn yes() -> bool {
@@ -540,6 +596,7 @@ impl Default for Settings {
             theme: system(),
             font_size: font_size(),
             sidebar: sidebar(),
+            list: None,
         }
     }
 }
@@ -559,10 +616,6 @@ struct RawDefaults {
     defaults: Defaults,
 }
 
-pub fn load_defaults() -> Defaults {
-    load_defaults_at(&patchbay::config_path())
-}
-
 /// Never fails: the sheet has to open even when the file it is about to fix is broken.
 pub fn load_defaults_at(file: &Path) -> Defaults {
     std::fs::read_to_string(file)
@@ -570,10 +623,6 @@ pub fn load_defaults_at(file: &Path) -> Defaults {
         .and_then(|s| toml::from_str::<RawDefaults>(&s).ok())
         .map(|r| r.defaults)
         .unwrap_or_default()
-}
-
-pub fn save_defaults(d: &Defaults) -> Result<(), String> {
-    save_defaults_at(&patchbay::config_path(), d)
 }
 
 pub fn save_defaults_at(file: &Path, d: &Defaults) -> Result<(), String> {
@@ -647,7 +696,28 @@ pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
     });
     t["font_size"] = value(s.font_size.clamp(8.0, 32.0));
     t["sidebar"] = value(s.sidebar.clamp(150.0, 480.0));
+    set_str(t, "list", s.list.as_deref());
     write_doc(file, &doc)
+}
+
+/// The first copy of a shared list: this machine's devices, `[defaults]` and folder
+/// notes, without `[settings]` and `[colors]`, which are this machine's. Refuses to
+/// replace a file that is there. The one write allowed at a path that isn't, and even
+/// so never into a directory that isn't: a missing directory is a share that is away,
+/// and one made at `/Volumes/team` is where the share would have mounted next time.
+pub fn seed_list_at(own: &Path, to: &Path) -> Result<(), String> {
+    if to.exists() {
+        return Err(format!("{}: already there", to.display()));
+    }
+    if !to.parent().is_some_and(Path::is_dir) {
+        return Err(format!("{}: that folder is not there", to.display()));
+    }
+    let mut doc = read_doc(own)?;
+    for key in ["settings", "colors"] {
+        let orphan = orphan_comments(doc.as_table_mut(), key);
+        rehome_comments(&mut doc, orphan);
+    }
+    write_doc(to, &doc)
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -919,6 +989,7 @@ folders = ["prod/eu/web"]
             desc: None,
             folders: vec![],
             forward: vec![],
+            stamp: None,
         }
     }
 
@@ -1195,6 +1266,7 @@ folders = ["prod/eu/web"]
             &p,
             "prod/eu",
             "the recovery key is in the safe\nask Anna first",
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -1219,8 +1291,8 @@ folders = ["prod/eu/web"]
         );
 
         // A blank note is a removal.
-        set_note_at(&p, "prod", "x").unwrap();
-        set_note_at(&p, "prod", "  ").unwrap();
+        set_note_at(&p, "prod", "x", None).unwrap();
+        set_note_at(&p, "prod", "  ", None).unwrap();
         assert!(patchbay::notes(&read(&p)).is_empty());
         assert!(
             read(&p).contains("keep this comment"),
@@ -1453,6 +1525,94 @@ folders = ["prod/eu/web"]
         assert_eq!(patchbay::load(&p).unwrap().len(), 1);
         ensure_exists(&p).unwrap(); // a second call leaves the file alone
         assert_eq!(read(&p), s);
+        std::fs::remove_file(&p).unwrap();
+    }
+
+    #[test]
+    fn an_edit_made_against_a_stale_table_is_refused_and_the_stamp_moves() {
+        let p = scratch("stamp");
+        let before = stamps_at(&p, "jack")["web"].clone();
+        // A colleague's edit lands between opening the sheet and saving.
+        set_folders_at(&p, "web", &["theirs".into()]).unwrap();
+        let mut mine = input("web", "10.0.0.9");
+        mine.stamp = Some(before);
+        let err = save_jack_at(&p, Some("web".into()), mine).unwrap_err();
+        assert!(err.contains("changed by someone else"), "{err}");
+        assert!(read(&p).contains("theirs"), "the refusal writes nothing");
+        // Reloaded: the new stamp goes through and knowingly replaces theirs.
+        let mut again = input("web", "10.0.0.9");
+        again.stamp = Some(stamps_at(&p, "jack")["web"].clone());
+        save_jack_at(&p, Some("web".into()), again).unwrap();
+        assert!(read(&p).contains("10.0.0.9"));
+        // No stamp is no check: a drag, an import, an old window.
+        save_jack_at(&p, Some("web".into()), input("web", "10.0.0.10")).unwrap();
+        std::fs::remove_file(&p).unwrap();
+    }
+
+    #[test]
+    fn a_note_saved_over_someone_elses_is_refused() {
+        let p = scratch("note-stamp");
+        set_note_at(&p, "prod", "mine", None).unwrap();
+        let mine = stamps_at(&p, "folder")["prod"].clone();
+        set_note_at(&p, "prod", "theirs", None).unwrap();
+        assert!(set_note_at(&p, "prod", "mine again", Some(&mine)).is_err());
+        assert!(patchbay::notes(&read(&p))["prod"] == "theirs");
+        std::fs::remove_file(&p).unwrap();
+    }
+
+    #[test]
+    fn a_seed_carries_the_list_and_leaves_this_machines_settings_behind() {
+        let own = scratch("seed-own");
+        save_settings_at(
+            &own,
+            &Settings {
+                list: Some("/somewhere/else.toml".into()),
+                ..Settings::default()
+            },
+        )
+        .unwrap();
+        save_color_at(&own, "debian", Some("#112233")).unwrap();
+        set_note_at(&own, "prod", "careful", None).unwrap();
+        let to = own.with_file_name("patchbay-seeded.toml");
+        let _ = std::fs::remove_file(&to);
+        seed_list_at(&own, &to).unwrap();
+        let seeded = read(&to);
+        assert!(seeded.contains("[jack.web]"));
+        assert!(seeded.contains("careful"));
+        assert!(!seeded.contains("[settings]"), "{seeded}");
+        assert!(!seeded.contains("#112233"), "{seeded}");
+        assert!(read(&own).contains("[jack.web]"), "the seed is a copy");
+        assert!(
+            seed_list_at(&own, &to).is_err(),
+            "never over a file that is there"
+        );
+        // A missing directory is a share that is away, not something to create.
+        let gone = std::env::temp_dir()
+            .join(format!("patchbay-nowhere-{}", std::process::id()))
+            .join("patchbay.toml");
+        let err = seed_list_at(&own, &gone).unwrap_err();
+        assert!(err.contains("not there"), "{err}");
+        assert!(!gone.parent().unwrap().exists());
+        std::fs::remove_file(&own).unwrap();
+        std::fs::remove_file(&to).unwrap();
+    }
+
+    #[test]
+    fn the_list_setting_round_trips_and_clears() {
+        let p = scratch("list-setting");
+        let mut s = Settings {
+            list: Some("~/team/patchbay.toml".into()),
+            ..Settings::default()
+        };
+        save_settings_at(&p, &s).unwrap();
+        assert_eq!(
+            load_settings_at(&p).list.as_deref(),
+            Some("~/team/patchbay.toml")
+        );
+        s.list = None;
+        save_settings_at(&p, &s).unwrap();
+        assert_eq!(load_settings_at(&p).list, None);
+        assert!(!read(&p).contains("list"));
         std::fs::remove_file(&p).unwrap();
     }
 }

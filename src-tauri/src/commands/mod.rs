@@ -13,9 +13,23 @@ pub mod web;
 use crate::patchbay;
 use std::path::PathBuf;
 
-/// The device list from this machine's config. A missing file is an empty list.
+/// Where the list is read and written. A shared list that is not there is an error,
+/// never an empty list and never a fresh file: a share that is away must not read as
+/// empty, and nothing is written where it will mount. The own config keeps the
+/// first-run rule, where missing means empty.
+pub fn list_file() -> Result<PathBuf, String> {
+    let Some(p) = patchbay::list() else {
+        return Ok(patchbay::config_path());
+    };
+    if p.is_file() {
+        Ok(p)
+    } else {
+        Err(format!("the team list at {} is not there", p.display()))
+    }
+}
+
 pub fn load_jacks() -> Result<patchbay::Jacks, String> {
-    patchbay::load(&patchbay::config_path())
+    patchbay::load(&list_file()?)
 }
 
 /// Where ssh keeps its own config, and where ours goes beside it.

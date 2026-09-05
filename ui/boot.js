@@ -348,18 +348,21 @@ async function load() {
   try {
     // In parallel: load() runs on every focus and sits in front of the first paint.
     // Only `jacks` is left uncaught; its failure is what the error branch is for.
-    let noteRows, tun;
-    [prefs, sshKeys, colors, cfgPath, tun, noteRows, all] = await Promise.all([
+    let noteRows, tun, paths;
+    [prefs, sshKeys, colors, paths, tun, noteRows, all] = await Promise.all([
       invoke("settings").catch(() => ({})),
       sshKeys.length ? sshKeys : invoke("ssh_keys").catch(() => []),
       invoke("colors").catch(() => ({})),
-      invoke("config_path").catch(() => ""),
+      invoke("config_path").catch(() => ({ list: "", own: "" })),
       invoke("tunnels").catch(() => ({ live: [], ended: [] })),
       invoke("notes").catch(() => []),
       invoke("jacks"),
     ]);
+    ({ list: cfgPath, own: ownPath } = paths);
     takeTunnels(tun);
     notes = new Map(noteRows.map((n) => [n.path, n.note]));
+    noteStamps = new Map(noteRows.map((n) => [n.path, n.stamp]));
+    loadErr = "";
     // Open the first level on the first load only, or focus would re-open folders.
     if (!seeded) {
       for (const j of all) {
@@ -372,10 +375,46 @@ async function load() {
     render();
     refreshProbes();
   } catch (e) {
-    treeEl.innerHTML = "";
-    listEl.innerHTML = `<p class="empty">${esc(e)}</p>`;
+    // A list already on screen stays: a share that is away is not an empty list.
+    if (all.length) {
+      if (String(e) !== loadErr) alertish(e);
+      loadErr = String(e);
+    } else {
+      treeEl.innerHTML = "";
+      listEl.innerHTML = `<p class="empty">${esc(e)}</p>`;
+    }
   }
   reveal();
+}
+
+// Someone else's save shows up as the file's mtime or size moving. Different, not
+// newer: a sync client keeps the source machine's mtime, and clocks disagree. Its own
+// timer, because `refreshProbes` sits out when probing is off or the window is behind.
+// `polling` holds the next tick back while one hangs on a share that has gone away.
+let polling = false;
+async function pollList() {
+  if (polling) return;
+  polling = true;
+  try {
+    const { stamp, conflict } = await invoke("list_stamp");
+    if (listStamp !== null && stamp !== listStamp) await load();
+    listStamp = stamp;
+    if (conflict && conflict !== lastConflict) {
+      lastConflict = conflict;
+      flash(
+        `"${conflict}" sits beside the list. A sync client makes one when two people save at once.`,
+        true,
+        {
+          label: "Show",
+          run: () => invoke("reveal_list").catch(alertish),
+        },
+      );
+    }
+  } catch {
+    /* the next load() says why */
+  } finally {
+    polling = false;
+  }
 }
 
 const PROBE_EVERY = 30_000;
@@ -509,6 +548,7 @@ async function offerSshCleanup() {
 // Errands run behind the first paint.
 load().then(restoreTabs).then(takeLink).then(offerUpdate).then(offerSshCleanup);
 setInterval(refreshProbes, PROBE_EVERY);
+setInterval(pollList, PROBE_EVERY);
 // The config is hand-edited, so reload on focus.
 window.addEventListener("focus", load);
 // Not `matchMedia`: with a theme pinned, our own `color-scheme` fixes what

@@ -490,6 +490,7 @@ function jackFields() {
 
 function openJack(j, prefillGroup) {
   editing = j?.name || null;
+  editStamp = j?.stamp ?? null;
   $("sheet-title").textContent = editing ? `Edit ${editing}` : "New device";
   jfDelete.hidden = !editing;
   jfDelete.innerHTML = `${icon("trash-2")}Delete`;
@@ -572,6 +573,7 @@ jackForm.addEventListener("submit", async (e) => {
         primary: reach === "sftp" ? "sftp" : null,
         desc: f.desc.value.trim() || null,
         folders: list2(f.folders.value),
+        stamp: editStamp,
       },
     });
     for (const f2 of list2(f.folders.value)) pending.delete(gkey({ path: f2 }));
@@ -579,6 +581,12 @@ jackForm.addEventListener("submit", async (e) => {
     await load();
   } catch (err) {
     showErr(jfErr, String(err));
+    // Refused as someone else's edit: the list behind the sheet reloads, and the
+    // sheet takes the new stamp, so Save a second time is a decision, not a loop.
+    if (String(err).includes("changed by someone else")) {
+      await load();
+      editStamp = all.find((j) => j.name === editing)?.stamp ?? null;
+    }
   }
 });
 $("jf-cancel").addEventListener("click", closeJack);
@@ -1037,6 +1045,13 @@ async function openSettings(pane) {
   // Read fresh: a hand-edit between openings should show up here.
   const defs = await invoke("defaults").catch(() => ({}));
   for (const k of DEFAULT_KEYS) setForm.elements[`def_${k}`].value = defs[k] ?? "";
+  defsWas = defsState();
+  setForm.elements.list.value = prefs.list ?? "";
+  // Only worth saying while there are two files.
+  const shared = cfgPath && ownPath && cfgPath !== ownPath;
+  $("team-own").hidden = $("cfg-own").hidden = !shared;
+  $("team-own").textContent = `Your own devices are waiting in ${ownPath}.`;
+  $("cfg-own").textContent = `Settings and colours stay in ${ownPath}, this machine's own.`;
   renderSwatches();
   for (const el of setWrap.querySelectorAll("[data-icon]")) {
     if (!el.firstChild) el.innerHTML = icon(el.dataset.icon);
@@ -1073,6 +1088,11 @@ setNav.addEventListener("click", (e) => {
 });
 
 const DEFAULT_KEYS = ["user", "port", "key", "jump"];
+// Written only when touched: a save that also points at a team's list must not put
+// this machine's defaults over theirs.
+const defsState = () =>
+  DEFAULT_KEYS.map((k) => setForm.elements[`def_${k}`].value.trim()).join("\n");
+let defsWas = "";
 
 setForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1081,6 +1101,7 @@ setForm.addEventListener("submit", async (e) => {
   for (const el of setForm.querySelectorAll("input[type=checkbox]")) next[el.name] = el.checked;
   next.theme = setForm.elements.theme.value;
   next.font_size = parseFloat(setForm.elements.font_size.value);
+  next.list = setForm.elements.list.value.trim() || null;
   // Rust clamps it too, silently; this is the half that can say why.
   if (!(next.font_size >= 8 && next.font_size <= 32)) {
     return showErr(setErr, "terminal font size has to be between 8 and 32");
@@ -1094,8 +1115,9 @@ setForm.addEventListener("submit", async (e) => {
   try {
     const wasProbing = prefs.probe !== false;
     await invoke("save_settings", { next });
-    await invoke("save_defaults", { next: defs });
+    if (defsState() !== defsWas) await invoke("save_defaults", { next: defs });
     prefs = next;
+    listStamp = null;
     closeSettings();
     // A reload: [defaults] changes what every device shows.
     await load();

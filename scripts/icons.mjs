@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const USED = [
   "layers", // All jacks
+  "users", // Settings > Team
   "folder",
   "folder-open",
   "chevron-right", // tree disclosure

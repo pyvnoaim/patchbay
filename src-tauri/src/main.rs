@@ -90,6 +90,8 @@ fn main() {
             settings::ssh_leftovers,
             settings::clean_ssh_leftovers,
             settings::config_path,
+            jacks::list_stamp,
+            jacks::reveal_list,
             settings::open_config,
             sessions::connect,
             sessions::open_session,

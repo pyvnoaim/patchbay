@@ -78,9 +78,11 @@ let sel = 0;
 let marked = new Set();
 let palSel = 0;
 let editing = null; // jack name being edited, or null when adding
+let editStamp = null; // the table as it was when the sheet opened, sent back with the save
 // A new empty folder, held until a device lands in it. Dropped on reload.
 let pending = new Map(); // gkey -> { path }
 let notes = new Map(); // folder path -> the note hung on it
+let noteStamps = new Map(); // folder path -> the note's table as read, for the save
 let seeded = false; // the tree's initial expansion is a one-off
 let lastProbe = 0; // epoch ms of the last sweep, for the throttle below
 let detailMode = "jack"; // what the right pane describes: "jack" or "group"
@@ -88,7 +90,11 @@ let detailMode = "jack"; // what the right pane describes: "jack" or "group"
 let listMode = "list";
 let prefs = {}; // [settings] from the config
 let colors = {}; // [colors] overrides, os key -> hex
-let cfgPath = ""; // where the config lives, shown on first run
+let cfgPath = ""; // where the list lives, shown on first run
+let ownPath = ""; // this machine's config; the same file unless a team list is set
+let loadErr = ""; // the last failure load() flashed, so a focus doesn't repeat it
+let listStamp = null; // mtime and size of the list, as the poll last saw them
+let lastConflict = ""; // the conflicted copy already named, so the pill shows once
 let sshKeys = []; // private keys found in ~/.ssh, to suggest in the key field
 let tunnels = []; // live ssh -L forwards holding RDP open
 

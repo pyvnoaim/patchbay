@@ -73,6 +73,32 @@ becomes one `ssh -J` list. Loops throw instead of hanging.
 Nothing in the file is ever executed as written. The most it can produce is an `ssh`
 command line, and the window shows it before it runs.
 
+## A team
+
+A team's list is the same file in a folder you already share. Import your Royal
+document, put the file on the team drive, and point Settings ▸ Team at it; colleagues
+point at the same path. Everyone sees the same devices and folder notes, and `grep`
+still reads it. Nothing to install, nothing to license, and since the file holds no
+credentials, sharing it shares hostnames and nothing more.
+
+`[settings]` and colours stay in your own file. `[defaults]` goes with the list, so a
+`user` or `key` there is for a *shared* account (`root@nas`, `~/.ssh/acme`; `~`
+expands per machine). A personal account on a shared server goes in your
+`~/.ssh/config`, which supplies what the list leaves out.
+
+Who can edit is whoever can write the file; a read-only share is a read-only list.
+Whoever can edit can also point `prod-db` at a machine they own, which is the trust a
+shared Royal document extends too, minus the passwords. If someone else changed a
+device between you opening it and saving, the save is refused once and the list
+reloads; saving again replaces their change. A share that is away keeps the list you
+were looking at and refuses to save until it is back.
+
+A folder that syncs (OneDrive, Dropbox) works for a team that mostly reads. Two people
+saving in the same minute get a conflicted copy beside the file, which the window
+names and never merges; a team that edits at the same time wants a share. On Windows a
+save can be refused while the sync client or someone's editor has the file open - it
+goes through the next time.
+
 ## Development
 
 ```sh

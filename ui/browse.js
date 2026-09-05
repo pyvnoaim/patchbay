@@ -322,10 +322,19 @@ function renderGroup() {
       const was = notes.get(group.path) ?? "";
       if (box.value === was) return;
       try {
-        await invoke("save_note", { path: group.path, note: box.value });
+        await invoke("save_note", {
+          path: group.path,
+          note: box.value,
+          stamp: noteStamps.get(group.path) ?? null,
+        });
         notes.set(group.path, box.value.trim());
+        // The stamp moved with the write; a second edit must not refuse itself.
+        await load();
       } catch (e) {
         alertish(e);
+        // Refused as someone else's: their note is now in the pane, and the next
+        // blur saves against it.
+        await load();
       }
     });
   }

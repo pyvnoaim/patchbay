@@ -187,6 +187,7 @@
           <nav class="setnav" id="setnav">
             <button type="button" data-pane="devices" data-icon="server">Devices</button>
             <button type="button" data-pane="defaults" data-icon="layers">Defaults</button>
+            <button type="button" data-pane="team" data-icon="users">Team</button>
             <button type="button" data-pane="appearance" data-icon="monitor">Appearance</button>
             <button type="button" data-pane="import" data-icon="download">Import</button>
             <button type="button" data-pane="updates" data-icon="rotate-cw">Updates</button>
@@ -253,6 +254,31 @@
                   ><input name="def_jump" spellcheck="false" list="jacknames" placeholder="none"
                 /></label>
               </div>
+            </section>
+
+            <section class="pane" data-pane="team" hidden>
+              <div class="d-sec">One shared list</div>
+              <p class="page-note">
+                A team's device list is a file in a folder you already share. Put it on the team
+                drive or a synced folder, point this at it, and everyone sees the same devices and
+                folder notes. It holds no passwords, so sharing it shares hostnames and nothing
+                more.
+              </p>
+              <label class="f"
+                ><span>Shared list</span
+                ><input
+                  name="list"
+                  spellcheck="false"
+                  placeholder="/Volumes/team/patchbay.toml, or leave empty for just this machine"
+              /></label>
+              <p class="page-note">
+                A path that isn't there yet is seeded with the devices and defaults you have now; a
+                colleague points at the same path. Your own devices stay in this machine's file and
+                come back when you clear it. Who can edit is whoever can write the file. A folder
+                that syncs (OneDrive, Dropbox) works for a team that mostly reads; a team that edits
+                at the same time wants a real share.
+              </p>
+              <p class="page-note" id="team-own" hidden></p>
             </section>
 
             <section class="pane" data-pane="appearance" hidden>
@@ -330,10 +356,11 @@
             <section class="pane" data-pane="config" hidden>
               <div class="d-sec">Config file</div>
               <p class="page-note">
-                Everything here is stored in this file. It's plain TOML - edit it by hand whenever
-                you prefer; patchbay keeps your comments and formatting.
+                The devices are in this file. It's plain TOML - edit it by hand whenever you prefer;
+                patchbay keeps your comments and formatting.
               </p>
               <div class="mono" id="cfgpath"></div>
+              <p class="page-note" id="cfg-own" hidden></p>
               <div class="btns">
                 <button type="button" class="ghost" id="page-openconfig"></button>
               </div>

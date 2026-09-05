@@ -1,7 +1,7 @@
 //! The device list: reading it for the window, editing it, folders and notes, and
 //! importing one from an ssh config or a Royal TS document.
 
-use super::{load_jacks, ssh_dir};
+use super::{blocking, list_file, load_jacks, ssh_dir};
 use crate::{config, import, patchbay, terminal};
 use serde::Serialize;
 
@@ -26,6 +26,9 @@ pub struct JackView {
     hops: Vec<String>,
     /// The ssh command line, shown so you always see what is about to run.
     command: String,
+    /// The table as read, sent back with an edit so a colleague's change in between
+    /// is refused rather than overwritten.
+    stamp: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -40,6 +43,16 @@ pub struct Probe {
 pub struct Note {
     path: String,
     note: String,
+    stamp: String,
+}
+
+/// What the poll compares: not "newer", because a sync client keeps the source
+/// machine's mtime and clocks disagree, just "different". `conflict` names a copy a
+/// sync client left beside the list when two people saved in the same minute.
+#[derive(Serialize)]
+pub struct ListStamp {
+    stamp: String,
+    conflict: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -64,33 +77,79 @@ fn sync_ssh_config(jacks: &patchbay::Jacks) {
 }
 
 #[tauri::command]
-pub fn jacks() -> Result<Vec<JackView>, String> {
-    let jacks = load_jacks()?;
-    sync_ssh_config(&jacks);
-    Ok(jacks
-        .iter()
-        .map(|(name, j)| JackView {
-            name: name.clone(),
-            host: j.host.clone(),
-            user: j.user.clone(),
-            port: j.port,
-            jump: j.jump.clone(),
-            os: j.os.clone(),
-            url: j.url.clone(),
-            rdp: j.rdp,
-            vnc: j.vnc,
-            ssh: j.ssh.unwrap_or(true),
-            primary: patchbay::primary(j),
-            desc: j.desc.clone(),
-            key: j.key.clone(),
-            folders: j.folders.clone().unwrap_or_default(),
-            forward: j.forward.clone().unwrap_or_default(),
-            hops: patchbay::hops(name, &jacks).unwrap_or_default(),
-            command: patchbay::ssh_args(name, &jacks)
-                .map(|a| terminal::command_line(&a))
-                .unwrap_or_else(|e| e),
+pub async fn jacks() -> Result<Vec<JackView>, String> {
+    blocking(|| {
+        let path = list_file()?;
+        let jacks = patchbay::load(&path)?;
+        sync_ssh_config(&jacks);
+        let mut stamps = config::stamps_at(&path, "jack");
+        Ok(jacks
+            .iter()
+            .map(|(name, j)| JackView {
+                stamp: stamps.remove(name),
+                name: name.clone(),
+                host: j.host.clone(),
+                user: j.user.clone(),
+                port: j.port,
+                jump: j.jump.clone(),
+                os: j.os.clone(),
+                url: j.url.clone(),
+                rdp: j.rdp,
+                vnc: j.vnc,
+                ssh: j.ssh.unwrap_or(true),
+                primary: patchbay::primary(j),
+                desc: j.desc.clone(),
+                key: j.key.clone(),
+                folders: j.folders.clone().unwrap_or_default(),
+                forward: j.forward.clone().unwrap_or_default(),
+                hops: patchbay::hops(name, &jacks).unwrap_or_default(),
+                command: patchbay::ssh_args(name, &jacks)
+                    .map(|a| terminal::command_line(&a))
+                    .unwrap_or_else(|e| e),
+            })
+            .collect())
+    })
+    .await
+}
+
+/// Cheap enough for a timer: one stat, and one directory listing when the list is
+/// shared. Dropbox writes `x (conflicted copy ...)`, OneDrive `x-MACHINE`; anything
+/// else with the list's stem and extension in that directory is close enough to name.
+#[tauri::command]
+pub async fn list_stamp() -> Result<ListStamp, String> {
+    blocking(|| {
+        let path = list_file()?;
+        let meta = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let conflict = patchbay::list().and_then(|p| {
+            let stem = p.file_stem()?.to_str()?.to_string();
+            let mine = p.file_name()?.to_os_string();
+            std::fs::read_dir(p.parent()?)
+                .ok()?
+                .flatten()
+                .map(|e| e.file_name())
+                .filter(|n| *n != mine)
+                .filter_map(|n| n.into_string().ok())
+                .find(|n| n.starts_with(&stem) && n.ends_with(".toml"))
+        });
+        Ok(ListStamp {
+            stamp: format!("{mtime}:{}", meta.len()),
+            conflict,
         })
-        .collect())
+    })
+    .await
+}
+
+/// The folder the list is in, for the pill that names a conflicted copy.
+#[tauri::command]
+pub fn reveal_list() -> Result<(), String> {
+    let p = list_file()?;
+    super::os_open(p.parent().unwrap_or(&p).as_os_str())
 }
 
 /// TCP-connect every device's entry point in parallel. Nothing is sent. Each distinct
@@ -156,51 +215,62 @@ fn connect_ms(host: &str, port: u16) -> Option<u64> {
     Some(started.elapsed().as_millis() as u64)
 }
 
+// Every command below is async: a sync command runs on the main thread, and a stat on
+// a share that has gone away hangs for tens of seconds. The window must not.
+
 #[tauri::command]
-pub fn save_jack(original: Option<String>, jack: config::JackInput) -> Result<(), String> {
-    config::save_jack_at(&patchbay::config_path(), original, jack)
+pub async fn save_jack(original: Option<String>, jack: config::JackInput) -> Result<(), String> {
+    blocking(move || config::save_jack_at(&list_file()?, original, jack)).await
 }
 
 /// Returns what was removed, for the window's Undo.
 #[tauri::command]
-pub fn delete_jack(name: String) -> Result<config::Removed, String> {
-    config::delete_jack_at(&patchbay::config_path(), &name)
+pub async fn delete_jack(name: String) -> Result<config::Removed, String> {
+    blocking(move || config::delete_jack_at(&list_file()?, &name)).await
 }
 
 #[tauri::command]
-pub fn restore_jack(removed: config::Removed) -> Result<(), String> {
-    config::restore_jack_at(&patchbay::config_path(), &removed)
+pub async fn restore_jack(removed: config::Removed) -> Result<(), String> {
+    blocking(move || config::restore_jack_at(&list_file()?, &removed)).await
 }
 
 /// A drag into a folder, or "Move to…": only the folders list is written.
 #[tauri::command]
-pub fn set_folders(name: String, folders: Vec<String>) -> Result<(), String> {
-    config::set_folders_at(&patchbay::config_path(), &name, &folders)
+pub async fn set_folders(name: String, folders: Vec<String>) -> Result<(), String> {
+    blocking(move || config::set_folders_at(&list_file()?, &name, &folders)).await
 }
 
 /// The notes hung on folders, by folder path.
 #[tauri::command]
-pub fn notes() -> Vec<Note> {
-    let src = std::fs::read_to_string(patchbay::config_path()).unwrap_or_default();
-    patchbay::notes(&src)
-        .into_iter()
-        .map(|(path, note)| Note { path, note })
-        .collect()
+pub async fn notes() -> Result<Vec<Note>, String> {
+    blocking(|| {
+        let src = std::fs::read_to_string(list_file()?).unwrap_or_default();
+        let mut stamps = config::stamps(&src, "folder");
+        Ok(patchbay::notes(&src)
+            .into_iter()
+            .map(|(path, note)| Note {
+                stamp: stamps.remove(&path).unwrap_or_default(),
+                path,
+                note,
+            })
+            .collect())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn save_note(path: String, note: String) -> Result<(), String> {
-    config::set_note_at(&patchbay::config_path(), &path, &note)
+pub async fn save_note(path: String, note: String, stamp: Option<String>) -> Result<(), String> {
+    blocking(move || config::set_note_at(&list_file()?, &path, &note, stamp.as_deref())).await
 }
 
 #[tauri::command]
-pub fn rename_group(from: String, to: String) -> Result<usize, String> {
-    config::rename_group_at(&patchbay::config_path(), &from, &to)
+pub async fn rename_group(from: String, to: String) -> Result<usize, String> {
+    blocking(move || config::rename_group_at(&list_file()?, &from, &to)).await
 }
 
 #[tauri::command]
-pub fn delete_group(path: String) -> Result<usize, String> {
-    config::delete_group_at(&patchbay::config_path(), &path)
+pub async fn delete_group(path: String) -> Result<usize, String> {
+    blocking(move || config::delete_group_at(&list_file()?, &path)).await
 }
 
 /// What `~/.ssh/config` could become. Parses only: the window writes what gets ticked,

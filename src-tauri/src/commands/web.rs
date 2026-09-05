@@ -33,7 +33,7 @@ fn web_url_of(name: &str) -> Result<(String, String), String> {
 
 /// Open a device's web UI in the browser, the fallback with a certificate interstitial.
 #[tauri::command]
-pub fn open_url(name: String) -> Result<String, String> {
+pub async fn open_url(name: String) -> Result<String, String> {
     let (_, url) = web_url_of(&name)?;
     os_open(url.as_ref())?;
     Ok(url)

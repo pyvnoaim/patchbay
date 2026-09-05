@@ -72,6 +72,24 @@ pub fn config_path() -> PathBuf {
     home.join("patchbay").join("patchbay.toml")
 }
 
+/// A shared list, when `[settings].list` in *this machine's* config names one. Read
+/// from the own file only, so a shared file can't point `list` somewhere else.
+pub fn list_at(own: &Path) -> Option<PathBuf> {
+    let l = crate::config::load_settings_at(own).list?;
+    let l = l.trim();
+    (!l.is_empty()).then(|| PathBuf::from(expand(l)))
+}
+
+pub fn list() -> Option<PathBuf> {
+    list_at(&config_path())
+}
+
+/// Where the devices, `[defaults]` and folder notes live: the shared list if there is
+/// one, else the own config. `[settings]` and `[colors]` are always in the own config.
+pub fn list_path() -> PathBuf {
+    list().unwrap_or_else(config_path)
+}
+
 /// Where session logs land: beside the config, because they are this machine's and not
 /// part of the list.
 pub fn logs_dir() -> PathBuf {
@@ -81,7 +99,7 @@ pub fn logs_dir() -> PathBuf {
         .join("logs")
 }
 
-fn expand(p: &str) -> String {
+pub fn expand(p: &str) -> String {
     match p.strip_prefix('~') {
         Some(rest) => format!("{}{}", dirs::home_dir().unwrap_or_default().display(), rest),
         None => p.to_string(),
@@ -483,6 +501,18 @@ pub fn primary(j: &Jack) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_list_setting_names_the_shared_file_and_expands_home() {
+        let own = std::env::temp_dir().join(format!("patchbay-list-{}.toml", std::process::id()));
+        std::fs::write(&own, "[settings]\nlist = \"~/team/patchbay.toml\"\n").unwrap();
+        let l = list_at(&own).unwrap();
+        assert!(!l.starts_with("~"));
+        assert!(l.ends_with("team/patchbay.toml"));
+        std::fs::write(&own, "[settings]\nlist = \"  \"\n[jack.a]\nhost = \"h\"\n").unwrap();
+        assert_eq!(list_at(&own), None, "blank is unset");
+        std::fs::remove_file(&own).unwrap();
+    }
 
     fn fixture() -> Jacks {
         parse(

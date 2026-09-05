@@ -21,7 +21,7 @@ fn ssh_target(
 
 /// Open the device in the system terminal.
 #[tauri::command]
-pub fn connect(name: String) -> Result<String, String> {
+pub async fn connect(name: String) -> Result<String, String> {
     let jacks = load_jacks()?;
     let (_, args) = ssh_target(&name, &jacks)?;
     terminal::open(&args)?;
@@ -30,7 +30,7 @@ pub fn connect(name: String) -> Result<String, String> {
 
 /// Open the device as a tab in the window.
 #[tauri::command]
-pub fn open_session(
+pub async fn open_session(
     app: tauri::AppHandle,
     sessions: tauri::State<'_, pty::Shared>,
     id: u32,
@@ -78,7 +78,7 @@ fn log_path(name: &str) -> std::path::PathBuf {
 /// Ping or traceroute in a tab, on the same pty a session uses so output streams and
 /// ^C works. The tab goes dead when the command exits.
 #[tauri::command]
-pub fn open_task(
+pub async fn open_task(
     app: tauri::AppHandle,
     sessions: tauri::State<'_, pty::Shared>,
     id: u32,
@@ -98,7 +98,7 @@ pub fn open_task(
 /// host-key question is answered in the tab itself. Not on Windows, where ssh has no
 /// connection multiplexing to share.
 #[tauri::command]
-pub fn open_master(
+pub async fn open_master(
     app: tauri::AppHandle,
     sessions: tauri::State<'_, pty::Shared>,
     id: u32,
