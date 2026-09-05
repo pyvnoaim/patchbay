@@ -10,6 +10,10 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- A remote desktop opens at the size of the pane it is in, not at 1280×1024 scaled to
+  fit, so text is sharp and there are no black bars.
+- A config file patchbay creates starts with every key as a comment, so opening it by
+  hand on a first run shows what goes in it rather than a blank page.
 - Deleting a device offers Undo for a few seconds. It goes back where it was, with
   everything it had.
 - Drag a device onto a folder in the sidebar to file it there. Or right-click ▸ Move to
