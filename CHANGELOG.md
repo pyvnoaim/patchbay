@@ -10,6 +10,25 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- Deleting a device offers Undo for a few seconds. It goes back where it was, with
+  everything it had.
+- Drag a device onto a folder in the sidebar to file it there. Or right-click ▸ Move to
+  folder…, which also works on several marked devices.
+- A Shortcuts page in Settings lists every key. `?` opens it; so does the Help menu on
+  macOS.
+- On Linux, "Open in Terminal" honours `$TERMINAL` before trying the usual suspects.
+- A forwarded port that fails after ssh has connected is reported with ssh's own words,
+  and a tunnel that dies later is named the next time the list refreshes rather than
+  sitting there looking open.
+- "Edit here" hears about a save from the OS instead of checking the copy every two
+  seconds, so the upload starts the moment you save.
+- The reachability sweep dials each bastion once, however many devices sit behind it,
+  and never more than thirty-two hosts at a time.
+- The remote desktop clipboard checks the OS change counter, not the clipboard's
+  contents, so a large copy no longer costs anything until it is pasted.
+- The disk image's background is sharp on a retina screen.
+- `tags` in a config file is no longer read as a synonym for `folders`. Nothing patchbay
+  ever wrote used it.
 - Clicking the empty space under the list clears the marks; the selection stays.
 - Closing a tab, a broadcast group or the window with a live session in it asks
   first; a second ⌘W is the yes. A page, a file listing or a finished session closes
