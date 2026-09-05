@@ -287,7 +287,6 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     set_str(t, "primary", j.primary.as_deref());
     set_str(t, "desc", j.desc.as_deref());
     set_arr(t, "folders", &j.folders);
-    t.remove("tags"); // the old name for `folders`
     set_arr(t, "forward", &j.forward);
     // Only written when false, to keep configs uncluttered.
     match j.ssh {
@@ -351,14 +350,104 @@ pub fn set_note_at(file: &Path, folder: &str, note: &str) -> Result<(), String> 
     write_doc(file, &doc)
 }
 
-pub fn delete_jack_at(path: &Path, name: &str) -> Result<(), String> {
+/// What a delete took out, as the window holds it for Undo: the table as TOML, and
+/// where it sat, so putting it back lands it in the same place.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Removed {
+    pub name: String,
+    pub block: String,
+    pub position: Option<usize>,
+}
+
+/// Hands back the removed jack so a wrong "yes" can be undone. The comments above it
+/// go to the next table (`rehome_comments`) and stay there through an undo: a comment
+/// left where it was is visible and fixable, a duplicated one is not.
+pub fn delete_jack_at(path: &Path, name: &str) -> Result<Removed, String> {
     let mut doc = read_doc(path)?;
     let jacks = jack_table(&mut doc)?;
-    if !jacks.contains_key(name) {
+    let Some(item) = jacks.get(name).cloned() else {
         return Err(format!("no jack named \"{name}\""));
-    }
+    };
+    let position = item.as_table().and_then(Table::position);
     let orphan = orphan_comments(jacks, name);
     rehome_comments(&mut doc, orphan);
+    write_doc(path, &doc)?;
+
+    // A one-table document, so the block round-trips through the same parser.
+    let mut alone = DocumentMut::new();
+    let mut only = Table::new();
+    only.set_implicit(true);
+    only[name] = item;
+    if let Some(t) = only[name].as_table_mut() {
+        t.decor_mut().set_prefix("");
+    }
+    alone["jack"] = Item::Table(only);
+    Ok(Removed {
+        name: name.to_string(),
+        block: alone.to_string(),
+        position,
+    })
+}
+
+/// Undo: the removed table goes back in, at the position it had, unless the name has
+/// been taken since.
+pub fn restore_jack_at(path: &Path, removed: &Removed) -> Result<(), String> {
+    let alone = removed
+        .block
+        .parse::<DocumentMut>()
+        .map_err(|e| format!("could not restore \"{}\": {e}", removed.name))?;
+    let Some(item) = alone
+        .get("jack")
+        .and_then(Item::as_table)
+        .and_then(|t| t.get(&removed.name))
+        .cloned()
+    else {
+        return Err(format!("could not restore \"{}\"", removed.name));
+    };
+    let mut doc = read_doc(path)?;
+    if jack_table(&mut doc)?.contains_key(&removed.name) {
+        return Err(format!("there's already a jack named \"{}\"", removed.name));
+    }
+    // Positions are renumbered by every parse, so the slot it had is taken by whatever
+    // followed it: everything from there on moves down one to make room.
+    let at = removed.position.unwrap_or(usize::MAX);
+    make_room(doc.as_item_mut(), at);
+    let jacks = jack_table(&mut doc)?;
+    jacks[&removed.name] = item;
+    if let Some(t) = jacks[&removed.name].as_table_mut() {
+        t.set_position(at);
+        if t.decor()
+            .prefix()
+            .is_none_or(|p| p.as_str().unwrap_or("").is_empty())
+        {
+            t.decor_mut().set_prefix("\n");
+        }
+    }
+    write_doc(path, &doc)
+}
+
+fn make_room(item: &mut Item, at: usize) {
+    let Some(t) = item.as_table_mut() else {
+        return;
+    };
+    if let Some(p) = t.position().filter(|p| *p >= at) {
+        t.set_position(p + 1);
+    }
+    for (_, v) in t.iter_mut() {
+        make_room(v, at);
+    }
+}
+
+/// Only the `folders` list, for a drag into a folder: the rest of the table, comments
+/// and the keys the sheet doesn't know included, is left exactly as written.
+pub fn set_folders_at(path: &Path, name: &str, folders: &[String]) -> Result<(), String> {
+    let mut doc = read_doc(path)?;
+    let jacks = jack_table(&mut doc)?;
+    let t = jacks
+        .get_mut(name)
+        .and_then(Item::as_table_mut)
+        .ok_or_else(|| format!("no jack named \"{name}\""))?;
+    set_arr(t, "folders", folders);
     write_doc(path, &doc)
 }
 
@@ -612,13 +701,7 @@ fn map_folders(file: &Path, path: &str, to: Option<&str>) -> Result<usize, Strin
         let Some(t) = item.as_table_mut() else {
             continue;
         };
-        // ponytail: `tags` is the old key for `folders`; drop when no old files are left.
-        let key = if t.contains_key("folders") {
-            "folders"
-        } else {
-            "tags"
-        };
-        let Some(arr) = t.get(key).and_then(|i| i.as_array()) else {
+        let Some(arr) = t.get("folders").and_then(|i| i.as_array()) else {
             continue;
         };
 
@@ -638,9 +721,9 @@ fn map_folders(file: &Path, path: &str, to: Option<&str>) -> Result<usize, Strin
         if changed {
             touched += 1;
             if next.is_empty() {
-                t.remove(key);
+                t.remove("folders");
             } else {
-                t[key] = value(next);
+                t["folders"] = value(next);
             }
         }
     }
@@ -720,13 +803,8 @@ pub fn fold_spaces_at(cfg: &Path) -> Result<usize, String> {
                 }
             }
             // The space becomes the outermost folder.
-            let key = if t.contains_key("folders") {
-                "folders"
-            } else {
-                "tags"
-            };
             let mut folders = Array::new();
-            match t.get(key).and_then(Item::as_array) {
+            match t.get("folders").and_then(Item::as_array) {
                 Some(had) if !had.is_empty() => {
                     for v in had.iter().filter_map(|v| v.as_str()) {
                         folders.push(format!("{space}/{v}"));
@@ -734,7 +812,6 @@ pub fn fold_spaces_at(cfg: &Path) -> Result<usize, String> {
                 }
                 _ => folders.push(space.clone()),
             }
-            t.remove("tags");
             t["folders"] = Item::Value(folders.into());
 
             let table = doc
@@ -1185,6 +1262,47 @@ folders = ["prod/eu/web"]
         assert!(delete_jack_at(&p, "web")
             .unwrap_err()
             .contains("no jack named"));
+    }
+
+    /// Undo puts the table back where it was, keys and order intact, and refuses once
+    /// the name is in use again.
+    #[test]
+    fn a_deleted_jack_comes_back_in_its_place() {
+        let p = scratch("undo");
+        let removed = delete_jack_at(&p, "bastion").unwrap();
+        assert_eq!(removed.name, "bastion");
+        assert!(removed.block.contains("[jack.bastion]"));
+        assert!(removed.block.contains("port = 2222"));
+        assert!(!read(&p).contains("[jack.bastion]"));
+
+        restore_jack_at(&p, &removed).unwrap();
+        let back = read(&p);
+        assert!(back.contains("[jack.bastion]\nhost = \"bastion.example\"\nport = 2222"));
+        assert!(
+            back.find("[jack.bastion]").unwrap() < back.find("[jack.web]").unwrap(),
+            "restored ahead of the table that followed it"
+        );
+        assert!(back.contains("# my hosts - keep this comment"));
+        assert!(
+            back.matches("# the way in").count() == 1,
+            "the comment above it was rehomed once, not duplicated"
+        );
+        assert!(restore_jack_at(&p, &removed)
+            .unwrap_err()
+            .contains("already a jack named"));
+    }
+
+    #[test]
+    fn a_folder_move_touches_nothing_but_folders() {
+        let p = scratch("move");
+        set_folders_at(&p, "web", &["staging/web".into()]).unwrap();
+        let s = read(&p);
+        assert!(s.contains("folders = [\"staging/web\"]"));
+        assert!(s.contains("jump = \"bastion\""), "the other keys stay");
+        assert!(s.contains("# trailing comment"));
+        set_folders_at(&p, "web", &[]).unwrap();
+        assert!(!read(&p).contains("[jack.web]\nhost = \"10.0.0.4\"\njump = \"bastion\"\nfolders"));
+        assert!(set_folders_at(&p, "nope", &[]).is_err());
     }
 
     /// One line goes in at the top; turning it off takes exactly that line and the file.

@@ -32,9 +32,6 @@ pub struct Jack {
     /// device has.
     pub primary: Option<String>,
     pub folders: Option<Vec<String>>,
-    /// ponytail: the old name for `folders`, read but never written; drop it once nobody
-    /// has one.
-    pub tags: Option<Vec<String>>,
     pub desc: Option<String>,
     pub forward: Option<Vec<String>>,
 }
@@ -129,11 +126,7 @@ pub fn parse(src: &str) -> Result<Jacks, String> {
                 vnc: j.vnc.or(d.vnc),
                 ssh: j.ssh.or(d.ssh),
                 primary: j.primary.or_else(|| d.primary.clone()),
-                folders: j
-                    .folders
-                    .or(j.tags)
-                    .or_else(|| d.folders.clone().or_else(|| d.tags.clone())),
-                tags: None,
+                folders: j.folders.or_else(|| d.folders.clone()),
                 desc: j.desc.or_else(|| d.desc.clone()),
                 forward: j.forward.or_else(|| d.forward.clone()),
             };
@@ -712,49 +705,6 @@ forward = ["5432:localhost:5432"]
         .unwrap();
         assert_eq!(j["a"].user.as_deref(), Some("root"));
         assert_eq!(j["b"].user.as_deref(), Some("me"));
-    }
-
-    #[test]
-    fn tags_still_reads_as_folders_and_folders_wins_when_both_are_there() {
-        let j = parse(
-            r#"
-            [jack.old]
-            host = "h1"
-            tags = ["prod/eu"]
-
-            [jack.new]
-            host = "h2"
-            folders = ["prod/us"]
-            tags = ["stale"]
-            "#,
-        )
-        .unwrap();
-        assert_eq!(
-            j["old"].folders.as_deref(),
-            Some(&["prod/eu".to_string()][..])
-        );
-        assert_eq!(
-            j["new"].folders.as_deref(),
-            Some(&["prod/us".to_string()][..])
-        );
-        // Normalised away on load, so nothing downstream has to know the old name.
-        assert!(j["old"].tags.is_none() && j["new"].tags.is_none());
-    }
-
-    #[test]
-    fn a_jacks_own_tags_beats_folders_inherited_from_defaults() {
-        let j = parse(
-            r#"
-            [defaults]
-            folders = ["inherited"]
-
-            [jack.a]
-            host = "h1"
-            tags = ["mine"]
-            "#,
-        )
-        .unwrap();
-        assert_eq!(j["a"].folders.as_deref(), Some(&["mine".to_string()][..]));
     }
 
     #[test]
