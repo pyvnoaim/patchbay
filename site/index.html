@@ -54,6 +54,7 @@
           <a class="sm" href="#config">Config</a>
           <a class="sm" href="#import">Import</a>
           <a class="sm" href="#features">Features</a>
+          <a class="sm" href="#team">Team</a>
           <a class="sm" href="#changelog">Changelog</a>
           <div class="dl">
             <a class="btn solid" href="https://github.com/pyvnoaim/patchbay/releases">Download</a>
@@ -1419,7 +1420,67 @@
       </div>
     </section>
 
-    <section class="band raise split" id="changelog">
+    <section class="band raise split" id="team">
+      <div class="wrap">
+        <div class="body">
+          <h2>One list for the team.</h2>
+          <p class="lede">
+            The list is a file, so a team shares it the way it shares any file: on the team drive or
+            in a synced folder. Point Settings &#9656; Team at it and everyone sees the same devices
+            and the same folder notes. No server, no licence, and nothing in it worth stealing,
+            because it holds no passwords.
+          </p>
+          <p class="lede">
+            Settings and colours stay in your own file. A device a colleague changed since you
+            opened it is refused once rather than overwritten in silence, and a share that is away
+            keeps the list on screen.
+          </p>
+        </div>
+
+        <div class="full">
+          <div class="stack">
+            <div class="file">
+              <div class="fname">~/.config/patchbay/patchbay.toml</div>
+              <div class="ln"><span class="c-tbl">[settings]</span></div>
+              <div class="ln">
+                <span class="k">list</span>=
+                <span class="c-str">"/Volumes/team/patchbay.toml"</span>
+              </div>
+              <div class="ln">
+                <span class="k">theme</span>= <span class="c-str">"dark"</span>
+                <span class="c-cm"># stays yours</span>
+              </div>
+            </div>
+            <div class="file">
+              <div class="fname">/Volumes/team/patchbay.toml</div>
+              <div class="ln"><span class="c-tbl">[defaults]</span></div>
+              <div class="ln">
+                <span class="k">user</span>= <span class="c-str">"root"</span>
+                <span class="c-cm"># everyone's</span>
+              </div>
+              <div class="ln gap"><span class="c-tbl">[folder."Acme GmbH"]</span></div>
+              <div class="ln">
+                <span class="k">note</span>=
+                <span class="c-str">"change window is Tuesday 22:00"</span>
+              </div>
+              <div class="ln gap"><span class="c-tbl">[jack.DC1]</span></div>
+              <div class="ln">
+                <span class="k">host</span>= <span class="c-str">"10.0.0.50"</span>
+              </div>
+              <div class="ln">
+                <span class="k">folders</span>= [<span class="c-str">"Acme GmbH"</span>]
+              </div>
+            </div>
+          </div>
+          <p class="page-note patch-note">
+            The first person imports the Royal document and puts the file on the share. Everyone
+            else points at the same path.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="band split" id="changelog">
       <div class="wrap">
         <div class="body">
           <h2>What changed, and when.</h2>
