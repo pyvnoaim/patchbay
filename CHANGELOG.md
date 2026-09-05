@@ -16,6 +16,11 @@ it back. Nothing is retyped anywhere.
   hand on a first run shows what goes in it rather than a blank page.
 - On Linux, "Open in system client" for a remote desktop tries xfreerdp before asking
   the desktop what opens a `.rdp`, which without Remmina was a text editor.
+- On Windows and Linux the window's shortcuts are Ctrl+Shift+K, Ctrl+Shift+W and so on,
+  not plain Ctrl: in a shell Ctrl+W deletes a word and Ctrl+[ is Escape, and both used
+  to reach the window as well. Ctrl+W in a macOS shell no longer asks to close it either.
+- Terminals and paths on Windows use Cascadia Mono or Consolas, and DejaVu Sans Mono on
+  Linux, rather than whatever "monospace" falls back to.
 - Deleting a device offers Undo for a few seconds. It goes back where it was, with
   everything it had.
 - Drag a device onto a folder in the sidebar to file it there. Or right-click ▸ Move to
