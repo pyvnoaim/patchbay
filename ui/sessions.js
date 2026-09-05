@@ -1174,14 +1174,19 @@ async function openRdpSession(name) {
     pending ? pending.push(buf) : paint(buf);
   };
 
+  // The pane's own size, so the desktop fits without being scaled. Even numbers
+  // because the RDP codecs work in 2x2 blocks. Laid out by showTab() above.
+  // ponytail: measured once at open; a window resized later gets CSS scaling,
+  // the Display Control channel if that ever grates.
+  const fit = (n) => Math.max(640, Math.min(8192, n)) & ~1;
   try {
     const screen = await invoke("open_rdp_session", {
       id,
       name,
       user: creds.user,
       password: creds.password,
-      width: 1280,
-      height: 1024,
+      width: fit(host.clientWidth),
+      height: fit(host.clientHeight),
       onTile: chan,
     });
     // The server picks the size; asking for one is only a suggestion.
