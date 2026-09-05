@@ -10,6 +10,10 @@ on:
   push:
     tags: ["v*"]
 
+# Creating the draft and uploading to it; nothing else.
+permissions:
+  contents: write
+
 jobs:
   # Ten minutes into four runners is a bad time to find out the tag and the config
   # disagree - and the version in the bundle is the one the updater compares.
@@ -89,3 +93,17 @@ jobs:
           # one already on the release, so the matrix ends with a single latest.json.
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+      # A copy of each bundle without the version in its name, so the site's
+      # `releases/latest/download/patchbay_x64-setup.exe` links never go stale.
+      # The originals stay: latest.json points at those.
+      - shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shopt -s globstar nullglob
+          for f in src-tauri/target/**/release/bundle/**/patchbay_*.{dmg,exe,deb,AppImage}; do
+            plain=$(basename "$f" | sed -E 's/^patchbay_[0-9]+\.[0-9]+\.[0-9]+_/patchbay_/')
+            cp "$f" "$plain"
+            gh release upload "$GITHUB_REF_NAME" "$plain" --clobber
+          done
