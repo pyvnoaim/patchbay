@@ -1638,8 +1638,8 @@ pre.block {
   position: relative;
   padding: 2px 20px 2px calc(20px + var(--in, 0) * 18px);
   color: var(--ink);
-  /* Not clipped: the socket straddles the panel's border. */
-  white-space: pre;
+  /* nowrap, not pre: prettier indents the markup inside each line, and pre painted it. */
+  white-space: nowrap;
   transition:
     background 0.3s var(--ease),
     color 0.3s var(--ease);
@@ -1719,6 +1719,15 @@ pre.block {
 .patch-note {
   margin-top: 22px;
   max-width: var(--measure);
+}
+
+/* The team band: your file above the shared one, no leads between them. */
+.stack {
+  display: grid;
+  gap: 14px;
+}
+.ln .c-cm {
+  margin-left: 3ch;
 }
 
 @media (max-width: 780px) {
