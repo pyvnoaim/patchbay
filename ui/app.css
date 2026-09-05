@@ -463,6 +463,32 @@ body:not([data-os="macos"]) #side .drag {
   color: var(--fg);
   font-weight: 550;
 }
+/* The folder a dragged row is over. Outline, not background: the current row keeps its own. */
+.group.drop-on {
+  outline: 1.5px solid var(--accent);
+  outline-offset: -1.5px;
+}
+/* The name riding with the pointer during a drag. */
+.drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 20;
+  pointer-events: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+  white-space: nowrap;
+}
+body.dragging,
+body.dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
 .group .label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2002,6 +2028,41 @@ button:disabled {
   margin-top: 0;
 }
 /* The settings sheet is a single column, so a row of fields needs its own grid. */
+/* The shortcuts page: a label and its keys per row, in the same three groups the
+   keyboard handler is split into. */
+.keygroup {
+  margin-top: 14px;
+}
+.keytitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-faint);
+  margin-bottom: 4px;
+}
+.keyrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 5px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+}
+.keyrow .keys {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+.keyrow kbd {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--row);
+  border: 1px solid var(--line);
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+}
 .grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2628,7 +2689,8 @@ body.intro #uptoast {
 .pill button {
   flex: none;
 }
-#uptoast .primary {
+#uptoast .primary,
+#msg .primary {
   padding: 5px 12px;
   border-radius: 999px;
   font-size: 12px;

@@ -50,6 +50,69 @@ listEl.addEventListener("click", (e) => {
   if (e.detail === 2) primary(shown[sel].name);
 });
 
+// Drag a row onto a folder in the tree. Pointer events, not HTML5 drag and drop: the
+// window's file-drop handler (uploads) takes that over on some platforms, and a web
+// tab is an OS view above the page that would swallow a dragend anyway. A drag is a
+// press that travels; a press that doesn't is still the click above.
+let dragged = false; // the click that ends a drag is not a click
+listEl.addEventListener("pointerdown", (e) => {
+  const row = e.target.closest(".jack[data-i]");
+  if (!row || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+  const j = shown[+row.dataset.i];
+  if (!j) return;
+  const js = marked.has(j.name) ? markedHere() : [j];
+  const [x0, y0] = [e.clientX, e.clientY];
+  let ghost = null;
+  let over = null;
+  const target = (ev) => {
+    const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest("#tree .group");
+    return el && (el.dataset.group || el.dataset.path === "") ? el : null;
+  };
+  const move = (ev) => {
+    if (!ghost) {
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+      listEl.setPointerCapture(e.pointerId);
+      document.body.classList.add("dragging");
+      ghost = document.createElement("div");
+      ghost.className = "drag-ghost";
+      ghost.textContent = js.length === 1 ? js[0].name : `${js.length} devices`;
+      document.body.append(ghost);
+    }
+    ghost.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 12}px)`;
+    const next = target(ev);
+    if (next !== over) {
+      over?.classList.remove("drop-on");
+      next?.classList.add("drop-on");
+      over = next;
+    }
+  };
+  const end = () => {
+    listEl.removeEventListener("pointermove", move);
+    listEl.removeEventListener("pointerup", end);
+    listEl.removeEventListener("lostpointercapture", end);
+    if (!ghost) return;
+    ghost.remove();
+    document.body.classList.remove("dragging");
+    over?.classList.remove("drop-on");
+    // The click lands in this same turn; a release outside the window sends none.
+    dragged = true;
+    setTimeout(() => (dragged = false), 0);
+    if (over) moveJacks(js, over.dataset.path || null);
+  };
+  listEl.addEventListener("pointermove", move);
+  listEl.addEventListener("pointerup", end);
+  listEl.addEventListener("lostpointercapture", end);
+});
+listEl.addEventListener(
+  "click",
+  (e) => {
+    if (!dragged) return;
+    dragged = false;
+    e.stopImmediatePropagation();
+  },
+  true,
+);
+
 detailPane.addEventListener("click", async (e) => {
   const gact = e.target.closest("[data-gact]")?.dataset.gact;
   if (gact) {
@@ -261,6 +324,9 @@ document.addEventListener("keydown", (e) => {
   } else if (mod && e.key === "r") {
     e.preventDefault();
     load();
+  } else if ((e.key === "?" && !mod) || (mod && e.key === "/")) {
+    e.preventDefault();
+    openSettings("keys");
   }
   // Just start typing: the palette opens carrying the keystroke.
   else if (!mod && !e.altKey && e.key.length === 1) {
@@ -283,16 +349,17 @@ async function load() {
   try {
     // In parallel: load() runs on every focus and sits in front of the first paint.
     // Only `jacks` is left uncaught; its failure is what the error branch is for.
-    let noteRows;
-    [prefs, sshKeys, colors, cfgPath, tunnels, noteRows, all] = await Promise.all([
+    let noteRows, tun;
+    [prefs, sshKeys, colors, cfgPath, tun, noteRows, all] = await Promise.all([
       invoke("settings").catch(() => ({})),
       sshKeys.length ? sshKeys : invoke("ssh_keys").catch(() => []),
       invoke("colors").catch(() => ({})),
       invoke("config_path").catch(() => ""),
-      invoke("tunnels").catch(() => []),
+      invoke("tunnels").catch(() => ({ live: [], ended: [] })),
       invoke("notes").catch(() => []),
       invoke("jacks"),
     ]);
+    takeTunnels(tun);
     notes = new Map(noteRows.map((n) => [n.path, n.note]));
     // Open the first level on the first load only, or focus would re-open folders.
     if (!seeded) {
@@ -393,6 +460,11 @@ listen("menu:check-update", () => checkUpdates(setWrap.hidden ? null : $("update
     /* no capability, so the settings button is the only way in */
   },
 );
+
+// The macOS Help menu's "Keyboard Shortcuts".
+listen("menu:shortcuts", () => openSettings("keys")).catch(() => {
+  /* no capability, so ? is the only way in */
+});
 
 // A `patchbay://` link. Rust has already resolved it to a name in this config; the
 // window opens it the way Enter would. See `takeLink` for one that arrived early.

@@ -71,6 +71,8 @@ document.addEventListener("contextmenu", (e) => {
               "-",
             ]
           : []),
+        { icon: "folder-input", label: "Move to folder…", run: () => moveAsked(bulk) },
+        "-",
         {
           icon: "trash-2",
           label: `Delete ${bulk.length} devices`,
@@ -156,6 +158,7 @@ document.addEventListener("contextmenu", (e) => {
         { icon: "pencil", label: "Edit…", run: () => openJack(j) },
         // Everything but the name, which is the one field a copy has to differ in.
         { icon: "copy-plus", label: "Duplicate…", run: () => openJack({ ...j, name: "" }) },
+        { icon: "folder-input", label: "Move to folder…", run: () => moveAsked([j]) },
         { icon: "trash-2", label: "Delete", key: "⌫", danger: true, run: () => removeJack(j.name) },
       ],
       j.os ?? null,
@@ -224,6 +227,7 @@ document.addEventListener("contextmenu", (e) => {
       label: "Open config file",
       run: () => invoke("open_config").catch(alertish),
     },
+    { icon: "keyboard", label: "Keyboard shortcuts", key: "?", run: () => openSettings("keys") },
   ]);
 });
 window.addEventListener("blur", hideCtx);
@@ -380,11 +384,16 @@ slClean.addEventListener("click", async () => {
 });
 
 let msgFade = null;
+let msgRun = null; // what the pill's button does, while it has one
 // A self-dismissing line at the foot of the window for anything outside a form. Its own
 // pill, so an error mid-download can't take the update's Restart button off the screen.
-function flash(text, bad = false) {
+// `action` is `{ label, run }`: a button on the pill, gone with it.
+function flash(text, bad = false, action = null) {
   msgText.textContent = text;
   msgClose.innerHTML = icon("x");
+  msgAct.hidden = !action;
+  msgAct.textContent = action?.label ?? "";
+  msgRun = action?.run ?? null;
   msgWrap.classList.toggle("bad", bad);
   msgWrap.classList.remove("leaving");
   msgWrap.hidden = false;
@@ -397,12 +406,17 @@ function flash(text, bad = false) {
         msgWrap.classList.remove("leaving");
       }, 280);
     },
-    bad ? 8000 : 4000,
+    bad || action ? 8000 : 4000,
   );
 }
 msgClose.addEventListener("click", () => {
   clearTimeout(msgFade);
   msgWrap.hidden = true;
+});
+msgAct.addEventListener("click", () => {
+  clearTimeout(msgFade);
+  msgWrap.hidden = true;
+  msgRun?.();
 });
 
 // A check someone asked for answers either way; the launch check stays quiet unless
@@ -583,12 +597,36 @@ function showErr(el, msg) {
 }
 
 // ── mutations ──────────────────────────────────────────────────────────────
+// A delete is offered back for a few seconds: Rust hands over the removed table and
+// Undo writes it back where it was. Held here, not in the config - a wrong "yes" is
+// the case, not a history.
+function offerUndo(removed, failed = []) {
+  const what = removed.length === 1 ? `"${removed[0].name}"` : `${removed.length} devices`;
+  const but = failed.length ? ` Could not delete ${failed.join(", ")}.` : "";
+  flash(`Deleted ${what}.${but}`, failed.length > 0, {
+    label: "Undo",
+    run: async () => {
+      const failed = [];
+      for (const r of removed) {
+        try {
+          await invoke("restore_jack", { removed: r });
+        } catch {
+          failed.push(r.name);
+        }
+      }
+      if (failed.length) alertish(`could not restore ${failed.join(", ")}`);
+      await load();
+    },
+  });
+}
+
 async function removeJack(name) {
   if (!(await ask(`Delete "${name}"? This edits your config file.`, null, "Delete"))) return;
   try {
-    await invoke("delete_jack", { name });
+    const removed = await invoke("delete_jack", { name });
     sel = 0;
     await load();
+    offerUndo([removed]);
   } catch (e) {
     alertish(e);
   }
@@ -607,17 +645,19 @@ async function removeMarked(js) {
   if (!(await ask(msg, null, "Delete"))) return;
   // One refusal doesn't abandon the rest; the ones that failed are named.
   const failed = [];
+  const removed = [];
   for (const j of js) {
     try {
-      await invoke("delete_jack", { name: j.name });
+      removed.push(await invoke("delete_jack", { name: j.name }));
     } catch {
       failed.push(j.name);
     }
   }
-  if (failed.length) alertish(`could not delete ${failed.join(", ")}`);
   marked.clear();
   sel = 0;
   await load();
+  if (removed.length) offerUndo(removed, failed);
+  else alertish(`could not delete ${failed.join(", ")}`);
 }
 
 async function newGroup(parent) {
@@ -664,6 +704,58 @@ async function removeGroup(id) {
   } catch (e) {
     alertish(e);
   }
+}
+
+// Put devices in a folder. Seen from inside a folder it is a move: every entry under
+// that folder becomes `to`, and `to` of null takes them out of it. Seen from All
+// devices it is an add, because there is nothing to move out of. Only the folders list
+// is written, so a hand-written key on the device survives.
+async function moveJacks(js, to) {
+  const from = group?.path ?? null;
+  const under = (f) => from !== null && (f === from || f.startsWith(from + "/"));
+  let moved = 0;
+  for (const j of js) {
+    const was = j.folders;
+    const next = [
+      ...new Set(
+        was.some(under)
+          ? was.map((f) => (under(f) ? to : f)).filter((f) => f !== null)
+          : to === null
+            ? was
+            : [...was, to],
+      ),
+    ];
+    if (next.length === was.length && next.every((f, i) => f === was[i])) continue;
+    try {
+      await invoke("set_folders", { name: j.name, folders: next });
+      moved++;
+    } catch (e) {
+      alertish(e);
+      break;
+    }
+  }
+  if (!moved) return;
+  if (to !== null) {
+    expanded.add(gkey({ path: to.split("/")[0] }));
+    pending.delete(gkey({ path: to }));
+  }
+  marked.clear();
+  await load();
+}
+
+// "Move to folder…": the same move, typed. The list of folders is offered as you type.
+async function moveAsked(js) {
+  const what = js.length === 1 ? `"${js[0].name}"` : `${js.length} devices`;
+  askInput.setAttribute("list", "folderlist");
+  let to;
+  try {
+    to = await ask(`Move ${what} to folder`, group?.path ?? "", "Move");
+  } finally {
+    askInput.removeAttribute("list");
+  }
+  if (to === null) return;
+  const leaf = to.replace(/^\/+|\/+$/g, "");
+  await moveJacks(js, leaf || null);
 }
 
 // Every failure the window can't put in a form. A pill, because the detail pane's
@@ -882,6 +974,58 @@ impForm.addEventListener("submit", async (e) => {
 });
 
 // ── settings ───────────────────────────────────────────────────────────────
+// The shortcuts page. Chords read ⌘ or Ctrl off the platform; a plain key is itself.
+// A live session owns the keyboard, so the last group is the whole of what a tab
+// still answers to.
+function keysHtml() {
+  const k = (s) => `<kbd>${esc(s)}</kbd>`;
+  const groups = [
+    [
+      "Anywhere",
+      [
+        ["Search, or just start typing", [chord("k")]],
+        ["New device", [chord("n")]],
+        ["Settings", [chord(",")]],
+        ["Open the config file", [chord("e")]],
+        ["Reload the list", [chord("r")]],
+        ["Previous, next tab", [`${chord("[")}`, `${chord("]")}`]],
+        ["Close the tab; twice with a live session in it", [chord("w")]],
+        ["This page", ["?"]],
+      ],
+    ],
+    [
+      "The list",
+      [
+        ["Move", ["↑", "↓"]],
+        ["Fold, unfold, step through the folders", ["←", "→"]],
+        ["Open, the way the device is reached", ["⏎"]],
+        ["Delete", ["⌫"]],
+        ["Clear the marks, then the selection", ["Esc"]],
+        ["Mark several", [`${isMac ? "⌘" : "Ctrl"}-click`, "Shift-click"]],
+        ["Move into a folder", ["Drag onto it"]],
+      ],
+    ],
+    [
+      "In a session",
+      [
+        ["Find in the scrollback", [isMac ? "⌘F" : "Ctrl+Shift+F"]],
+        ["Run it again, or reconnect, once it has ended", ["⏎"]],
+      ],
+    ],
+  ];
+  return groups
+    .map(
+      ([title, rows]) =>
+        `<div class="keygroup"><div class="keytitle">${esc(title)}</div>${rows
+          .map(
+            ([what, keys]) =>
+              `<div class="keyrow"><span>${esc(what)}</span><span class="keys">${keys.map(k).join("")}</span></div>`,
+          )
+          .join("")}</div>`,
+    )
+    .join("");
+}
+
 async function openSettings(pane) {
   // A pane name that names nothing would leave the sheet half empty.
   if (!setNav.querySelector(`[data-pane="${CSS.escape(String(pane ?? ""))}"]`)) pane = "devices";
@@ -907,6 +1051,7 @@ async function openSettings(pane) {
     .then((v) => ($("appversion").textContent = `patchbay ${v}`))
     .catch(() => ($("appversion").textContent = "patchbay"));
   $("cfgpath").textContent = cfgPath;
+  $("keylist").innerHTML = keysHtml();
   setWrap.hidden = false;
 }
 const closeSettings = () => {

@@ -48,6 +48,7 @@ const upMore = $("up-more"),
   upNotes = $("up-notes");
 const msgWrap = $("msg"),
   msgText = $("msg-text"),
+  msgAct = $("msg-act"),
   msgClose = $("msg-close");
 
 const isMac = navigator.userAgent.includes("Mac");

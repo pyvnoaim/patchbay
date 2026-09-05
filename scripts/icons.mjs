@@ -47,6 +47,8 @@ const USED = [
   "share-2", // the map: a route, branching
   "radio-tower", // broadcast: input fanning out to every pane
   "square", // the broadcast tab chip's mute state
+  "folder-input", // move to folder
+  "keyboard", // the shortcuts page
 ];
 
 const inner = (name) =>

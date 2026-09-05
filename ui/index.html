@@ -168,6 +168,7 @@
           /></label>
           <datalist id="jacknames"></datalist>
           <datalist id="sshkeys"></datalist>
+          <datalist id="folderlist"></datalist>
         </div>
         <p class="sheet-err" id="jf-err" hidden></p>
         <div class="sheet-foot">
@@ -190,6 +191,7 @@
             <button type="button" data-pane="import" data-icon="download">Import</button>
             <button type="button" data-pane="updates" data-icon="rotate-cw">Updates</button>
             <button type="button" data-pane="config" data-icon="file-pen-line">Config file</button>
+            <button type="button" data-pane="keys" data-icon="keyboard">Shortcuts</button>
           </nav>
           <div class="setpanes">
             <section class="pane" data-pane="devices">
@@ -336,6 +338,12 @@
                 <button type="button" class="ghost" id="page-openconfig"></button>
               </div>
             </section>
+
+            <!-- Filled by openSettings: the labels read ⌘ or Ctrl off the platform. -->
+            <section class="pane" data-pane="keys" hidden>
+              <div class="d-sec">Keyboard shortcuts</div>
+              <div id="keylist"></div>
+            </section>
           </div>
         </div>
         <p class="sheet-err" id="set-err" hidden></p>
@@ -408,6 +416,8 @@
       <div id="msg" class="pill" role="alert" hidden>
         <div class="pill-row">
           <span id="msg-text"></span>
+          <!-- Undo, for the few seconds a delete can still be taken back. -->
+          <button type="button" id="msg-act" class="primary" hidden></button>
           <button type="button" id="msg-close" class="x" aria-label="Dismiss"></button>
         </div>
       </div>

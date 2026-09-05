@@ -28,6 +28,16 @@ function buildTree(jacks) {
   return root;
 }
 
+// Every folder there is, parents included, for "Move to…" to offer.
+function folderPaths() {
+  const out = new Set();
+  for (const f of [...all.flatMap((j) => j.folders), ...[...pending.values()].map((p) => p.path)]) {
+    const parts = f.split("/").filter(Boolean);
+    for (let i = 1; i <= parts.length; i++) out.add(parts.slice(0, i).join("/"));
+  }
+  return out;
+}
+
 function renderTree() {
   const live = new Set([...sessions.values()].filter((s) => !s.dead).map((s) => s.name));
   const names = (js) => new Set(js.map((j) => j.name));
@@ -95,6 +105,10 @@ function render() {
   // Both the device sheet and the settings sheet suggest jump targets.
   $("jacknames").innerHTML = all.map((x) => `<option value="${esc(x.name)}">`).join("");
   $("sshkeys").innerHTML = sshKeys.map((k) => `<option value="${esc(k)}">`).join("");
+  $("folderlist").innerHTML = [...folderPaths()]
+    .sort()
+    .map((f) => `<option value="${esc(f)}">`)
+    .join("");
 
   renderTabs();
   searchBtn.innerHTML = `${icon("search")}Search<kbd>${chord("k")}</kbd>`;
@@ -491,6 +505,7 @@ function renderDock() {
   dock.innerHTML = `
     <span class="count"><b>${bulk.length}</b> selected</span>
     ${ssh >= 2 ? btn("bcast", "radio-tower", `Broadcast to ${ssh}`) : ""}
+    ${btn("move", "folder-input", "Move")}
     ${btn("del", "trash-2", `Delete ${bulk.length}`, ' data-danger="1"')}`;
   dock.hidden = false;
 }
@@ -502,6 +517,7 @@ $("dock")?.addEventListener("click", (e) => {
   const bulk = markedHere();
   if (!bulk.length) return;
   if (a === "bcast") return openBroadcast(bulk);
+  if (a === "move") return moveAsked(bulk);
   if (a === "del") return removeMarked(bulk);
 });
 
@@ -586,9 +602,16 @@ async function handOffRdp(name) {
   }
 }
 
+// A tunnel that died since the last ask is named in a pill: its port stopped answering
+// without anything on screen changing.
+function takeTunnels(t) {
+  tunnels = t.live;
+  for (const why of t.ended) alertish(why);
+}
+
 async function refreshTunnels() {
   try {
-    tunnels = await invoke("tunnels");
+    takeTunnels(await invoke("tunnels"));
     render();
   } catch {
     /* none is normal */

@@ -93,8 +93,9 @@ pub fn jacks() -> Result<Vec<JackView>, String> {
         .collect())
 }
 
-/// TCP-connect every device's entry point in parallel. Nothing is sent.
-/// ponytail: one thread per jack, bounded pool if someone brings a thousand.
+/// TCP-connect every device's entry point in parallel. Nothing is sent. Each distinct
+/// host:port is dialled once - twenty devices behind one bastion are one connection -
+/// and at most `POOL` at a time, so a thousand devices don't mean a thousand threads.
 #[tauri::command]
 pub async fn probe() -> Result<Vec<Probe>, String> {
     super::blocking(|| {
@@ -107,22 +108,44 @@ pub async fn probe() -> Result<Vec<Probe>, String> {
                     .map(|(h, p)| (n.clone(), h, p))
             })
             .collect();
-
-        Ok(std::thread::scope(|s| {
-            let handles: Vec<_> = targets
-                .iter()
-                .map(|(name, host, port)| {
-                    s.spawn(move || Probe {
-                        name: name.clone(),
-                        target: format!("{host}:{port}"),
-                        ms: connect_ms(host, *port),
-                    })
-                })
-                .collect();
-            handles.into_iter().filter_map(|h| h.join().ok()).collect()
-        }))
+        let distinct: Vec<(String, u16)> = targets
+            .iter()
+            .map(|(_, h, p)| (h.clone(), *p))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let timed = probe_all(&distinct);
+        Ok(targets
+            .into_iter()
+            .map(|(name, host, port)| Probe {
+                target: format!("{host}:{port}"),
+                ms: timed.get(&(host, port)).copied().flatten(),
+                name,
+            })
+            .collect())
     })
     .await
+}
+
+const POOL: usize = 64;
+
+/// A bounded pool over a shared cursor: the next free thread takes the next target.
+fn probe_all(targets: &[(String, u16)]) -> std::collections::HashMap<(String, u16), Option<u64>> {
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let out = std::sync::Mutex::new(std::collections::HashMap::new());
+    std::thread::scope(|s| {
+        for _ in 0..POOL.min(targets.len()) {
+            s.spawn(|| loop {
+                let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some((host, port)) = targets.get(i) else {
+                    break;
+                };
+                let ms = connect_ms(host, *port);
+                out.lock().unwrap().insert((host.clone(), *port), ms);
+            });
+        }
+    });
+    out.into_inner().unwrap()
 }
 
 fn connect_ms(host: &str, port: u16) -> Option<u64> {
@@ -138,9 +161,21 @@ pub fn save_jack(original: Option<String>, jack: config::JackInput) -> Result<()
     config::save_jack_at(&patchbay::config_path(), original, jack)
 }
 
+/// Returns what was removed, for the window's Undo.
 #[tauri::command]
-pub fn delete_jack(name: String) -> Result<(), String> {
+pub fn delete_jack(name: String) -> Result<config::Removed, String> {
     config::delete_jack_at(&patchbay::config_path(), &name)
+}
+
+#[tauri::command]
+pub fn restore_jack(removed: config::Removed) -> Result<(), String> {
+    config::restore_jack_at(&patchbay::config_path(), &removed)
+}
+
+/// A drag into a folder, or "Move to…": only the folders list is written.
+#[tauri::command]
+pub fn set_folders(name: String, folders: Vec<String>) -> Result<(), String> {
+    config::set_folders_at(&patchbay::config_path(), &name, &folders)
 }
 
 /// The notes hung on folders, by folder path.
@@ -195,4 +230,26 @@ pub fn royal_hosts(src: String) -> Result<SshHosts, String> {
         hosts: found.hosts,
         warnings: found.warnings,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_pool_answers_for_every_target_once() {
+        let a = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let b = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let ports = [
+            a.local_addr().unwrap().port(),
+            b.local_addr().unwrap().port(),
+        ];
+        // More targets than the pool, the same two repeated, so the cursor has to share.
+        let targets: Vec<(String, u16)> = (0..POOL + 3)
+            .map(|i| ("127.0.0.1".to_string(), ports[i % 2]))
+            .collect();
+        let timed = probe_all(&targets);
+        assert_eq!(timed.len(), 2, "one answer per distinct host:port");
+        assert!(timed.values().all(Option::is_some));
+    }
 }

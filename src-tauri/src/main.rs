@@ -41,6 +41,7 @@ fn main() {
         )
         .manage(pty::Shared::default())
         .manage(rdp::SharedTunnels::default())
+        .manage(files::Edits::default())
         .manage(rdp_session::Shared::default())
         .manage(app::PendingLink::default())
         // Closing with a live session is asked about in the window, so the close is
@@ -70,6 +71,8 @@ fn main() {
             jacks::probe,
             jacks::save_jack,
             jacks::delete_jack,
+            jacks::restore_jack,
+            jacks::set_folders,
             jacks::rename_group,
             jacks::delete_group,
             jacks::notes,
@@ -198,16 +201,25 @@ fn setup_macos(app: &tauri::App) -> tauri::Result<()> {
         .separator()
         .fullscreen()
         .build()?;
+    let keys = MenuItem::with_id(h, "shortcuts", "Keyboard Shortcuts", true, Some("Cmd+/"))?;
+    let help = SubmenuBuilder::new(h, "Help").item(&keys).build()?;
     app.set_menu(
         MenuBuilder::new(h)
-            .items(&[&about, &edit, &window])
+            .items(&[&about, &edit, &window, &help])
             .build()?,
     )?;
-    // The window owns what a check looks like; the menu only says it was asked for.
+    // The window owns what a check or the list looks like; the menu only says it was
+    // asked for.
     app.on_menu_event(|app, event| {
-        if event.id() == "check-update" {
-            use tauri::Emitter;
-            let _ = app.emit("menu:check-update", ());
+        use tauri::Emitter;
+        match event.id().as_ref() {
+            "check-update" => {
+                let _ = app.emit("menu:check-update", ());
+            }
+            "shortcuts" => {
+                let _ = app.emit("menu:shortcuts", ());
+            }
+            _ => {}
         }
     });
     Ok(())
