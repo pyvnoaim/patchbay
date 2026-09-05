@@ -218,12 +218,12 @@ pub fn pump(
         ..
     } = session;
     let mut keys = ironrdp_input::Database::new();
-    // ponytail: the clipboard is polled, as no OS gives a change event; a platform
-    // watcher (macOS changeCount) is the upgrade.
-    let mut checked = std::time::Instant::now();
+    // Polled: no desktop delivers a clipboard change event to a process that isn't
+    // focused. The OS change counter makes each tick one integer where it has one.
+    let mut poll = ClipboardPoll::default();
 
     loop {
-        for frame in clipboard_frames(&mut stage, &clipboard, &last_seen, &mut checked)? {
+        for frame in clipboard_frames(&mut stage, &clipboard, &last_seen, &mut poll)? {
             framed
                 .write_all(&frame)
                 .map_err(|e| format!("{host}: {e}"))?;
@@ -266,7 +266,22 @@ pub fn pump(
 }
 
 /// How often the local clipboard is compared against what was last advertised.
-const CLIPBOARD_POLL: Duration = Duration::from_millis(500);
+const CLIPBOARD_POLL: Duration = Duration::from_millis(250);
+
+/// When the clipboard was last looked at, and the OS change count it had then.
+struct ClipboardPoll {
+    checked: std::time::Instant,
+    stamp: Option<u64>,
+}
+
+impl Default for ClipboardPoll {
+    fn default() -> Self {
+        Self {
+            checked: std::time::Instant::now(),
+            stamp: None,
+        }
+    }
+}
 
 /// Clipboard backend messages, plus a fresh local copy, as frames for the session to
 /// write. Here rather than in `clipboard.rs` so socket writes stay on this thread.
@@ -274,20 +289,27 @@ fn clipboard_frames(
     stage: &mut ActiveStage,
     inbox: &Receiver<ClipboardMessage>,
     last_seen: &crate::clipboard::LastSeen,
-    checked: &mut std::time::Instant,
+    poll: &mut ClipboardPoll,
 ) -> Result<Vec<Vec<u8>>, String> {
     let mut pending: Vec<ClipboardMessage> = inbox.try_iter().collect();
 
-    if checked.elapsed() >= CLIPBOARD_POLL {
-        *checked = std::time::Instant::now();
-        let now = crate::clipboard::local_text();
-        let mut seen = last_seen.lock().unwrap();
-        if now != *seen {
-            *seen = now;
-            if seen.is_some() {
-                pending.push(ClipboardMessage::SendInitiateCopy(
-                    crate::clipboard::Backend::text_formats(),
-                ));
+    if poll.checked.elapsed() >= CLIPBOARD_POLL {
+        poll.checked = std::time::Instant::now();
+        // The counter is the cheap question; the text is only read once it moved. With
+        // no counter the text is the comparison, as before.
+        let stamp = crate::clipboard::stamp();
+        let moved = stamp.is_none() || stamp != poll.stamp;
+        poll.stamp = stamp;
+        if moved {
+            let now = crate::clipboard::local_text();
+            let mut seen = last_seen.lock().unwrap();
+            if now != *seen {
+                *seen = now;
+                if seen.is_some() {
+                    pending.push(ClipboardMessage::SendInitiateCopy(
+                        crate::clipboard::Backend::text_formats(),
+                    ));
+                }
             }
         }
     }

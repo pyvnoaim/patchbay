@@ -28,6 +28,28 @@ fn from_utf16(bytes: &[u8]) -> String {
     String::from_utf16_lossy(&units)
 }
 
+/// The OS's own count of clipboard changes, so the poll compares one integer instead of
+/// reading the text every tick. None where there is no counter (X11 and Wayland have
+/// none short of XFixes), and the caller falls back to comparing the text.
+#[cfg(target_os = "macos")]
+pub fn stamp() -> Option<u64> {
+    use objc2_app_kit::NSPasteboard;
+    Some(NSPasteboard::generalPasteboard().changeCount() as u64)
+}
+
+#[cfg(windows)]
+pub fn stamp() -> Option<u64> {
+    // SAFETY: takes nothing and touches nothing of ours; 0 only when no window station.
+    Some(u64::from(unsafe {
+        windows_sys::Win32::System::DataExchange::GetClipboardSequenceNumber()
+    }))
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+pub fn stamp() -> Option<u64> {
+    None
+}
+
 /// A fresh handle per call: holding one across a session blocks other applications
 /// on some platforms.
 pub fn local_text() -> Option<String> {
