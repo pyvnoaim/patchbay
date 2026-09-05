@@ -42,7 +42,7 @@
     ],
     "macOS": {
       "dmg": {
-        "background": "../assets/dmg-background.png",
+        "background": "../assets/dmg-background.tiff",
         "windowSize": { "width": 660, "height": 400 },
         "appPosition": { "x": 176, "y": 190 },
         "applicationFolderPosition": { "x": 484, "y": 190 }
