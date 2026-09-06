@@ -1,3 +1,7 @@
+//! Setup only: plugins, the macOS menu, the window, and the command list. Everything
+//! the window can call lives in `commands/`, and the logic behind it in the modules
+//! beside this file.
+
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod clipboard;

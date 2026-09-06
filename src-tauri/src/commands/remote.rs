@@ -2,7 +2,7 @@
 //! jump chain. RDP is either handed to the system client as a `.rdp` file or decoded
 //! in-app by `rdp_session.rs`; VNC is always a handoff to `vnc://`.
 
-use super::{load_jacks, os_open};
+use super::{blocking, load_jacks, os_open};
 use crate::{patchbay, rdp, rdp_session};
 use serde::Serialize;
 
@@ -29,7 +29,9 @@ fn dial_address(
     resolved: &str,
     port: u16,
 ) -> Result<String, String> {
-    let j = jacks.get(resolved).ok_or("no such device")?;
+    let j = jacks
+        .get(resolved)
+        .ok_or_else(|| format!("no jack named \"{resolved}\""))?;
     let hops = patchbay::hops(resolved, jacks)?;
 
     Ok(if hops.is_empty() {
@@ -57,7 +59,9 @@ fn rdp_address(
 ) -> Result<(String, String, Option<String>), String> {
     let jacks = load_jacks()?;
     let resolved = patchbay::resolve(name, &jacks)?;
-    let j = jacks.get(&resolved).ok_or("no such device")?;
+    let j = jacks
+        .get(&resolved)
+        .ok_or_else(|| format!("no jack named \"{resolved}\""))?;
     let port = j
         .rdp
         .ok_or_else(|| format!("\"{resolved}\" has no rdp port"))?;
@@ -72,7 +76,7 @@ pub async fn open_rdp(
     name: String,
 ) -> Result<String, String> {
     let shared = tunnels.inner().clone();
-    super::blocking(move || {
+    blocking(move || {
         let (addr, resolved, user) = rdp_address(&shared, &name)?;
         let body = rdp::rdp_file(&addr, user.as_deref())?;
         let path = rdp::write_file(&resolved, &body)?;
@@ -111,7 +115,7 @@ pub async fn open_rdp_session(
 ) -> Result<rdp_session::Screen, String> {
     let shared = tunnels.inner().clone();
     let rdp_sessions = sessions.inner().clone();
-    super::blocking(move || {
+    blocking(move || {
         let (addr, resolved, cfg_user) = rdp_address(&shared, &name)?;
         let (host, port) = addr
             .rsplit_once(':')
@@ -176,10 +180,12 @@ pub async fn open_vnc(
     name: String,
 ) -> Result<String, String> {
     let shared = tunnels.inner().clone();
-    super::blocking(move || {
+    blocking(move || {
         let jacks = load_jacks()?;
         let resolved = patchbay::resolve(&name, &jacks)?;
-        let j = jacks.get(&resolved).ok_or("no such device")?;
+        let j = jacks
+            .get(&resolved)
+            .ok_or_else(|| format!("no jack named \"{resolved}\""))?;
         let port = j
             .vnc
             .ok_or_else(|| format!("\"{resolved}\" has no vnc port"))?;
@@ -219,7 +225,7 @@ pub async fn open_forwards(
     name: String,
 ) -> Result<u16, String> {
     let shared = tunnels.inner().clone();
-    super::blocking(move || {
+    blocking(move || {
         let jacks = load_jacks()?;
         let resolved = patchbay::resolve(&name, &jacks)?;
         let j = jacks

@@ -404,7 +404,7 @@ fn drain(
             // the new share id needed to re-run the sequence.
             ActiveStageOutput::DeactivateAll => {
                 return Err(format!(
-                    "{host} rebuilt the session and patchbay can't follow it yet \
+                    "\"{host}\" rebuilt the session and patchbay can't follow it yet \
                      - open it in the system client for now"
                 ))
             }
@@ -484,7 +484,7 @@ fn tls(stream: TcpStream, host: &str) -> Result<(Upgraded, Vec<u8>), String> {
         .conn
         .peer_certificates()
         .and_then(|c| c.first())
-        .ok_or_else(|| format!("{host} sent no certificate"))?;
+        .ok_or_else(|| format!("\"{host}\" sent no certificate"))?;
     // Before `connect_finalize`, where the password goes over the wire.
     trust::check(host, cert)?;
     let key = public_key(cert)?;
@@ -522,7 +522,7 @@ mod trust {
         {
             Some((_, known)) if known == now => Ok(()),
             Some((_, known)) => Err(format!(
-                "{host} presented a different certificate than last time \
+                "\"{host}\" presented a different certificate than last time \
                  ({} instead of {}) - if the host was rebuilt, remove its line from {}",
                 &now[..16.min(now.len())],
                 &known[..16.min(known.len())],

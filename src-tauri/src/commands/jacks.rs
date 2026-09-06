@@ -1,7 +1,7 @@
 //! The device list: reading it for the window, editing it, folders and notes, and
 //! importing one from an ssh config or a Royal TS document.
 
-use super::{blocking, list_file, load_jacks, ssh_dir};
+use super::{blocking, list_file, load_jacks, os_open, ssh_dir};
 use crate::{config, import, patchbay, terminal};
 use serde::Serialize;
 
@@ -149,7 +149,7 @@ pub async fn list_stamp() -> Result<ListStamp, String> {
 #[tauri::command]
 pub fn reveal_list() -> Result<(), String> {
     let p = list_file()?;
-    super::os_open(p.parent().unwrap_or(&p).as_os_str())
+    os_open(p.parent().unwrap_or(&p).as_os_str())
 }
 
 /// TCP-connect every device's entry point in parallel. Nothing is sent. Each distinct
@@ -157,7 +157,7 @@ pub fn reveal_list() -> Result<(), String> {
 /// and at most `POOL` at a time, so a thousand devices don't mean a thousand threads.
 #[tauri::command]
 pub async fn probe() -> Result<Vec<Probe>, String> {
-    super::blocking(|| {
+    blocking(|| {
         let jacks = load_jacks()?;
         let targets: Vec<(String, String, u16)> = jacks
             .keys()

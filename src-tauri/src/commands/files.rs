@@ -1,7 +1,7 @@
 //! The file browser. Every call is its own `sftp` run sharing one ssh session through
 //! multiplexing; see `sftp.rs`.
 
-use super::os_open;
+use super::{blocking, os_open};
 use crate::sftp;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 #[tauri::command]
 pub async fn sftp_ls(name: String, path: String) -> Result<sftp::Listing, String> {
-    super::blocking(move || sftp::ls(&name, &path)).await
+    blocking(move || sftp::ls(&name, &path)).await
 }
 
 /// Polled by a files tab waiting on a shell to authenticate. A `stat`, not a
@@ -23,7 +23,7 @@ pub fn sftp_ready(name: String) -> Result<bool, String> {
 /// Returns where the download landed, so the window can say which folder.
 #[tauri::command]
 pub async fn sftp_get(name: String, remote: String, recurse: bool) -> Result<String, String> {
-    super::blocking(move || {
+    blocking(move || {
         sftp::get(&name, &remote, &sftp::downloads(), recurse).map(|p| p.display().to_string())
     })
     .await
@@ -31,13 +31,13 @@ pub async fn sftp_get(name: String, remote: String, recurse: bool) -> Result<Str
 
 #[tauri::command]
 pub async fn sftp_put(name: String, local: String, remote_dir: String) -> Result<(), String> {
-    super::blocking(move || sftp::put(&name, Path::new(&local), &remote_dir)).await
+    blocking(move || sftp::put(&name, Path::new(&local), &remote_dir)).await
 }
 
 /// Make, rename or remove.
 #[tauri::command]
 pub async fn sftp_edit(name: String, op: String, path: String, to: String) -> Result<(), String> {
-    super::blocking(move || sftp::edit(&name, &op, &path, &to)).await
+    blocking(move || sftp::edit(&name, &op, &path, &to)).await
 }
 
 /// Emitted each time an opened file is saved back.
@@ -125,7 +125,7 @@ pub async fn sftp_open(
     remote: String,
 ) -> Result<String, String> {
     let dir = remote_dir(&remote);
-    let local = super::blocking({
+    let local = blocking({
         let name = name.clone();
         move || sftp::get(&name, &remote, &sftp::edit_dir(&name), false)
     })

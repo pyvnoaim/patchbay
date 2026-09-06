@@ -65,7 +65,7 @@ fn stale(what: &str, stamp: Option<&str>, current: Option<&Item>) -> Result<(), 
     let now = current.map(stamp_of).unwrap_or_default();
     if sent != now {
         return Err(format!(
-            "\"{what}\" was changed by someone else since you opened it. Saving again replaces their change."
+            "\"{what}\" was changed by someone else since you opened it - saving again replaces their change"
         ));
     }
     Ok(())
@@ -97,9 +97,7 @@ pub fn write_ssh_include(dir: &Path, body: &str) -> Result<(), String> {
     if std::fs::read_to_string(&ours).is_ok_and(|had| had == body) {
         return Ok(());
     }
-    let tmp = dir.join(format!("{SSH_FILE}.tmp"));
-    std::fs::write(&tmp, body).map_err(|e| format!("{}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, &ours).map_err(|e| format!("{}: {e}", ours.display()))?;
+    write_text(&ours, body)?;
 
     let cfg = dir.join("config");
     let had = std::fs::read_to_string(&cfg).unwrap_or_default();
@@ -162,7 +160,8 @@ fn includes_ours(src: &str) -> bool {
     src.lines().any(is_our_include)
 }
 
-/// Temp file plus rename, so the ssh config is never left half-written.
+/// Temp file plus rename, in the same directory so the rename is atomic: a crash
+/// can't leave someone's file half-written.
 fn write_text(path: &Path, body: &str) -> Result<(), String> {
     let tmp = path.with_extension("patchbay-tmp");
     std::fs::write(&tmp, body).map_err(|e| format!("{}: {e}", tmp.display()))?;
@@ -173,10 +172,7 @@ fn write_doc(path: &Path, doc: &DocumentMut) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    // Same directory, so the rename is atomic.
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, doc.to_string()).map_err(|e| format!("{}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
+    write_text(path, &doc.to_string())
 }
 
 /// What a first run finds when it opens the file by hand: every key, commented out, so
@@ -294,6 +290,15 @@ fn set_str(t: &mut Table, k: &str, v: Option<&str>) {
     }
 }
 
+fn set_num(t: &mut Table, k: &str, v: Option<u16>) {
+    match v {
+        Some(n) => t[k] = value(i64::from(n)),
+        None => {
+            t.remove(k);
+        }
+    }
+}
+
 fn set_arr(t: &mut Table, k: &str, items: &[String]) {
     let kept: Vec<&str> = items
         .iter()
@@ -327,7 +332,7 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     }
     // A forward becomes argv, so it is validated on save as well as on connect.
     for f in &j.forward {
-        crate::patchbay::forward_arg(f)?;
+        patchbay::forward_arg(f)?;
     }
 
     let mut doc = read_doc(path)?;
@@ -369,24 +374,9 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
             t.remove("ssh");
         }
     }
-    match j.vnc {
-        Some(p) => t["vnc"] = value(p as i64),
-        None => {
-            t.remove("vnc");
-        }
-    }
-    match j.rdp {
-        Some(p) => t["rdp"] = value(p as i64),
-        None => {
-            t.remove("rdp");
-        }
-    }
-    match j.port {
-        Some(p) => t["port"] = value(p as i64),
-        None => {
-            t.remove("port");
-        }
-    }
+    set_num(t, "vnc", j.vnc);
+    set_num(t, "rdp", j.rdp);
+    set_num(t, "port", j.port);
 
     write_doc(path, &doc)
 }
@@ -636,12 +626,7 @@ pub fn save_defaults_at(file: &Path, d: &Defaults) -> Result<(), String> {
         set_str(t, "user", d.user.as_deref());
         set_str(t, "key", d.key.as_deref());
         set_str(t, "jump", d.jump.as_deref());
-        match d.port {
-            Some(p) => t["port"] = value(p as i64),
-            None => {
-                t.remove("port");
-            }
-        }
+        set_num(t, "port", d.port);
         t.is_empty()
     };
     // An empty `[defaults]` is removed; a hand-written key keeps the table alive.
@@ -743,7 +728,7 @@ pub fn save_color(os: &str, hex: Option<&str>) -> Result<(), String> {
 pub fn save_color_at(file: &Path, os: &str, hex: Option<&str>) -> Result<(), String> {
     let os = os.trim().to_lowercase();
     if os.is_empty() {
-        return Err("which os?".into());
+        return Err("a colour needs an os name".into());
     }
     if let Some(h) = hex {
         // Reaches a style attribute, so only a plain hex gets in.

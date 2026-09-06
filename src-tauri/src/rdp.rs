@@ -236,7 +236,7 @@ pub fn write_file(name: &str, body: &str) -> Result<std::path::PathBuf, String> 
         }
     ));
     let mut f = std::fs::File::create(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    f.write_all(body.as_bytes()).map_err(|e| format!("{e}"))?;
+    f.write_all(body.as_bytes()).map_err(|e| e.to_string())?;
     Ok(path)
 }
 

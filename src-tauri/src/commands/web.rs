@@ -6,7 +6,7 @@
 //! that matches nothing in `capabilities/`, which is all that keeps an appliance's
 //! login page away from `delete_jack`.
 
-use super::{load_jacks, os_open};
+use super::{blocking, load_jacks, os_open};
 use crate::patchbay::{self, is_web_url};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -44,7 +44,7 @@ pub async fn open_url(name: String) -> Result<String, String> {
 #[tauri::command]
 pub fn open_link(url: String) -> Result<String, String> {
     if !is_web_url(&url) {
-        return Err(format!("not a web address: \"{url}\""));
+        return Err(format!("\"{url}\" isn't a web address"));
     }
     os_open(url.as_ref())?;
     Ok(url)
@@ -136,7 +136,7 @@ pub async fn web_check(url: String) -> Result<(), String> {
     if web_trusted(&url) {
         return Ok(());
     }
-    super::blocking(move || web_reachable(&url)).await
+    blocking(move || web_reachable(&url)).await
 }
 
 /// One request of our own, to turn a silent blank page into a reason.
@@ -306,7 +306,7 @@ fn peer_cert(url: &str) -> Result<(String, Vec<u8>), String> {
         .peer_certificates()
         .and_then(|c| c.first())
         .map(|c| c.as_ref().to_vec())
-        .ok_or_else(|| format!("{host} sent no certificate"))?;
+        .ok_or_else(|| format!("\"{host}\" sent no certificate"))?;
     Ok((host, der))
 }
 
@@ -335,7 +335,7 @@ pub async fn web_cert(url: String) -> Result<serde_json::Value, String> {
     if !is_web_url(&url) {
         return Err(NOT_WEB.into());
     }
-    super::blocking(move || {
+    blocking(move || {
         let (_, der) = peer_cert(&url)?;
         serde_json::to_value(cert_facts(&der)?).map_err(|e| e.to_string())
     })
@@ -348,7 +348,7 @@ pub async fn web_trust_cert(url: String) -> Result<(), String> {
     if !is_web_url(&url) {
         return Err(NOT_WEB.into());
     }
-    super::blocking(move || {
+    blocking(move || {
         let (host, der) = peer_cert(&url)?;
         trust_cert(&host, &der)?;
         // Our own check still refuses a mismatched name, so record the waiver too or

@@ -145,7 +145,7 @@ impl Sessions {
         s.writer
             .write_all(data.as_bytes())
             .and_then(|_| s.writer.flush())
-            .map_err(|e| format!("{e}"))
+            .map_err(|e| e.to_string())
     }
 
     pub fn resize(&self, id: u32, cols: u16, rows: u16) -> Result<(), String> {
@@ -158,7 +158,7 @@ impl Sessions {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| format!("{e}"))
+            .map_err(|e| e.to_string())
     }
 
     /// Dropping the session closes the master fd, which hangs up ssh.
