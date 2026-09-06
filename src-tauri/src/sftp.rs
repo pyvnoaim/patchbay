@@ -113,7 +113,7 @@ fn local_arg(p: &Path) -> Result<String, String> {
 }
 
 fn args_for(name: &str) -> Result<Vec<String>, String> {
-    let jacks = patchbay::load(&patchbay::config_path())?;
+    let jacks = crate::commands::load_jacks()?;
     let resolved = patchbay::resolve(name, &jacks)?;
     let ssh = patchbay::ssh_args(&resolved, &jacks)?;
     Ok(sftp_args(ssh, &control_path(&resolved)))
@@ -243,7 +243,7 @@ fn parse_listing(out: &str, asked_for: &str) -> Listing {
 /// Whether a shared connection is already up. The control socket exists only once ssh
 /// has authenticated, so this asks nothing of the far end.
 pub fn ready(name: &str) -> Result<bool, String> {
-    let jacks = patchbay::load(&patchbay::config_path())?;
+    let jacks = crate::commands::load_jacks()?;
     let resolved = patchbay::resolve(name, &jacks)?;
     Ok(control_path(&resolved).exists())
 }
