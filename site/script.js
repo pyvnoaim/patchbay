@@ -189,12 +189,13 @@
     (mq.addEventListener ? mq.addEventListener.bind(mq, "change") : mq.addListener.bind(mq))(theme);
   }
 
-  var dpr = Math.min(window.devicePixelRatio || 1, 1);
+  // Drawn at 1x whatever the display: it is a soft background, and a retina buffer is
+  // four times the fragments for something nobody looks straight at.
   function resize() {
     var w = Math.max(hero.clientWidth, 1),
       h = Math.max(hero.clientHeight, 1);
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
+    canvas.width = w;
+    canvas.height = h;
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.uniform2f(U.uResolution, canvas.width, canvas.height);
   }
@@ -580,8 +581,8 @@
 
   // Everything below reaches innerHTML, and every value was typed into the panel by the reader.
   function esc(t) {
-    return String(t).replace(/[&<>]/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c];
+    return String(t).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
     });
   }
 

@@ -1,8 +1,10 @@
 // The one entry point for running patchbay locally.
 //
-//   node scripts/dev.mjs          the app window
-//   node scripts/dev.mjs build    a release bundle
-//   node scripts/dev.mjs cargo …  cargo, with PATH sorted out
+//   npm run dev      the app window
+//   npm run build    a release bundle
+//   npm test         cargo, with PATH sorted out
+//
+// Always through npm: `tauri` is resolved off node_modules/.bin, which only npm puts on PATH.
 //
 // npm scripts can't do two things portably: point at the dev config (an env-var prefix doesn't
 // work in cmd.exe) and find cargo (a terminal opened before rustup ran has no cargo on PATH).
