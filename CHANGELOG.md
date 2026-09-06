@@ -10,6 +10,9 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- patchbay is now under the PolyForm Small Business licence: free for you and for any
+  company under 100 people, a paid licence above that. The source is unchanged and still
+  here to read, build and fork.
 - In the light theme the Delete button's gradient no longer runs into the dark theme's
   red halfway down.
 - Settings ▸ Team points the list at a file on a share or a synced folder, so a team

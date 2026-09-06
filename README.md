@@ -78,8 +78,8 @@ command line, and the window shows it before it runs.
 A team's list is the same file in a folder you already share. Import your Royal
 document, put the file on the team drive, and point Settings ▸ Team at it; colleagues
 point at the same path. Everyone sees the same devices and folder notes, and `grep`
-still reads it. Nothing to install, nothing to license, and since the file holds no
-credentials, sharing it shares hostnames and nothing more.
+still reads it. Nothing to install and no server in the middle, and since the file
+holds no credentials, sharing it shares hostnames and nothing more.
 
 `[settings]` and colours stay in your own file. `[defaults]` goes with the list, so a
 `user` or `key` there is for a *shared* account (`root@nas`, `~/.ssh/acme`; `~`
@@ -209,3 +209,11 @@ would have to earn its place, and one screen-sharing tab already exists.
 Files are `sftp`, the binary, not a library. A web UI is a webview showing the device's
 own page, not something we render. The pattern holds: patchbay knows where your machines
 are and what to run - the running is someone else's job.
+
+## Licence
+
+[PolyForm Small Business 1.0.0](LICENSE). Free for you personally, and free for any
+company under 100 people and $1M revenue - which is most of them. The source is here
+either way: read it, build it, fork it, send patches.
+
+Bigger than that and it needs a commercial licence. Open an issue and we'll sort it out.
