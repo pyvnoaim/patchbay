@@ -383,42 +383,6 @@ slClean.addEventListener("click", async () => {
   }
 });
 
-let msgFade = null;
-let msgRun = null; // what the pill's button does, while it has one
-// A self-dismissing line at the foot of the window for anything outside a form. Its own
-// pill, so an error mid-download can't take the update's Restart button off the screen.
-// `action` is `{ label, run }`: a button on the pill, gone with it.
-function flash(text, bad = false, action = null) {
-  msgText.textContent = text;
-  msgClose.innerHTML = icon("x");
-  msgAct.hidden = !action;
-  msgAct.textContent = action?.label ?? "";
-  msgRun = action?.run ?? null;
-  msgWrap.classList.toggle("bad", bad);
-  msgWrap.classList.remove("leaving");
-  msgWrap.hidden = false;
-  clearTimeout(msgFade);
-  msgFade = setTimeout(
-    () => {
-      msgWrap.classList.add("leaving");
-      msgFade = setTimeout(() => {
-        msgWrap.hidden = true;
-        msgWrap.classList.remove("leaving");
-      }, 280);
-    },
-    bad || action ? 8000 : 4000,
-  );
-}
-msgClose.addEventListener("click", () => {
-  clearTimeout(msgFade);
-  msgWrap.hidden = true;
-});
-msgAct.addEventListener("click", () => {
-  clearTimeout(msgFade);
-  msgWrap.hidden = true;
-  msgRun?.();
-});
-
 // A check someone asked for answers either way; the launch check stays quiet unless
 // there is something to install. `said` is the line beside the settings button, because
 // the pill is hidden behind that sheet.
@@ -533,7 +497,7 @@ async function leaveJack() {
   if (jfState() !== jfWas && !(await ask("Discard what you typed?", null, "Discard"))) return;
   closeJack();
 }
-const list2 = (s) =>
+const commaList = (s) =>
   s
     .split(",")
     .map((x) => x.trim())
@@ -563,7 +527,7 @@ jackForm.addEventListener("submit", async (e) => {
         port: overSsh && port ? +port : null,
         key: overSsh ? f.key.value.trim() || null : null,
         jump: overSsh ? f.jump.value.trim() || null : null,
-        forward: reach === "ssh" ? list2(f.forward.value) : [],
+        forward: reach === "ssh" ? commaList(f.forward.value) : [],
         os: f.os.value.trim() || null,
         url: reach === "web" && f.url.value.trim() ? scheme + f.url.value.trim() : null,
         rdp: rdp ? +rdp : null,
@@ -572,11 +536,11 @@ jackForm.addEventListener("submit", async (e) => {
         // Only "sftp" needs saying: a shell and files over ssh look identical otherwise.
         primary: reach === "sftp" ? "sftp" : null,
         desc: f.desc.value.trim() || null,
-        folders: list2(f.folders.value),
+        folders: commaList(f.folders.value),
         stamp: editStamp,
       },
     });
-    for (const f2 of list2(f.folders.value)) pending.delete(gkey({ path: f2 }));
+    for (const f2 of commaList(f.folders.value)) pending.delete(gkey({ path: f2 }));
     closeJack();
     await load();
   } catch (err) {
@@ -614,15 +578,15 @@ function offerUndo(removed, failed = []) {
   flash(`Deleted ${what}.${but}`, failed.length > 0, {
     label: "Undo",
     run: async () => {
-      const failed = [];
+      const stuck = [];
       for (const r of removed) {
         try {
           await invoke("restore_jack", { removed: r });
         } catch {
-          failed.push(r.name);
+          stuck.push(r.name);
         }
       }
-      if (failed.length) alertish(`could not restore ${failed.join(", ")}`);
+      if (stuck.length) alertish(`could not restore ${stuck.join(", ")}`);
       await load();
     },
   });
@@ -766,12 +730,6 @@ async function moveAsked(js) {
   await moveJacks(js, leaf || null);
 }
 
-// Every failure the window can't put in a form. A pill, because the detail pane's
-// command box is absent when a folder is selected and gone under 720px.
-function alertish(e) {
-  flash(String(e), true);
-}
-
 // ── import sheet ───────────────────────────────────────────────────────────
 let impFound = [];
 
@@ -824,7 +782,7 @@ async function openImport(r, where) {
       <label class="imp-row" data-find="${esc(`${h.name} ${h.host} ${h.user ?? ""} ${h.folders?.join(" ") ?? ""}`.toLowerCase())}">
         <input type="checkbox" data-i="${i}"${h.here ? " disabled" : " checked"}>
         <span class="imp-name" data-tip="${esc(h.name)}">${esc(h.name)}</span>
-        <span class="imp-host">${esc(h.user ? `${h.user}@${h.host}` : h.host)}${h.port ? `:${h.port}` : ""}</span>
+        <span class="imp-host">${esc(h.user ? `${h.user}@${h.host}` : h.host)}${h.port ? esc(`:${h.port}`) : ""}</span>
         <span class="imp-tag">${esc(kind(h))}</span>
       </label>`,
           )
@@ -844,9 +802,9 @@ $("imp-find").addEventListener("input", (e) => {
       el?.classList.contains("imp-row");
       el = el.nextElementSibling
     ) {
-      const hit = !q || el.dataset.find.includes(q);
-      el.classList.toggle("gone", !hit);
-      shownHere += hit;
+      const matched = !q || el.dataset.find.includes(q);
+      el.classList.toggle("gone", !matched);
+      shownHere += matched;
     }
     head.classList.toggle("gone", !shownHere);
   }
@@ -1009,7 +967,7 @@ function keysHtml() {
         ["Open, the way the device is reached", ["⏎"]],
         ["Delete", ["⌫"]],
         ["Clear the marks, then the selection", ["Esc"]],
-        ["Mark several", [`${isMac ? "⌘" : "Ctrl"}-click`, "Shift-click"]],
+        ["Mark several", [pickChord, "Shift-click"]],
         ["Move into a folder", ["Drag onto it"]],
       ],
     ],
@@ -1138,18 +1096,20 @@ setWrap.addEventListener("mousedown", (e) => {
 });
 
 function renderSwatches() {
+  // An os with no brand colour is drawn in the theme's faint grey, read off `:root`.
+  const unset = getComputedStyle(document.body).getPropertyValue("--fg-faint").trim();
   const inUse = [...new Set(all.map((j) => osKey(j.os)).filter(Boolean))];
   const keys = [...new Set([...inUse, ...Object.keys(colors)])].sort();
   $("swatches").innerHTML = keys.length
     ? keys
         .map((k) => {
-          const shown = osColor(k) ?? "#8b8b95";
+          const tint = osColor(k) ?? unset;
           const overridden = k in colors;
           // The picker edits what is stored, not the readable() nudge of it.
-          const raw = colors[k] ?? shown;
+          const raw = colors[k] ?? tint;
           return `<span class="sw" data-os="${esc(k)}">
-          <input type="color" value="${esc(/^#[0-9a-f]{6}$/i.test(raw) ? raw : "#8b8b95")}">
-          <span class="mark" style="color:${esc(shown)}">${osIcon(k)}</span>${esc(k)}
+          <input type="color" value="${esc(/^#[0-9a-f]{6}$/i.test(raw) ? raw : unset)}">
+          <span class="mark" style="color:${esc(tint)}">${osIcon(k)}</span>${esc(k)}
           ${overridden ? `<i class="reset" data-reset="${esc(k)}" data-tip="Back to the brand colour">${icon("x")}</i>` : ""}
         </span>`;
         })
@@ -1197,8 +1157,8 @@ $("url-scheme").addEventListener("click", () =>
 
 // A plain datalist; entered folders are shown underneath as paths.
 function renderFolderSuggestions() {
-  const used = [...new Set(all.flatMap((j) => j.folders))].sort();
-  $("folderlist").innerHTML = used.map((f) => `<option value="${esc(f)}">`).join("");
+  const known = [...new Set(all.flatMap((j) => j.folders))].sort();
+  $("folderlist").innerHTML = known.map((f) => `<option value="${esc(f)}">`).join("");
   renderCrumbs();
 }
 

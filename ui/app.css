@@ -11,6 +11,8 @@
   --up: #43c463;
   --down: #ff6b6b;
   --down-deep: #e2504f; /* the foot of the destructive-button gradient */
+  /* Both gradients stay saturated in either theme, so the text on them doesn't flip. */
+  --on-accent: #fff;
   --panel: rgba(28, 28, 32, 0.72);
   --row: rgba(255, 255, 255, 0.06);
   --row-hover: rgba(255, 255, 255, 0.08);
@@ -18,6 +20,8 @@
   --bg: #17171a; /* opaque fallback; macOS paints vibrancy behind instead */
   --tip: #3a3a42;
   --tip-fg: #f2f2f6;
+  /* The selection tint in a session. Tied to --accent, which doesn't flip, so neither does this. */
+  --term-select: rgba(79, 157, 253, 0.35);
   /* The terminal's 16 colours, read by theme() in sessions.js so a session repaints with the app. */
   --a-black: #2a2a30;
   --a-bright-black: #6d6d78;
@@ -49,6 +53,7 @@
   --fg-faint: #8b8b95;
   --up: #1e9e46;
   --down: #d63c3c;
+  --down-deep: #b52d2d;
   --panel: rgba(255, 255, 255, 0.72);
   --row: rgba(0, 0, 0, 0.05);
   --row-hover: rgba(0, 0, 0, 0.07);
@@ -155,7 +160,8 @@ body[data-os="macos"] {
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
-  /* Two masks intersected, each a no-op at 0; markTabOverflow() in sessions.js sets the fades. */
+  /* Two masks intersected, each a no-op at 0; markTabOverflow() in sessions.js sets the
+     fades. The black is an alpha stop, not a colour: only its opacity is read. */
   --fade-l: 0px;
   --fade-r: 0px;
   mask-image:
@@ -698,7 +704,7 @@ body.dragging * {
 #dock button:hover {
   background-color: var(--accent);
   background-image: linear-gradient(180deg, var(--accent), var(--accent-deep));
-  color: #fff;
+  color: var(--on-accent);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 #dock button:hover .i {
@@ -714,7 +720,7 @@ body.dragging * {
 #dock button[data-danger]:hover {
   background-color: var(--down);
   background-image: linear-gradient(180deg, var(--down), var(--down-deep));
-  color: #fff;
+  color: var(--on-accent);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 #dock button[data-danger]:hover .i {
@@ -832,7 +838,7 @@ body.dragging * {
 /* Same gradient as button.primary, so the selected row and the Connect button read as one object. */
 .jack[aria-selected="true"] {
   background: linear-gradient(180deg, var(--accent), var(--accent-deep));
-  color: #fff;
+  color: var(--on-accent);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 .jack[aria-selected="true"] .host,
@@ -1153,7 +1159,7 @@ button:hover {
 /* The gradient and inner highlight make it read as a raised control. */
 button.primary {
   background: linear-gradient(180deg, var(--accent), var(--accent-deep));
-  color: #fff;
+  color: var(--on-accent);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 button.primary:hover {
@@ -1300,7 +1306,7 @@ button.flat:hover {
 .ctx-item:hover,
 .ctx-item.on {
   background: linear-gradient(180deg, var(--accent), var(--accent-deep));
-  color: #fff;
+  color: var(--on-accent);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 .ctx-item.danger {
@@ -1309,7 +1315,7 @@ button.flat:hover {
 .ctx-item.danger:hover,
 .ctx-item.danger.on {
   background: linear-gradient(180deg, var(--down), var(--down-deep));
-  color: #fff;
+  color: var(--on-accent);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 /* Already hovered when pressed, so it darkens its own accent rather than painting grey over it. */
@@ -1722,14 +1728,6 @@ button.danger:hover {
   height: 12px;
 }
 
-.hint {
-  grid-column: 1 / -1;
-  margin: 8px 0 0;
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--fg-faint);
-}
-
 /* Folder overview tallies in the detail pane. */
 .tallies {
   display: flex;
@@ -1951,6 +1949,8 @@ button:disabled {
   height: 14px;
 }
 
+/* The letterbox around a desktop that doesn't fill the pane. Black in either theme:
+   it reads as the screen's own bezel, not as a surface of ours. */
 .rdphost {
   display: grid;
   place-items: center;
@@ -2235,15 +2235,6 @@ button:disabled {
   width: 14px;
   height: 14px;
   color: var(--fg-dim);
-}
-/* The count, at the end of the name it belongs to. */
-.space-row .space-count {
-  margin-left: auto;
-  flex: none;
-  color: var(--fg-faint);
-  font-size: 11.5px;
-  font-weight: 450;
-  font-variant-numeric: tabular-nums;
 }
 /* Folded away until needed. The browser owns the open state, so no JS. */
 .drop {

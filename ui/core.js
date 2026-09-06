@@ -61,6 +61,10 @@ const chord = (k) => (isMac ? `⌘${k.toUpperCase()}` : `Ctrl+Shift+${k.toUpperC
 const chorded = (e) => (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && e.shiftKey);
 const chordKey = (e) =>
   ({ BracketLeft: "[", BracketRight: "]", Comma: ",", Slash: "/" })[e.code] ?? e.key.toLowerCase();
+// Picking rows out is the OS's click gesture, not the window's chord: plain Ctrl off
+// macOS, because Shift-click is already the range.
+const picking = (e) => (isMac ? e.metaKey : e.ctrlKey);
+const pickChord = isMac ? "⌘-click" : "Ctrl-click";
 
 // The key for a folder in Sets and Maps; null is the row above all of them. Rust gets
 // the path itself, never this.
@@ -98,11 +102,71 @@ let lastConflict = ""; // the conflicted copy already named, so the pill shows o
 let sshKeys = []; // private keys found in ~/.ssh, to suggest in the key field
 let tunnels = []; // live ssh -L forwards holding RDP open
 
+// A private window, or a webview with site data blocked, throws on the accessor itself.
+// Everything kept here is a habit rather than part of the list, so losing it costs nothing.
+const remember = (key, value) => {
+  try {
+    localStorage[key] = value;
+  } catch {
+    /* nothing to remember with */
+  }
+};
+const recallList = (key) => {
+  try {
+    const had = JSON.parse(localStorage[key] ?? "[]");
+    return Array.isArray(had) ? had : [];
+  } catch {
+    return [];
+  }
+};
+
 const esc = (s) =>
   String(s ?? "").replace(
     /[&<>"]/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
   );
+
+let msgFade = null;
+let msgRun = null; // what the pill's button does, while it has one
+// A self-dismissing line at the foot of the window for anything outside a form. Its own
+// pill, so an error mid-download can't take the update's Restart button off the screen.
+// `action` is `{ label, run }`: a button on the pill, gone with it.
+function flash(text, bad = false, action = null) {
+  msgText.textContent = text;
+  msgClose.innerHTML = icon("x");
+  msgAct.hidden = !action;
+  msgAct.textContent = action?.label ?? "";
+  msgRun = action?.run ?? null;
+  msgWrap.classList.toggle("bad", bad);
+  msgWrap.classList.remove("leaving");
+  msgWrap.hidden = false;
+  clearTimeout(msgFade);
+  msgFade = setTimeout(
+    () => {
+      msgWrap.classList.add("leaving");
+      msgFade = setTimeout(() => {
+        msgWrap.hidden = true;
+        msgWrap.classList.remove("leaving");
+      }, 280);
+    },
+    bad || action ? 8000 : 4000,
+  );
+}
+msgClose.addEventListener("click", () => {
+  clearTimeout(msgFade);
+  msgWrap.hidden = true;
+});
+msgAct.addEventListener("click", () => {
+  clearTimeout(msgFade);
+  msgWrap.hidden = true;
+  msgRun?.();
+});
+
+// Every failure the window can't put in a form. A pill, because the detail pane's
+// command box is absent when a folder is selected and gone under 720px.
+function alertish(e) {
+  flash(String(e), true);
+}
 
 // A sheet is modal to the keyboard; the palette handles its own keys.
 const sheetOpen = () => [sheetWrap, askWrap, setWrap, impWrap].some((el) => !el.hidden);
@@ -159,6 +223,7 @@ const onDark = () => !matchMedia("(prefers-color-scheme: light)").matches;
 function readable(hex) {
   if (!/^#[0-9a-f]{6}$/i.test(hex)) return hex;
   const dark = onDark();
+  // What a row actually sits on: --panel dark, --bg light. Hex, because contrast() needs one.
   const surface = dark ? "#1c1c20" : "#f4f4f6";
   const toward = dark ? "#ffffff" : "#000000";
   let out = hex;
@@ -184,11 +249,7 @@ async function applyTheme() {
     want === "system" ? now || "dark" : want,
   );
   document.documentElement.dataset.theme = pick;
-  try {
-    localStorage.theme = pick;
-  } catch {
-    /* nothing to remember with */
-  }
+  remember("theme", pick);
   // load() runs on every focus; skip the repaint when nothing changed. render() is part
   // of it: readable() computed every colour against the old surface.
   const stamp = `${pick} ${termFont()}`;
@@ -220,28 +281,12 @@ const hit = (j, f) =>
 
 // Names opened, most recent first, for the palette's ranking. localStorage, not the
 // config: a habit, not part of the list. A name that no longer exists never matches.
-let recent = [];
-try {
-  recent = JSON.parse(localStorage.recent ?? "[]");
-} catch {
-  /* nothing to remember with */
-}
-if (!Array.isArray(recent)) recent = [];
+let recent = recallList("recent");
 // Tabs open at last close, reopened on launch. Read before the first renderTabs
 // overwrites it.
-let lastTabs = [];
-try {
-  lastTabs = JSON.parse(localStorage.tabs ?? "[]");
-} catch {
-  /* nothing to remember with */
-}
-if (!Array.isArray(lastTabs)) lastTabs = [];
+let lastTabs = recallList("tabs");
 
 function used(name) {
   recent = [name, ...recent.filter((n) => n !== name)].slice(0, 40);
-  try {
-    localStorage.recent = JSON.stringify(recent);
-  } catch {
-    /* nothing to remember with */
-  }
+  remember("recent", JSON.stringify(recent));
 }

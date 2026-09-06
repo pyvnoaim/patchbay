@@ -13,18 +13,19 @@ let nextId = 1;
 // xterm's theme from the `--a-*` tokens in app.css, so light and dark stay in one file.
 const theme = () => {
   const css = getComputedStyle(document.body);
-  const v = (name, fallback) => css.getPropertyValue(name).trim() || fallback;
+  const v = (name) => css.getPropertyValue(name).trim();
   const ansi = {};
   for (const name of ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]) {
-    ansi[name] = v(`--a-${name}`, "");
-    ansi[`bright${name[0].toUpperCase()}${name.slice(1)}`] = v(`--a-bright-${name}`, "");
+    ansi[name] = v(`--a-${name}`);
+    ansi[`bright${name[0].toUpperCase()}${name.slice(1)}`] = v(`--a-bright-${name}`);
   }
   return {
+    // The pane behind it is the app's own surface, so the terminal paints no ground.
     background: "rgba(0,0,0,0)",
-    foreground: v("--fg", "#f0f0f4"),
-    cursor: v("--accent", "#4f9dfd"),
-    cursorAccent: v("--bg", "#17171a"),
-    selectionBackground: "rgba(79,157,253,.35)",
+    foreground: v("--fg"),
+    cursor: v("--accent"),
+    cursorAccent: v("--bg"),
+    selectionBackground: v("--term-select"),
     ...ansi,
   };
 };
@@ -845,11 +846,7 @@ function rememberTabs() {
   const open = [...sessions.values()]
     .filter((s) => !s.dead && !s.bcast && !s.task && s.kind !== "rdp")
     .map((s) => ({ kind: s.kind, name: s.name }));
-  try {
-    localStorage.tabs = JSON.stringify(open);
-  } catch {
-    /* nothing to remember with */
-  }
+  remember("tabs", JSON.stringify(open));
 }
 
 // The strip hides its scrollbar, so fade whichever edge still has tabs beyond it.
@@ -965,8 +962,8 @@ function findRun(back = false) {
     return;
   }
   const opts = { ...findColors(), incremental: !back };
-  const hit = back ? s.search.findPrevious(q, opts) : s.search.findNext(q, opts);
-  findN.textContent = hit ? "" : "no match";
+  const found = back ? s.search.findPrevious(q, opts) : s.search.findNext(q, opts);
+  findN.textContent = found ? "" : "no match";
 }
 
 // Only where there is scrollback to search: a desktop, a page or a file list has none.
@@ -1156,7 +1153,7 @@ async function openRdpSession(name) {
 
   // Tiles arrive before the invoke resolves, and setting canvas.width clears the
   // canvas, so they are held until the server has said how big the desktop is.
-  let pending = [];
+  let queued = [];
   const paint = (buf) => {
     const head = new DataView(buf, 0, 8);
     // 8-byte header (x, y, w, h as little-endian u16), then raw RGBA.
@@ -1171,29 +1168,29 @@ async function openRdpSession(name) {
   const chan = new window.__TAURI__.core.Channel();
   chan.onmessage = (msg) => {
     const buf = msg instanceof ArrayBuffer ? msg : new Uint8Array(msg).buffer;
-    pending ? pending.push(buf) : paint(buf);
+    queued ? queued.push(buf) : paint(buf);
   };
 
   // The pane's own size, so the desktop fits without being scaled. Even numbers
   // because the RDP codecs work in 2x2 blocks. Laid out by showTab() above.
   // ponytail: measured once at open; a window resized later gets CSS scaling,
   // the Display Control channel if that ever grates.
-  const fit = (n) => Math.max(640, Math.min(8192, n)) & ~1;
+  const even = (n) => Math.max(640, Math.min(8192, n)) & ~1;
   try {
     const screen = await invoke("open_rdp_session", {
       id,
       name,
       user: creds.user,
       password: creds.password,
-      width: fit(host.clientWidth),
-      height: fit(host.clientHeight),
+      width: even(host.clientWidth),
+      height: even(host.clientHeight),
       onTile: chan,
     });
     // The server picks the size; asking for one is only a suggestion.
     canvas.width = screen.width;
     canvas.height = screen.height;
-    const held = pending;
-    pending = null;
+    const held = queued;
+    queued = null;
     held.forEach(paint);
     rdpCreds.set(name, creds);
   } catch (err) {

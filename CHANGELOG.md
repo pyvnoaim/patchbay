@@ -10,6 +10,8 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- In the light theme the Delete button's gradient no longer runs into the dark theme's
+  red halfway down.
 - Settings ▸ Team points the list at a file on a share or a synced folder, so a team
   works from one list. Your settings stay in your own file, a device changed by someone
   else since you opened it is refused once rather than overwritten, and a share that is

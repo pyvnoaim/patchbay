@@ -42,7 +42,7 @@ listEl.addEventListener("click", (e) => {
   // The map draws a jump host that isn't a device as a row with nothing behind it.
   if (row.dataset.i === undefined) return;
   const i = +row.dataset.i;
-  if (e.metaKey || e.ctrlKey) return markToggle(i);
+  if (picking(e)) return markToggle(i);
   if (e.shiftKey) return markRange(i);
   marked.clear();
   select(i);
@@ -68,7 +68,7 @@ listEl.addEventListener("pointerdown", (e) => {
     const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest("#tree .group");
     return el && (el.dataset.group || el.dataset.path === "") ? el : null;
   };
-  const move = (ev) => {
+  const onMove = (ev) => {
     if (!ghost) {
       if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
       listEl.setPointerCapture(e.pointerId);
@@ -87,7 +87,7 @@ listEl.addEventListener("pointerdown", (e) => {
     }
   };
   const end = () => {
-    listEl.removeEventListener("pointermove", move);
+    listEl.removeEventListener("pointermove", onMove);
     listEl.removeEventListener("pointerup", end);
     listEl.removeEventListener("lostpointercapture", end);
     if (!ghost) return;
@@ -99,7 +99,7 @@ listEl.addEventListener("pointerdown", (e) => {
     setTimeout(() => (dragged = false), 0);
     if (over) moveJacks(js, over.dataset.path || null);
   };
-  listEl.addEventListener("pointermove", move);
+  listEl.addEventListener("pointermove", onMove);
   listEl.addEventListener("pointerup", end);
   listEl.addEventListener("lostpointercapture", end);
 });
@@ -135,8 +135,8 @@ detailPane.addEventListener("click", async (e) => {
   if (act === "forward") {
     try {
       await invoke("open_forwards", { name: j.name });
-    } catch (e) {
-      alertish(e);
+    } catch (err) {
+      alertish(err);
     }
     refreshTunnels();
   }
@@ -144,8 +144,8 @@ detailPane.addEventListener("click", async (e) => {
     try {
       for (const t of tunnels.filter((x) => x.jack === j.name))
         await invoke("close_tunnel", { id: t.id });
-    } catch (e) {
-      alertish(e);
+    } catch (err) {
+      alertish(err);
     }
     refreshTunnels();
   }
@@ -466,14 +466,14 @@ grip.addEventListener("pointerdown", (e) => {
   e.preventDefault();
   grip.setPointerCapture(e.pointerId);
   grip.classList.add("on");
-  const move = (ev) => applySidebar(ev.clientX);
-  grip.addEventListener("pointermove", move);
+  const onMove = (ev) => applySidebar(ev.clientX);
+  grip.addEventListener("pointermove", onMove);
   // Not pointerup: a drag crossing a web tab (an OS view above the page) loses the
   // pointer, and losing the capture is what happens either way.
   grip.addEventListener(
     "lostpointercapture",
     () => {
-      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointermove", onMove);
       grip.classList.remove("on");
       keepSidebar();
     },

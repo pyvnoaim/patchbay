@@ -172,7 +172,7 @@ function jackRow(j, i, { nested = false, indent = nested, hub = false, behind = 
       tint ? ` style="color:${esc(tint)}"` : ""
     }>${osIcon(j.os)}</span>
     <span class="name">${esc(j.name)}</span>
-    <span class="host">${esc(j.user ? j.user + "@" + j.host : j.host)}${j.port ? ":" + j.port : ""}</span>
+    <span class="host">${esc(j.user ? j.user + "@" + j.host : j.host)}${j.port ? esc(":" + j.port) : ""}</span>
     <span class="kind" data-tip="${esc((KIND[j.primary] ?? KIND.ssh)[1])}">${icon(
       (KIND[j.primary] ?? KIND.ssh)[0],
     )}</span>
@@ -365,7 +365,7 @@ function renderJack(j, live) {
         ? `<span style="color:var(--fg-faint)">checking…</span>`
         : said === "down"
           ? `<span style="color:var(--down)">no answer</span> · ${esc(p.target)}`
-          : `<span style="color:var(--up)">up</span> · ${esc(p.target)} · ${p.ms}ms`;
+          : `<span style="color:var(--up)">up</span> · ${esc(p.target)} · ${esc(p.ms)}ms`;
 
   const stops = [...j.hops, j.user ? `${j.user}@${j.host}` : j.host];
   const mine = tunnels.filter((t) => t.jack === j.name);
@@ -379,10 +379,10 @@ function renderJack(j, live) {
     <dl>
       <div class="d-row"><dt>host</dt><dd>${esc(j.host)}</dd></div>
       ${j.user ? `<div class="d-row"><dt>user</dt><dd>${esc(j.user)}</dd></div>` : ""}
-      ${j.port ? `<div class="d-row"><dt>port</dt><dd>${j.port}</dd></div>` : ""}
+      ${j.port ? `<div class="d-row"><dt>port</dt><dd>${esc(j.port)}</dd></div>` : ""}
       ${j.key ? `<div class="d-row"><dt>key</dt><dd>${esc(j.key)}</dd></div>` : ""}
       ${j.url ? `<div class="d-row"><dt>web</dt><dd>${esc(j.url)}</dd></div>` : ""}
-      ${j.rdp ? `<div class="d-row"><dt>rdp</dt><dd>${j.rdp}</dd></div>` : ""}
+      ${j.rdp ? `<div class="d-row"><dt>rdp</dt><dd>${esc(j.rdp)}</dd></div>` : ""}
     </dl>
     ${
       mine.length
@@ -391,7 +391,7 @@ function renderJack(j, live) {
         .map(
           (t) => `<span class="last"><i class="pip"></i>${
             /* A -R binds on the far end, so there is no local address to print. */
-            t.local ? `127.0.0.1:${t.local}` : "held open on the far end"
+            t.local ? `127.0.0.1:${esc(t.local)}` : "held open on the far end"
           }
         <i class="arm">via ${esc(t.via)}</i></span>`,
         )
