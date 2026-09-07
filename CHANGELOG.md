@@ -10,9 +10,13 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
-- patchbay is now under the PolyForm Small Business licence: free for you and for any
-  company under 100 people, a paid licence above that. The source is unchanged and still
-  here to read, build and fork.
+- Every write keeps the file it replaced as `patchbay.toml.bak`, beside your config. The
+  Undo pill only ever covered a delete, and only for as long as it was on screen; a
+  folder rename touches every device in it.
+- A shared list refuses more than it used to: deleting a device a colleague has changed
+  since, or saving `[defaults]` over theirs, is refused the way an edit already was, and
+  a whole file landing under a save is never replaced by it. A change on the share also
+  shows up now when it leaves the file the same size.
 - In the light theme the Delete button's gradient no longer runs into the dark theme's
   red halfway down.
 - Settings ▸ Team points the list at a file on a share or a synced folder, so a team

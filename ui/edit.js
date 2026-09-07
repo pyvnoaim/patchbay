@@ -159,7 +159,7 @@ document.addEventListener("contextmenu", (e) => {
         // Everything but the name, which is the one field a copy has to differ in.
         { icon: "copy-plus", label: "Duplicate…", run: () => openJack({ ...j, name: "" }) },
         { icon: "folder-input", label: "Move to folder…", run: () => moveAsked([j]) },
-        { icon: "trash-2", label: "Delete", key: "⌫", danger: true, run: () => removeJack(j.name) },
+        { icon: "trash-2", label: "Delete", key: "⌫", danger: true, run: () => removeJack(j) },
       ],
       j.os ?? null,
     );
@@ -558,9 +558,9 @@ sheetWrap.addEventListener("mousedown", (e) => {
   if (e.target === sheetWrap) leaveJack();
 });
 jfDelete.addEventListener("click", () => {
-  const n = editing;
+  const j = { name: editing, stamp: editStamp };
   closeJack();
-  removeJack(n);
+  removeJack(j);
 });
 
 function showErr(el, msg) {
@@ -592,15 +592,18 @@ function offerUndo(removed, failed = []) {
   });
 }
 
-async function removeJack(name) {
-  if (!(await ask(`Delete "${name}"? This edits your config file.`, null, "Delete"))) return;
+// The stamp is the row as it was drawn: a device a colleague has changed since the last
+// poll is refused, and the list reloads so a second Delete is a decision, not a loop.
+async function removeJack(j) {
+  if (!(await ask(`Delete "${j.name}"? This edits your config file.`, null, "Delete"))) return;
   try {
-    const removed = await invoke("delete_jack", { name });
+    const removed = await invoke("delete_jack", { name: j.name, stamp: j.stamp ?? null });
     sel = 0;
     await load();
     offerUndo([removed]);
   } catch (e) {
     alertish(e);
+    if (String(e).includes("changed by someone else")) await load();
   }
 }
 
@@ -620,7 +623,7 @@ async function removeMarked(js) {
   const removed = [];
   for (const j of js) {
     try {
-      removed.push(await invoke("delete_jack", { name: j.name }));
+      removed.push(await invoke("delete_jack", { name: j.name, stamp: j.stamp ?? null }));
     } catch {
       failed.push(j.name);
     }
@@ -1002,6 +1005,7 @@ async function openSettings(pane) {
   setForm.elements.font_size.value = termFont();
   // Read fresh: a hand-edit between openings should show up here.
   const defs = await invoke("defaults").catch(() => ({}));
+  defsStamp = defs.stamp ?? null;
   for (const k of DEFAULT_KEYS) setForm.elements[`def_${k}`].value = defs[k] ?? "";
   defsWas = defsState();
   setForm.elements.list.value = prefs.list ?? "";
@@ -1051,6 +1055,9 @@ const DEFAULT_KEYS = ["user", "port", "key", "jump"];
 const defsState = () =>
   DEFAULT_KEYS.map((k) => setForm.elements[`def_${k}`].value.trim()).join("\n");
 let defsWas = "";
+// What [defaults] hashed to when the sheet opened. A shared list is everyone's, so the
+// same refusal the jack sheet gets applies here.
+let defsStamp = null;
 
 setForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1073,7 +1080,7 @@ setForm.addEventListener("submit", async (e) => {
   try {
     const wasProbing = prefs.probe !== false;
     await invoke("save_settings", { next });
-    if (defsState() !== defsWas) await invoke("save_defaults", { next: defs });
+    if (defsState() !== defsWas) await invoke("save_defaults", { next: defs, stamp: defsStamp });
     prefs = next;
     listStamp = null;
     closeSettings();
@@ -1086,6 +1093,13 @@ setForm.addEventListener("submit", async (e) => {
     }
   } catch (err) {
     showErr(setErr, String(err));
+    // Refused as someone else's edit: the sheet takes the new stamp, so Save a second
+    // time is a decision. The fields stay as typed - they are the change being kept.
+    if (String(err).includes("changed by someone else")) {
+      defsStamp = await invoke("defaults")
+        .then((d) => d.stamp ?? null)
+        .catch(() => null);
+    }
   }
 });
 $("set-cancel").addEventListener("click", closeSettings);

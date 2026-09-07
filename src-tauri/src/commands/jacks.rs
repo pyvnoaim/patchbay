@@ -1,7 +1,7 @@
 //! The device list: reading it for the window, editing it, folders and notes, and
 //! importing one from an ssh config or a Royal TS document.
 
-use super::{blocking, list_file, load_jacks, os_open, ssh_dir};
+use super::{blocking, list_file, load_jacks, os_open, ssh_dir, writable_list};
 use crate::{config, import, patchbay, terminal};
 use serde::Serialize;
 
@@ -46,9 +46,10 @@ pub struct Note {
     stamp: String,
 }
 
-/// What the poll compares: not "newer", because a sync client keeps the source
-/// machine's mtime and clocks disagree, just "different". `conflict` names a copy a
-/// sync client left beside the list when two people saved in the same minute.
+/// What the poll compares: the bytes, hashed. Not "newer" - a sync client keeps the
+/// source machine's mtime and clocks disagree - and not the size either, which doesn't
+/// move when someone's `port = 2222` becomes `2223`. `conflict` names a copy a sync
+/// client left beside the list when two people saved in the same minute.
 #[derive(Serialize)]
 pub struct ListStamp {
     stamp: String,
@@ -112,20 +113,18 @@ pub async fn jacks() -> Result<Vec<JackView>, String> {
     .await
 }
 
-/// Cheap enough for a timer: one stat, and one directory listing when the list is
-/// shared. Dropbox writes `x (conflicted copy ...)`, OneDrive `x-MACHINE`; anything
-/// else with the list's stem and extension in that directory is close enough to name.
+/// Cheap enough for a timer: one read of a file that is kilobytes, and one directory
+/// listing when the list is shared. Dropbox writes `x (conflicted copy ...)`, OneDrive
+/// `x-MACHINE`; anything else with the list's stem and extension in that directory is
+/// close enough to name.
 #[tauri::command]
 pub async fn list_stamp() -> Result<ListStamp, String> {
     blocking(|| {
+        use std::hash::{Hash, Hasher};
         let path = list_file()?;
-        let meta = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let mtime = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
+        let src = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut h = std::hash::DefaultHasher::new();
+        src.hash(&mut h);
         let conflict = patchbay::list().and_then(|p| {
             let stem = p.file_stem()?.to_str()?.to_string();
             let mine = p.file_name()?.to_os_string();
@@ -138,7 +137,7 @@ pub async fn list_stamp() -> Result<ListStamp, String> {
                 .find(|n| n.starts_with(&stem) && n.ends_with(".toml"))
         });
         Ok(ListStamp {
-            stamp: format!("{mtime}:{}", meta.len()),
+            stamp: h.finish().to_string(),
             conflict,
         })
     })
@@ -220,24 +219,25 @@ fn connect_ms(host: &str, port: u16) -> Option<u64> {
 
 #[tauri::command]
 pub async fn save_jack(original: Option<String>, jack: config::JackInput) -> Result<(), String> {
-    blocking(move || config::save_jack_at(&list_file()?, original, jack)).await
+    blocking(move || config::save_jack_at(&writable_list()?, original, jack)).await
 }
 
-/// Returns what was removed, for the window's Undo.
+/// Returns what was removed, for the window's Undo. The stamp is the row the window
+/// showed: a device a colleague has changed since is refused, not deleted.
 #[tauri::command]
-pub async fn delete_jack(name: String) -> Result<config::Removed, String> {
-    blocking(move || config::delete_jack_at(&list_file()?, &name)).await
+pub async fn delete_jack(name: String, stamp: Option<String>) -> Result<config::Removed, String> {
+    blocking(move || config::delete_jack_at(&writable_list()?, &name, stamp.as_deref())).await
 }
 
 #[tauri::command]
 pub async fn restore_jack(removed: config::Removed) -> Result<(), String> {
-    blocking(move || config::restore_jack_at(&list_file()?, &removed)).await
+    blocking(move || config::restore_jack_at(&writable_list()?, &removed)).await
 }
 
 /// A drag into a folder, or "Move to…": only the folders list is written.
 #[tauri::command]
 pub async fn set_folders(name: String, folders: Vec<String>) -> Result<(), String> {
-    blocking(move || config::set_folders_at(&list_file()?, &name, &folders)).await
+    blocking(move || config::set_folders_at(&writable_list()?, &name, &folders)).await
 }
 
 /// The notes hung on folders, by folder path.
@@ -260,17 +260,17 @@ pub async fn notes() -> Result<Vec<Note>, String> {
 
 #[tauri::command]
 pub async fn save_note(path: String, note: String, stamp: Option<String>) -> Result<(), String> {
-    blocking(move || config::set_note_at(&list_file()?, &path, &note, stamp.as_deref())).await
+    blocking(move || config::set_note_at(&writable_list()?, &path, &note, stamp.as_deref())).await
 }
 
 #[tauri::command]
 pub async fn rename_group(from: String, to: String) -> Result<usize, String> {
-    blocking(move || config::rename_group_at(&list_file()?, &from, &to)).await
+    blocking(move || config::rename_group_at(&writable_list()?, &from, &to)).await
 }
 
 #[tauri::command]
 pub async fn delete_group(path: String) -> Result<usize, String> {
-    blocking(move || config::delete_group_at(&list_file()?, &path)).await
+    blocking(move || config::delete_group_at(&writable_list()?, &path)).await
 }
 
 /// What `~/.ssh/config` could become. Parses only: the window writes what gets ticked,

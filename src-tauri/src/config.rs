@@ -60,6 +60,17 @@ pub fn stamps(src: &str, under: &str) -> std::collections::HashMap<String, Strin
         .unwrap_or_default()
 }
 
+/// The `[defaults]` table as read. A table that isn't there stamps as the empty string,
+/// which is what `stale` sees for a missing one - so a colleague *adding* defaults while
+/// this sheet was open is refused too.
+pub fn defaults_stamp_at(file: &Path) -> String {
+    std::fs::read_to_string(file)
+        .ok()
+        .and_then(|s| s.parse::<DocumentMut>().ok())
+        .and_then(|doc| doc.get("defaults").map(stamp_of))
+        .unwrap_or_default()
+}
+
 fn stale(what: &str, stamp: Option<&str>, current: Option<&Item>) -> Result<(), String> {
     let Some(sent) = stamp else { return Ok(()) };
     let now = current.map(stamp_of).unwrap_or_default();
@@ -71,14 +82,19 @@ fn stale(what: &str, stamp: Option<&str>, current: Option<&Item>) -> Result<(), 
     Ok(())
 }
 
-fn read_doc(path: &Path) -> Result<DocumentMut, String> {
-    let src = match std::fs::read_to_string(path) {
-        Ok(s) => s,
-        // The first write, whichever sheet it comes from, starts from the template.
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => FIRST_RUN.into(),
+/// The document, and the file exactly as it was read - `None` for a file that wasn't
+/// there. `write_doc` compares that back, so a write only ever replaces what it saw.
+fn read_doc(path: &Path) -> Result<(DocumentMut, Option<String>), String> {
+    let was = match std::fs::read_to_string(path) {
+        Ok(s) => Some(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
-    src.parse::<DocumentMut>()
+    // The first write, whichever sheet it comes from, starts from the template.
+    was.as_deref()
+        .unwrap_or(FIRST_RUN)
+        .parse::<DocumentMut>()
+        .map(|doc| (doc, was))
         .map_err(|e| format!("{}: {e}", path.display()))
 }
 
@@ -168,11 +184,54 @@ fn write_text(path: &Path, body: &str) -> Result<(), String> {
     std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-fn write_doc(path: &Path, doc: &DocumentMut) -> Result<(), String> {
+/// Nothing is written over a file that moved since it was read. Every writer here reads
+/// the whole document and renames a whole document back, so a colleague's save landing
+/// in between would go entirely, devices this write never touched included.
+fn write_doc(path: &Path, doc: &DocumentMut, was: Option<&str>) -> Result<(), String> {
+    if std::fs::read_to_string(path).ok().as_deref() != was {
+        return Err(format!(
+            "{} changed while you were saving - nothing was written, try again",
+            path.display()
+        ));
+    }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
+    if let Some(had) = was.filter(|had| list_changed(had, doc)) {
+        keep_a_copy(path, had);
+    }
     write_text(path, &doc.to_string())
+}
+
+/// Only a change to the list is worth a copy. The theme, the sidebar width and a colour
+/// go through this same writer, and with no shared list they go into the same file - a
+/// copy made for one of those would push out the copy of the file before the folder
+/// rename, which is the one worth having.
+fn list_changed(was: &str, doc: &DocumentMut) -> bool {
+    let Ok(mut before) = was.parse::<DocumentMut>() else {
+        return true;
+    };
+    let mut after = doc.clone();
+    // Rendered rather than compared table by table: `Item::to_string` on `[jack]` shows
+    // none of the sub-tables under it, so every list would look unchanged.
+    for d in [&mut before, &mut after] {
+        d.remove("settings");
+        d.remove("colors");
+    }
+    before.to_string() != after.to_string()
+}
+
+/// The file as it was, kept beside it. The window's Undo lives for the length of a pill
+/// and only covers a delete; nothing else here can be taken back, and a folder rename
+/// touches every device in it. Quiet on failure: a directory that won't take the copy is
+/// no reason to refuse someone's edit.
+/// ponytail: one generation. A list of hosts is not a repo, and a second copy is the
+/// point at which this wants a real history rather than another file.
+fn keep_a_copy(path: &Path, had: &str) {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return;
+    };
+    let _ = std::fs::write(path.with_file_name(format!("{name}.bak")), had);
 }
 
 /// What a first run finds when it opens the file by hand: every key, commented out, so
@@ -207,7 +266,8 @@ pub fn ensure_exists(path: &Path) -> Result<(), String> {
     if path.exists() {
         return Ok(());
     }
-    write_doc(path, &read_doc(path)?)
+    let (doc, was) = read_doc(path)?;
+    write_doc(path, &doc, was.as_deref())
 }
 
 /// Remove a table and hand back the comments above it for `rehome_comments`: toml_edit
@@ -335,7 +395,7 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
         patchbay::forward_arg(f)?;
     }
 
-    let mut doc = read_doc(path)?;
+    let (mut doc, was) = read_doc(path)?;
     let jacks = jack_table(&mut doc)?;
     if let Some(o) = original.as_deref() {
         stale(o, j.stamp.as_deref(), jacks.get(o))?;
@@ -378,7 +438,7 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     set_num(t, "rdp", j.rdp);
     set_num(t, "port", j.port);
 
-    write_doc(path, &doc)
+    write_doc(path, &doc, was.as_deref())
 }
 
 /// Set or clear a folder's note. A blank note removes it, and the `[folder]` table goes
@@ -393,7 +453,7 @@ pub fn set_note_at(
     if path.is_empty() {
         return Err("a note belongs to a folder".into());
     }
-    let mut doc = read_doc(file)?;
+    let (mut doc, was) = read_doc(file)?;
     stale(path, stamp, doc.get("folder").and_then(|f| f.get(path)))?;
     match note.trim().is_empty() {
         true => {
@@ -417,7 +477,7 @@ pub fn set_note_at(
             table[path]["note"] = value(note.trim());
         }
     }
-    write_doc(file, &doc)
+    write_doc(file, &doc, was.as_deref())
 }
 
 /// What a delete took out, as the window holds it for Undo: the table as TOML, and
@@ -432,16 +492,18 @@ pub struct Removed {
 /// Hands back the removed jack so a wrong "yes" can be undone. The comments above it
 /// go to the next table (`rehome_comments`) and stay there through an undo: a comment
 /// left where it was is visible and fixable, a duplicated one is not.
-pub fn delete_jack_at(path: &Path, name: &str) -> Result<Removed, String> {
-    let mut doc = read_doc(path)?;
+pub fn delete_jack_at(path: &Path, name: &str, stamp: Option<&str>) -> Result<Removed, String> {
+    let (mut doc, was) = read_doc(path)?;
     let jacks = jack_table(&mut doc)?;
     let Some(item) = jacks.get(name).cloned() else {
         return Err(format!("no jack named \"{name}\""));
     };
+    // The row on screen can be half a minute old; a delete lands on the table you saw.
+    stale(name, stamp, Some(&item))?;
     let position = item.as_table().and_then(Table::position);
     let orphan = orphan_comments(jacks, name);
     rehome_comments(&mut doc, orphan);
-    write_doc(path, &doc)?;
+    write_doc(path, &doc, was.as_deref())?;
 
     // A one-table document, so the block round-trips through the same parser.
     let mut alone = DocumentMut::new();
@@ -474,7 +536,7 @@ pub fn restore_jack_at(path: &Path, removed: &Removed) -> Result<(), String> {
     else {
         return Err(format!("could not restore \"{}\"", removed.name));
     };
-    let mut doc = read_doc(path)?;
+    let (mut doc, was) = read_doc(path)?;
     if jack_table(&mut doc)?.contains_key(&removed.name) {
         return Err(format!("there's already a jack named \"{}\"", removed.name));
     }
@@ -493,7 +555,7 @@ pub fn restore_jack_at(path: &Path, removed: &Removed) -> Result<(), String> {
             t.decor_mut().set_prefix("\n");
         }
     }
-    write_doc(path, &doc)
+    write_doc(path, &doc, was.as_deref())
 }
 
 fn make_room(item: &mut Item, at: usize) {
@@ -511,14 +573,14 @@ fn make_room(item: &mut Item, at: usize) {
 /// Only the `folders` list, for a drag into a folder: the rest of the table, comments
 /// and the keys the sheet doesn't know included, is left exactly as written.
 pub fn set_folders_at(path: &Path, name: &str, folders: &[String]) -> Result<(), String> {
-    let mut doc = read_doc(path)?;
+    let (mut doc, was) = read_doc(path)?;
     let jacks = jack_table(&mut doc)?;
     let t = jacks
         .get_mut(name)
         .and_then(Item::as_table_mut)
         .ok_or_else(|| format!("no jack named \"{name}\""))?;
     set_arr(t, "folders", folders);
-    write_doc(path, &doc)
+    write_doc(path, &doc, was.as_deref())
 }
 
 /// App preferences, in `[settings]`. Defaults are what you get with no section.
@@ -615,8 +677,9 @@ pub fn load_defaults_at(file: &Path) -> Defaults {
         .unwrap_or_default()
 }
 
-pub fn save_defaults_at(file: &Path, d: &Defaults) -> Result<(), String> {
-    let mut doc = read_doc(file)?;
+pub fn save_defaults_at(file: &Path, d: &Defaults, stamp: Option<&str>) -> Result<(), String> {
+    let (mut doc, was) = read_doc(file)?;
+    stale("defaults", stamp, doc.get("defaults"))?;
     let empty = {
         let t = doc
             .entry("defaults")
@@ -634,7 +697,7 @@ pub fn save_defaults_at(file: &Path, d: &Defaults) -> Result<(), String> {
         let orphan = orphan_comments(doc.as_table_mut(), "defaults");
         rehome_comments(&mut doc, orphan);
     }
-    write_doc(file, &doc)
+    write_doc(file, &doc, was.as_deref())
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -661,7 +724,7 @@ pub fn save_settings(s: &Settings) -> Result<(), String> {
 }
 
 pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
-    let mut doc = read_doc(file)?;
+    let (mut doc, was) = read_doc(file)?;
     let t = doc
         .entry("settings")
         .or_insert_with(|| Item::Table(Table::new()))
@@ -682,7 +745,7 @@ pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
     t["font_size"] = value(s.font_size.clamp(8.0, 32.0));
     t["sidebar"] = value(s.sidebar.clamp(150.0, 480.0));
     set_str(t, "list", s.list.as_deref());
-    write_doc(file, &doc)
+    write_doc(file, &doc, was.as_deref())
 }
 
 /// The first copy of a shared list: this machine's devices, `[defaults]` and folder
@@ -697,12 +760,12 @@ pub fn seed_list_at(own: &Path, to: &Path) -> Result<(), String> {
     if !to.parent().is_some_and(Path::is_dir) {
         return Err(format!("{}: that folder is not there", to.display()));
     }
-    let mut doc = read_doc(own)?;
+    let (mut doc, _) = read_doc(own)?;
     for key in ["settings", "colors"] {
         let orphan = orphan_comments(doc.as_table_mut(), key);
         rehome_comments(&mut doc, orphan);
     }
-    write_doc(to, &doc)
+    write_doc(to, &doc, None)
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -738,7 +801,7 @@ pub fn save_color_at(file: &Path, os: &str, hex: Option<&str>) -> Result<(), Str
             return Err(format!("\"{h}\" isn't a #rrggbb colour"));
         }
     }
-    let mut doc = read_doc(file)?;
+    let (mut doc, was) = read_doc(file)?;
     let t = doc
         .entry("colors")
         .or_insert_with(|| Item::Table(Table::new()))
@@ -750,7 +813,7 @@ pub fn save_color_at(file: &Path, os: &str, hex: Option<&str>) -> Result<(), Str
             t.remove(&os);
         }
     }
-    write_doc(file, &doc)
+    write_doc(file, &doc, was.as_deref())
 }
 
 /// A note hangs on a path, so a renamed folder takes it along and a deleted one drops it.
@@ -775,7 +838,7 @@ fn move_note(doc: &mut DocumentMut, from: &str, to: Option<&str>) {
 }
 
 fn map_folders(file: &Path, path: &str, to: Option<&str>) -> Result<usize, String> {
-    let mut doc = read_doc(file)?;
+    let (mut doc, was) = read_doc(file)?;
     move_note(&mut doc, path, to);
     let jacks = jack_table(&mut doc)?;
     let mut touched = 0;
@@ -812,7 +875,7 @@ fn map_folders(file: &Path, path: &str, to: Option<&str>) -> Result<usize, Strin
     }
 
     if touched > 0 {
-        write_doc(file, &doc)?;
+        write_doc(file, &doc, was.as_deref())?;
     }
     Ok(touched)
 }
@@ -847,7 +910,7 @@ pub fn fold_spaces_at(cfg: &Path) -> Result<usize, String> {
         return Ok(0);
     }
 
-    let mut doc = read_doc(cfg)?;
+    let (mut doc, was) = read_doc(cfg)?;
     let (mut moved, mut merged) = (0, Vec::new());
     for file in files {
         let Some(space) = file
@@ -922,7 +985,7 @@ pub fn fold_spaces_at(cfg: &Path) -> Result<usize, String> {
         return Ok(0);
     }
     // Written before renaming: the other order loses the devices if the write fails.
-    write_doc(cfg, &doc)?;
+    write_doc(cfg, &doc, was.as_deref())?;
     for file in merged {
         let _ = std::fs::rename(&file, file.with_extension("toml.merged"));
     }
@@ -1065,7 +1128,7 @@ folders = ["prod/eu/web"]
             key: None,
             jump: None,
         };
-        save_defaults_at(&p, &d).unwrap();
+        save_defaults_at(&p, &d, None).unwrap();
 
         let back = load_defaults_at(&p);
         assert_eq!(back.user.as_deref(), Some("ops"));
@@ -1073,14 +1136,14 @@ folders = ["prod/eu/web"]
         assert!(read(&p).contains("keep this comment"));
 
         // Clearing every field takes the section with it.
-        save_defaults_at(&p, &Defaults::default()).unwrap();
+        save_defaults_at(&p, &Defaults::default(), None).unwrap();
         assert!(!read(&p).contains("[defaults]"), "got {}", read(&p));
     }
 
     #[test]
     fn comments_outlive_the_table_they_sat_above() {
         let p = scratch("comments");
-        save_defaults_at(&p, &Defaults::default()).unwrap();
+        save_defaults_at(&p, &Defaults::default(), None).unwrap();
         let out = read(&p);
         assert!(!out.contains("[defaults]"), "got {out}");
         assert!(
@@ -1092,14 +1155,14 @@ folders = ["prod/eu/web"]
             "the header should still be on top:\n{out}"
         );
 
-        delete_jack_at(&p, "bastion").unwrap();
+        delete_jack_at(&p, "bastion", None).unwrap();
         let out = read(&p);
         assert!(out.contains("# my hosts"), "got {out}");
         assert!(out.contains("# the way in"), "got {out}");
         assert!(out.find("# my hosts") < out.find("[jack.web]"), "got {out}");
 
         // Nothing renders after the last jack, so its comments end the file.
-        delete_jack_at(&p, "web").unwrap();
+        delete_jack_at(&p, "web", None).unwrap();
         assert!(read(&p).contains("# my hosts"), "got {}", read(&p));
     }
 
@@ -1125,7 +1188,7 @@ folders = ["prod/eu/web"]
         let p = scratch("defaults-extra");
         std::fs::write(&p, "[defaults]\nuser = \"root\"\nos = \"debian\"\n").unwrap();
 
-        save_defaults_at(&p, &Defaults::default()).unwrap();
+        save_defaults_at(&p, &Defaults::default(), None).unwrap();
 
         let out = read(&p);
         assert!(out.contains("os = \"debian\""), "got {out}");
@@ -1342,9 +1405,9 @@ folders = ["prod/eu/web"]
     #[test]
     fn deleting_a_jack_reports_an_unknown_name() {
         let p = scratch("delete");
-        delete_jack_at(&p, "web").unwrap();
+        delete_jack_at(&p, "web", None).unwrap();
         assert!(!read(&p).contains("[jack.web]"));
-        assert!(delete_jack_at(&p, "web")
+        assert!(delete_jack_at(&p, "web", None)
             .unwrap_err()
             .contains("no jack named"));
     }
@@ -1354,7 +1417,7 @@ folders = ["prod/eu/web"]
     #[test]
     fn a_deleted_jack_comes_back_in_its_place() {
         let p = scratch("undo");
-        let removed = delete_jack_at(&p, "bastion").unwrap();
+        let removed = delete_jack_at(&p, "bastion", None).unwrap();
         assert_eq!(removed.name, "bastion");
         assert!(removed.block.contains("[jack.bastion]"));
         assert!(removed.block.contains("port = 2222"));
@@ -1531,6 +1594,76 @@ folders = ["prod/eu/web"]
         assert!(read(&p).contains("10.0.0.9"));
         // No stamp is no check: a drag, an import, an old window.
         save_jack_at(&p, Some("web".into()), input("web", "10.0.0.10")).unwrap();
+        std::fs::remove_file(&p).unwrap();
+    }
+
+    #[test]
+    fn a_delete_of_a_table_someone_else_changed_is_refused() {
+        let p = scratch("delete-stamp");
+        let before = stamps_at(&p, "jack")["web"].clone();
+        set_folders_at(&p, "web", &["theirs".into()]).unwrap();
+        let err = delete_jack_at(&p, "web", Some(&before)).unwrap_err();
+        assert!(err.contains("changed by someone else"), "{err}");
+        assert!(read(&p).contains("theirs"), "the refusal deletes nothing");
+        // Reloaded: the delete goes through knowing what it takes.
+        let now = stamps_at(&p, "jack")["web"].clone();
+        delete_jack_at(&p, "web", Some(&now)).unwrap();
+        assert!(!read(&p).contains("[jack.web]"));
+        std::fs::remove_file(&p).unwrap();
+    }
+
+    #[test]
+    fn defaults_saved_over_someone_elses_are_refused() {
+        let p = scratch("defaults-stamp");
+        let before = defaults_stamp_at(&p);
+        let theirs = Defaults {
+            user: Some("theirs".into()),
+            ..Defaults::default()
+        };
+        save_defaults_at(&p, &theirs, None).unwrap();
+        let mine = Defaults {
+            user: Some("mine".into()),
+            ..Defaults::default()
+        };
+        let err = save_defaults_at(&p, &mine, Some(&before)).unwrap_err();
+        assert!(err.contains("changed by someone else"), "{err}");
+        assert_eq!(load_defaults_at(&p).user.as_deref(), Some("theirs"));
+        // A table that was not there stamps as empty, so an addition is caught too.
+        let now = defaults_stamp_at(&p);
+        save_defaults_at(&p, &mine, Some(&now)).unwrap();
+        assert_eq!(load_defaults_at(&p).user.as_deref(), Some("mine"));
+        std::fs::remove_file(&p).unwrap();
+    }
+
+    #[test]
+    fn every_write_leaves_the_file_it_replaced_beside_it() {
+        let p = scratch("bak");
+        let bak = p.with_extension("toml.bak");
+        let _ = std::fs::remove_file(&bak);
+        save_jack_at(&p, None, input("new", "10.0.0.9")).unwrap();
+        assert_eq!(read(&bak), SAMPLE, "the file before the save is not there");
+        // One generation: the copy is the last version, not the first.
+        delete_jack_at(&p, "new", None).unwrap();
+        assert!(read(&bak).contains("10.0.0.9"));
+        // The theme goes through the same writer and must not push that copy out.
+        save_settings_at(&p, &Settings::default()).unwrap();
+        assert!(
+            read(&bak).contains("10.0.0.9"),
+            "a settings write took the copy of the list with it"
+        );
+        std::fs::remove_file(&p).unwrap();
+        std::fs::remove_file(&bak).unwrap();
+    }
+
+    #[test]
+    fn a_write_over_a_file_that_moved_since_it_was_read_is_refused() {
+        let p = scratch("moved");
+        let (doc, was) = read_doc(&p).unwrap();
+        // A sync client lands a colleague's whole file while this write was being built.
+        std::fs::write(&p, "[jack.theirs]\nhost = \"10.0.0.9\"\n").unwrap();
+        let err = write_doc(&p, &doc, was.as_deref()).unwrap_err();
+        assert!(err.contains("changed while you were saving"), "{err}");
+        assert!(read(&p).contains("10.0.0.9"), "their file went with it");
         std::fs::remove_file(&p).unwrap();
     }
 

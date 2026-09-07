@@ -316,7 +316,7 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     const bulk = markedHere();
     if (bulk.length > 1) removeMarked(bulk);
-    else removeJack(shown[sel].name);
+    else removeJack(shown[sel]);
   } else if (mod && key === "e") {
     e.preventDefault();
     invoke("open_config").catch(alertish);

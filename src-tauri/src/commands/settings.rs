@@ -1,6 +1,6 @@
 //! `[settings]`, `[defaults]`, `[colors]`, the theme, and the config file itself.
 
-use super::{blocking, list_file, os_open, ssh_dir};
+use super::{blocking, list_file, os_open, ssh_dir, writable_list};
 use crate::{config, patchbay};
 
 #[tauri::command]
@@ -44,15 +44,30 @@ pub async fn save_settings(next: config::Settings) -> Result<(), String> {
     .await
 }
 
-/// `[defaults]` is part of the list: a shared `user` there is everyone's.
-#[tauri::command]
-pub async fn defaults() -> Result<config::Defaults, String> {
-    blocking(|| Ok(config::load_defaults_at(&list_file()?))).await
+/// `[defaults]` is part of the list: a shared `user` there is everyone's, so it carries
+/// a stamp the way a device does.
+#[derive(serde::Serialize)]
+pub struct DefaultsView {
+    #[serde(flatten)]
+    defaults: config::Defaults,
+    stamp: String,
 }
 
 #[tauri::command]
-pub async fn save_defaults(next: config::Defaults) -> Result<(), String> {
-    blocking(move || config::save_defaults_at(&list_file()?, &next)).await
+pub async fn defaults() -> Result<DefaultsView, String> {
+    blocking(|| {
+        let path = list_file()?;
+        Ok(DefaultsView {
+            defaults: config::load_defaults_at(&path),
+            stamp: config::defaults_stamp_at(&path),
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn save_defaults(next: config::Defaults, stamp: Option<String>) -> Result<(), String> {
+    blocking(move || config::save_defaults_at(&writable_list()?, &next, stamp.as_deref())).await
 }
 
 #[tauri::command]
@@ -154,6 +169,39 @@ pub async fn open_config() -> Result<(), String> {
         os_open(p.as_os_str())
     })
     .await
+}
+
+/// What a licence says: who it is for, when it runs out, and whether a shared list is
+/// configured at all. Nothing is gated on any of it while the list is free, and no pane
+/// reads this - it is here with `licence.rs` for the day one of them comes back.
+#[derive(serde::Serialize)]
+pub struct LicenceView {
+    company: Option<String>,
+    /// Unix seconds, for the window to format in the reader's own locale.
+    expires: Option<u64>,
+    lapsed: bool,
+    shared: bool,
+}
+
+fn view(l: Option<crate::licence::Licence>) -> LicenceView {
+    LicenceView {
+        lapsed: l.as_ref().is_some_and(crate::licence::Licence::lapsed),
+        company: l.as_ref().map(|l| l.company.clone()),
+        expires: l.and_then(|l| l.expires),
+        shared: patchbay::list().is_some(),
+    }
+}
+
+#[tauri::command]
+pub async fn licence() -> LicenceView {
+    blocking(|| Ok(view(crate::licence::read())))
+        .await
+        .unwrap_or_else(|_| view(None))
+}
+
+#[tauri::command]
+pub async fn save_licence(key: String) -> Result<LicenceView, String> {
+    blocking(move || crate::licence::save(&key).map(|l| view(Some(l)))).await
 }
 
 #[cfg(test)]
