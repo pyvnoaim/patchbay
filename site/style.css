@@ -286,11 +286,14 @@ footer {
 }
 .log li {
   display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
+  /* Wide enough for a version, and for the word "Unreleased" when the notes come from
+     the changelog file rather than a published release. */
+  grid-template-columns: minmax(92px, max-content) minmax(0, 1fr);
   gap: 0 22px;
   align-items: start;
 }
 .log .ver {
+  white-space: nowrap;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
@@ -397,6 +400,11 @@ footer {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+/* The text links carry 13px of padding and the download pill carries none, so the
+   last gap reads short unless it is made up here. */
+.top nav .dl {
+  margin-left: 13px;
 }
 .top nav a {
   color: var(--ink-dim);
@@ -1709,10 +1717,74 @@ footer {
   max-width: var(--measure);
 }
 
-/* The team band: your file above the shared one, no leads between them. */
-.stack {
-  display: grid;
-  gap: 14px;
+/* The team band: three machines, each keeping its own file, patched into one shared
+   list. Boxes, leads and sockets are all in the same SVG, so nothing is positioned
+   against another element's box and a resize can't pull them apart. */
+.tdiag {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.tdiag .tcap {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.15em;
+  fill: var(--ink-faint);
+}
+.tdiag .tbox rect {
+  fill: var(--raise);
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+.tdiag .tlead path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: 0.45;
+}
+.tdiag .tsock circle {
+  fill: var(--ground-2);
+  stroke: var(--ink-faint);
+  stroke-width: 3;
+}
+.tdiag .tpin circle {
+  fill: var(--accent);
+}
+.tdiag .tname text {
+  font-size: 20px;
+  font-weight: 600;
+  fill: var(--ink);
+}
+.tdiag .tpath {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 14px;
+  fill: var(--ink-faint);
+}
+.tdiag .tcode text {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 15px;
+  fill: var(--ink-faint);
+}
+.tdiag .tcode .c-tbl {
+  fill: var(--ink);
+  font-weight: 500;
+}
+.tdiag .tcode .c-str {
+  fill: var(--ink-dim);
+}
+.tdiag .thair {
+  stroke: var(--hair);
+  stroke-width: 1.5;
+}
+/* Scaled to a phone the labels stop being readable, so it scrolls instead of shrinking. */
+@media (max-width: 640px) {
+  #team .full {
+    overflow-x: auto;
+  }
+  .tdiag {
+    min-width: 520px;
+  }
 }
 .ln .c-cm {
   margin-left: 3ch;
@@ -1779,6 +1851,14 @@ footer {
 .sheet .hd {
   margin-bottom: 20px;
 }
+/* A card that holds a sentence rather than a table: the changelog before a first release. */
+.sheet > p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink-dim);
+  text-wrap: pretty;
+}
 .sheet dl {
   margin: 0;
   display: grid;
@@ -1803,6 +1883,45 @@ footer {
   color: var(--ink-faint);
   font-size: 12.5px;
   margin-top: 1px;
+}
+
+/* ═══ free ═════════════════════════════════════════════════════════════════
+   Two cards priced against each other used to live here. There is one price now, so what
+   is left is the sentence and the three questions legal always asks, in a card beside it
+   rather than a row under a half-empty band. Scoped under `.sheet` because `.sheet dl`
+   and its mono terms belong to the specification card, and a bare `.faq` loses to them:
+   these are questions and sentences, not a table. */
+.sheet .faq {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  margin: 0;
+}
+.sheet .faq > div {
+  padding: 18px 0;
+  border-top: 1px solid var(--hair);
+}
+.sheet .faq > div:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.sheet .faq > div:last-child {
+  padding-bottom: 0;
+}
+.sheet .faq dt {
+  font-family: inherit;
+  font-size: 15px;
+  letter-spacing: normal;
+  text-transform: none;
+  padding-top: 0;
+  color: var(--ink);
+}
+.sheet .faq dd {
+  margin: 6px 0 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink-faint);
+  text-wrap: pretty;
 }
 
 footer {

@@ -706,6 +706,25 @@
       .join("");
   }
 
+  // Before the first release, and whenever the API can't be reached, the changelog file in
+  // the repo is the same text a release is cut from - so the section has its own notes to
+  // show rather than an empty column. `## 0.1.0 - 2026-09-07`, or `## Unreleased`.
+  function fromChangelog(md) {
+    var out = [];
+    var at = null;
+    md.split("\n").forEach(function (line) {
+      var head = /^##\s+(.+?)\s*$/.exec(line);
+      if (head) {
+        var bits = head[1].split(" - ");
+        at = { tag_name: bits[0], published_at: bits[1] || "", body: "" };
+        out.push(at);
+      } else if (at) {
+        at.body += line + "\n";
+      }
+    });
+    return out;
+  }
+
   var when = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "long", year: "numeric" });
 
   function draw(releases) {
@@ -718,13 +737,15 @@
     list.innerHTML = rows
       .map(function (r) {
         var notes = bullets(r.body);
+        // An unreleased section has no date, and neither has one the API sends without.
+        var day = r.published_at ? new Date(r.published_at) : null;
+        var dated = day && !isNaN(day.getTime()) ? when.format(day) : "";
         return (
           '<li><div><span class="ver">' +
           esc(r.tag_name) +
           "</span>" +
-          '<span class="when">' +
-          esc(when.format(new Date(r.published_at))) +
-          "</span></div>" +
+          (dated ? '<span class="when">' + esc(dated) + "</span>" : "") +
+          "</div>" +
           (notes ? "<ul>" + notes + "</ul>" : "<ul><li>No notes for this one.</li></ul>") +
           "</li>"
         );
@@ -744,8 +765,19 @@
         })
         .then(draw)
         .catch(function () {
+          return fetch("https://raw.githubusercontent.com/pyvnoaim/patchbay/main/CHANGELOG.md")
+            .then(function (r) {
+              return r.ok ? r.text() : Promise.reject(r.status);
+            })
+            .then(function (md) {
+              draw(fromChangelog(md));
+            });
+        })
+        .then(function () {
+          off.hidden = true;
+        })
+        .catch(function () {
           list.hidden = true;
-          off.hidden = false;
         });
     },
     { rootMargin: "200px" },
