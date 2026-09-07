@@ -54,6 +54,10 @@ quick-xml = "0.37"
 # to the browser for a page that would have opened fine.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls-native-roots"] }
 
+# The team licence, checked offline against the public key in licence.rs. Already in
+# the tree behind the updater; taking it directly keeps the licence off the network.
+minisign-verify = "0.2"
+
 # Self-update, verified against the minisign public key in tauri.conf.json. Default
 # features only: they are rustls, so the build stays free of an openssl dependency.
 tauri-plugin-updater = "2"

@@ -19,7 +19,8 @@
     "dmg": "node scripts/dmg.mjs",
     "icons": "node scripts/icons.mjs",
     "brands": "node scripts/brands.mjs",
-    "vendor": "node scripts/vendor.mjs"
+    "vendor": "node scripts/vendor.mjs",
+    "licence": "node scripts/licence.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

@@ -3,15 +3,16 @@
   <img src="assets/logo-light.svg" alt="patchbay" width="272">
 </picture>
 
-**Every host, one jack away.**
+**Share the list, not the passwords.**
 
 A connection manager that is a TOML file and a `ssh` exec. No Electron, no sync
-service, no license key, no crown.
+service, no credential store, no crown.
 
-Your machines live in one file you can read, hand-edit and keep in a repo. The window
-opens them: sessions, remote desktop, a device's web UI and its files, all as tabs,
-under a folder tree. It stores no credentials, because your ssh agent and
-`~/.ssh/config` already hold them.
+Your machines live in one file you can read, hand-edit and keep in a repo: hostnames,
+folders and jump chains, and never a credential, so the file goes on the team drive as
+it is. The window opens them: sessions, remote desktop, a device's web UI and its
+files, all as tabs, under a folder tree. Your `ssh` agent and `~/.ssh/config` hold
+what it doesn't.
 
 Already have a list? Settings → Import reads `~/.ssh/config` or a Royal TS `.rtsz`
 document and shows what it found with tick boxes. Nothing is written until you tick,
@@ -212,8 +213,18 @@ are and what to run - the running is someone else's job.
 
 ## Licence
 
-[PolyForm Small Business 1.0.0](LICENSE). Free for you personally, and free for any
-company under 100 people and $1M revenue - which is most of them. The source is here
-either way: read it, build it, fork it, send patches.
+**Free, all of it, for now** - every protocol, every tab, the shared list included, on
+as many machines as you like. [PolyForm Small
+Business](https://polyformproject.org/licenses/small-business/1.0.0/) is the licence,
+which is free for companies under 100 people.
 
-Bigger than that and it needs a commercial licence. Open an issue and we'll sort it out.
+Nothing is sent anywhere and there is no account: patchbay makes no outbound request
+except the update check.
+
+- **Can we change the code?** Yes, and you never have to publish what you changed.
+- **Will the shared list stay free?** No promise. If it becomes the paid part, it is a
+  price for teams and it is announced in the changelog before it lands, never in a
+  release that quietly stops writing your file.
+- **Is this open source?** The source is public and yours to read, build and fork, but it
+  is not OSI open source: PolyForm asks that you are not selling it on, or using it in a
+  company of 100 people or more without asking.

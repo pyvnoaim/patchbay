@@ -1,0 +1,7 @@
+company = "Acme GmbH"
+expires = 1577836800
+--
+untrusted comment: signature from tauri secret key
+RUStHn7frty+G9VgDBUo09QviN2yQkkIG6iDNWiY1UlahbfXy2kj2nb79kqKua4EZNT3akqtY2i0cPJdWEM1jvsMrltwhQdmyA0=
+trusted comment: timestamp:1788765445	file:licence.toml
+sYxd3sL0ujzg8QmW7W+994rD7cN/UaaBATXKsvwzwJZ8vdTWHD9jmL3R4gdBXKXguuHyUyH7NuQggPYnQ9rNCw==
