@@ -387,8 +387,8 @@ async function load() {
   reveal();
 }
 
-// Someone else's save shows up as the file's mtime or size moving. Different, not
-// newer: a sync client keeps the source machine's mtime, and clocks disagree. Its own
+// Someone else's save shows up as the file's contents hashing differently. Different,
+// not newer: a sync client keeps the source machine's mtime, and clocks disagree. Its own
 // timer, because `refreshProbes` sits out when probing is off or the window is behind.
 // `polling` holds the next tick back while one hangs on a share that has gone away.
 let polling = false;
