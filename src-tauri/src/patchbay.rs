@@ -918,6 +918,10 @@ host = "x; id"
             "x-apple-helpme://boom",
             "smb://share",
             "nas.local:5001",
+            // What a login page navigates through on its way, and what `on_navigation`
+            // must not report as a page that failed to open.
+            "about:blank",
+            "blob:https://nas.local/9f2b",
             "",
             "https://ok\nfile:///etc/passwd",
         ] {

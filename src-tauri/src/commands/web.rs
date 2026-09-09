@@ -87,7 +87,13 @@ pub async fn open_web_view(
             tauri::webview::WebviewBuilder::new(web_label(id), tauri::WebviewUrl::External(parsed))
                 .on_navigation(move |to| {
                     use tauri::Emitter;
-                    let _ = reporter.emit(&format!("web-nav:{id}"), to.to_string());
+                    // Only a page worth re-checking. A login flow navigates to
+                    // `about:blank` and `blob:` on its way, and reporting one of those
+                    // put "only http:// and https:// urls can be opened" over a tab
+                    // that was loading fine. Never false: this reports, never blocks.
+                    if is_web_url(to.as_str()) {
+                        let _ = reporter.emit(&format!("web-nav:{id}"), to.to_string());
+                    }
                     true
                 }),
             tauri::LogicalPosition::new(x, y),
