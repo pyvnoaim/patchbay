@@ -8,7 +8,6 @@ mod clipboard;
 mod commands;
 mod config;
 mod import;
-mod licence;
 mod patchbay;
 mod pty;
 mod rdp;
@@ -98,8 +97,6 @@ fn main() {
             jacks::list_stamp,
             jacks::reveal_list,
             settings::open_config,
-            settings::licence,
-            settings::save_licence,
             sessions::connect,
             sessions::open_session,
             sessions::open_task,

@@ -213,18 +213,17 @@ are and what to run - the running is someone else's job.
 
 ## Licence
 
-**Free, all of it, for now** - every protocol, every tab, the shared list included, on
-as many machines as you like. [PolyForm Small
-Business](https://polyformproject.org/licenses/small-business/1.0.0/) is the licence,
-which is free for companies under 100 people.
+**Free, all of it** - every protocol, every tab, the shared list included, on as many
+machines as you like, at a company of any size. [PolyForm
+Perimeter](https://polyformproject.org/licenses/perimeter/1.0.1) is the licence: the one
+thing it asks is that you don't turn it into a product that competes with this one.
 
 Nothing is sent anywhere and there is no account: patchbay makes no outbound request
 except the update check.
 
 - **Can we change the code?** Yes, and you never have to publish what you changed.
-- **Will the shared list stay free?** No promise. If it becomes the paid part, it is a
-  price for teams and it is announced in the changelog before it lands, never in a
-  release that quietly stops writing your file.
+- **Which part is the paid one?** Neither. The shared list is not a tier being held
+  back for a team plan, and there is nothing to buy.
 - **Is this open source?** The source is public and yours to read, build and fork, but it
-  is not OSI open source: PolyForm asks that you are not selling it on, or using it in a
-  company of 100 people or more without asking.
+  is not OSI open source: PolyForm asks that you don't sell a competing product built
+  out of it. Using it, at work or anywhere else, is not that.

@@ -171,39 +171,6 @@ pub async fn open_config() -> Result<(), String> {
     .await
 }
 
-/// What a licence says: who it is for, when it runs out, and whether a shared list is
-/// configured at all. Nothing is gated on any of it while the list is free, and no pane
-/// reads this - it is here with `licence.rs` for the day one of them comes back.
-#[derive(serde::Serialize)]
-pub struct LicenceView {
-    company: Option<String>,
-    /// Unix seconds, for the window to format in the reader's own locale.
-    expires: Option<u64>,
-    lapsed: bool,
-    shared: bool,
-}
-
-fn view(l: Option<crate::licence::Licence>) -> LicenceView {
-    LicenceView {
-        lapsed: l.as_ref().is_some_and(crate::licence::Licence::lapsed),
-        company: l.as_ref().map(|l| l.company.clone()),
-        expires: l.and_then(|l| l.expires),
-        shared: patchbay::list().is_some(),
-    }
-}
-
-#[tauri::command]
-pub async fn licence() -> LicenceView {
-    blocking(|| Ok(view(crate::licence::read())))
-        .await
-        .unwrap_or_else(|_| view(None))
-}
-
-#[tauri::command]
-pub async fn save_licence(key: String) -> Result<LicenceView, String> {
-    blocking(move || crate::licence::save(&key).map(|l| view(Some(l)))).await
-}
-
 #[cfg(test)]
 mod tests {
     use super::keys_in;

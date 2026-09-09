@@ -1,8 +1,8 @@
-# PolyForm Small Business License 1.0.0
+# PolyForm Perimeter License 1.0.1
 
 Required Notice: Copyright 2026 pyvno (https://github.com/pyvnoaim/patchbay)
 
-<https://polyformproject.org/licenses/small-business/1.0.0>
+<https://polyformproject.org/licenses/perimeter/1.0.1>
 
 ## Acceptance
 
@@ -30,13 +30,17 @@ The licensor grants you an additional copyright license to make changes and new 
 
 The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
 
+## Noncompete
+
+Any purpose is a permitted purpose, except for providing to others any product that competes with the software.
+
+## Competition
+
+If you use this software to market a product as a substitute for the functionality or value of the software, it competes with the software.  A product may compete regardless how it is designed or deployed.  For example, a product may compete even if it provides its functionality via any kind of interface (including services, libraries or plug-ins), even if it is ported to a different platform or programming language, and even if it is provided free of charge.
+
 ## Fair Use
 
 You may have "fair use" rights for the software under the law. These terms do not limit them.
-
-## Small Business
-
-Use of the software for the benefit of your company is use for a permitted purpose if your company has fewer than 100 total individuals working as employees and independent contractors, and less than 1,000,000 USD (2019) total revenue in the prior tax year.  Adjust this revenue threshold for inflation according to the United States Bureau of Labor Statistics' consumer price index for all urban consumers, U.S. city average, for all items, not seasonally adjusted, with 1982–1984=100 reference base.
 
 ## No Other Rights
 
@@ -57,6 +61,8 @@ The first time you are notified in writing that you have violated any of these t
 ## Definitions
 
 The **licensor** is the individual or entity offering these terms, and the **software** is the software the licensor makes available under these terms.
+
+A **product** can be a good or service, or a combination of them.
 
 **You** refers to the individual or entity agreeing to these terms.
 

@@ -10,6 +10,8 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- Free, all of it: every protocol, every tab and the shared list, at a company of any
+  size. PolyForm Perimeter is the licence, and nothing in the app asks for a key.
 - Every write keeps the file it replaced as `patchbay.toml.bak`, beside your config. The
   Undo pill only ever covered a delete, and only for as long as it was on screen; a
   folder rename touches every device in it.

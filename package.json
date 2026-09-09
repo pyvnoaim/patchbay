@@ -2,7 +2,7 @@
   "name": "patchbay",
   "version": "0.0.1",
   "description": "Every host, one jack away.",
-  "license": "PolyForm-Small-Business-1.0.0",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "private": true,
   "engines": {
@@ -19,8 +19,7 @@
     "dmg": "node scripts/dmg.mjs",
     "icons": "node scripts/icons.mjs",
     "brands": "node scripts/brands.mjs",
-    "vendor": "node scripts/vendor.mjs",
-    "licence": "node scripts/licence.mjs"
+    "vendor": "node scripts/vendor.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

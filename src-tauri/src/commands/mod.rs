@@ -28,10 +28,9 @@ pub fn list_file() -> Result<PathBuf, String> {
     }
 }
 
-/// Where the list is *written*. The shared list is free for now, so this is `list_file`
-/// with a name: the seam the wall stood in, kept because it is the one place every
-/// writer already goes through. `licence.rs` and its two commands are still here; what
-/// went is the refusal, the Settings pane that asked for a key, and the price beside it.
+/// Where the list is *written*. The shared list is free, so this is `list_file` with a
+/// name: the seam the wall stood in, kept because it is the one place every writer
+/// already goes through.
 pub fn writable_list() -> Result<PathBuf, String> {
     list_file()
 }

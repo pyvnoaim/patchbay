@@ -10,6 +10,3 @@ dev/web_trusted
 dev/patchbay.toml.bak
 dev/patchbay.toml.base
 dev/spaces/
-
-# A real one, pasted into the dev app. dev/licence.example is the expired fixture.
-dev/licence
