@@ -238,8 +238,6 @@ window.addEventListener("resize", hideCtx);
 
 // ── ask (one-line prompt) ──────────────────────────────────────────────────
 let askResolve = null;
-// The chord that asked the question answers yes to it: ⌘W twice closes the session.
-let askAgain = null;
 // A prompt with something to type, or a plain confirmation when `value` is null. A
 // `user` of null is the one-input prompt; a string (empty included) adds the username
 // field and resolves to `{ user, password }` instead.
@@ -266,7 +264,6 @@ function ask(title, value = "", okLabel = "OK", type = "text", user = null) {
 }
 function closeAsk(v) {
   askWrap.hidden = true;
-  askAgain = null;
   askResolve?.(v);
   askResolve = null;
 }

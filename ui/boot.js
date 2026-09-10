@@ -189,10 +189,6 @@ document.addEventListener("keydown", (e) => {
 
   // A sheet is modal: it has the keyboard, bar Escape.
   if (sheetOpen()) {
-    if (!askWrap.hidden && mod && askAgain === key) {
-      e.preventDefault();
-      return closeAsk(true);
-    }
     if (e.key === "Escape") {
       e.preventDefault();
       if (!askWrap.hidden) closeAsk(null);

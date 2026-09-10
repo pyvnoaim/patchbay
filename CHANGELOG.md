@@ -10,6 +10,8 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- Closing a session no longer asks first. Only closing several at once - a broadcast
+  group, or quitting with live tabs - is still worth a question.
 - The sidebar opens the way you left it. Folders you folded stay folded, and a first
   run starts with all of them closed instead of every one unfolded.
 - An import from Royal TS keeps the way in each connection had: an RDP or web entry

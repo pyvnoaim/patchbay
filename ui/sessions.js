@@ -231,22 +231,12 @@ async function openSession(name, task = null, bcast = null) {
   term.focus();
 }
 
-// A tab worth a question before closing: a connected shell or desktop.
+// A live tab: a connected shell or desktop. Closing one is not asked about - it is
+// one deliberate click on one session - but closing several at once is.
 const isLive = (s) => !s.dead && ((s.kind === "term" && !s.task) || s.kind === "rdp");
 const liveSessions = () => [...sessions.values()].filter(isLive);
 
-async function closeSession(id) {
-  const s = sessions.get(id);
-  if (!s) return;
-  if (isLive(s)) {
-    askAgain = "w";
-    if (!(await ask(`Close the session on "${s.name}"?`, null, "Close"))) return;
-  }
-  dropSession(id);
-}
-
-// The close without the question, for a caller that has already asked.
-function dropSession(id) {
+function closeSession(id) {
   const s = sessions.get(id);
   if (!s) return;
   const closer = { rdp: "close_rdp_session", web: "close_web_view" }[s.kind] ?? "close_session";
@@ -897,9 +887,8 @@ function toggleBroadcast(gid) {
 async function closeBroadcast(gid) {
   const panes = [...sessions.values()].filter((s) => s.bcast?.gid === gid);
   const live = panes.filter(isLive).length;
-  if (live && !(await ask(`Close ${live} live session${live === 1 ? "" : "s"}?`, null, "Close")))
-    return;
-  for (const s of panes) dropSession(s.id);
+  if (live > 1 && !(await ask(`Close ${live} live sessions?`, null, "Close"))) return;
+  for (const s of panes) closeSession(s.id);
 }
 
 addEventListener("resize", () => {
