@@ -10,6 +10,8 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- A button works on the first press. Coming back to the window redrew the pane under
+  your click, so Ping, Files and the rest needed pressing twice.
 - Trusting a device's certificate sticks. The page used to load and then be covered by
   the same "trust it" panel again, once for every address the page redirected through.
 - Closing a session no longer asks first. Only closing several at once - a broadcast

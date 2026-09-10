@@ -540,6 +540,25 @@ async function offerSshCleanup() {
   showSshLeftover(left);
 }
 
+// A press holds off `render()`; see `pressing` in core.js. Captured at the document,
+// so it covers every button and row rather than the pane one of them sits in.
+document.addEventListener("pointerdown", () => (pressing = true), true);
+const releasePress = () => {
+  pressing = false;
+  if (!missedRender) return;
+  // After the click, not before it: pointerup comes first, so rendering here would
+  // take the button away just as late to fire one.
+  setTimeout(() => {
+    missedRender = false;
+    render();
+  }, 0);
+};
+document.addEventListener("pointerup", releasePress, true);
+document.addEventListener("pointercancel", releasePress, true);
+// A release outside the window sends no pointerup, and a stuck press stops every
+// render there is.
+window.addEventListener("blur", releasePress);
+
 // Errands run behind the first paint.
 load().then(restoreTabs).then(takeLink).then(offerUpdate).then(offerSshCleanup);
 setInterval(refreshProbes, PROBE_EVERY);

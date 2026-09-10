@@ -100,6 +100,13 @@ const inGroup = (j) =>
 
 // ── list ───────────────────────────────────────────────────────────────────
 function render() {
+  // Not while a press is in flight: `innerHTML` takes away the row or button being
+  // pressed, and the click that would have fired on it never does. `releasePress()`
+  // runs the skipped render once the click has landed.
+  if (pressing) {
+    missedRender = true;
+    return;
+  }
   renderTree();
   shown = all.filter(inGroup);
   // Both the device sheet and the settings sheet suggest jump targets.
