@@ -10,6 +10,8 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- Trusting a device's certificate sticks. The page used to load and then be covered by
+  the same "trust it" panel again, once for every address the page redirected through.
 - Closing a session no longer asks first. Only closing several at once - a broadcast
   group, or quitting with live tabs - is still worth a question.
 - The sidebar opens the way you left it. Folders you folded stay folded, and a first

@@ -228,11 +228,23 @@ fn web_trusted(url: &str) -> bool {
     web_trusted_at(&web_trust_store(), url)
 }
 
+/// A waiver is about a device's certificate, so it is keyed by origin. Keyed by the
+/// whole url it missed constantly: the webview navigates to `.../` where the config
+/// says `...:8006`, `web-nav` re-checks that, and the panel came back over a page the
+/// trusted certificate had just made load. Reading old full-url lines through the same
+/// key keeps a store written before this.
+fn trust_key(url: &str) -> String {
+    tauri::Url::parse(url.trim())
+        .map(|u| u.origin().ascii_serialization())
+        .unwrap_or_else(|_| url.trim().to_string())
+}
+
 fn web_trusted_at(store: &Path, url: &str) -> bool {
+    let key = trust_key(url);
     std::fs::read_to_string(store)
         .unwrap_or_default()
         .lines()
-        .any(|l| l.trim() == url)
+        .any(|l| trust_key(l) == key)
 }
 
 fn web_trust_at(store: &Path, url: &str) -> Result<(), String> {
@@ -245,7 +257,7 @@ fn web_trust_at(store: &Path, url: &str) -> Result<(), String> {
         .append(true)
         .open(store)
         .map_err(|e| format!("{}: {e}", store.display()))?;
-    writeln!(f, "{url}").map_err(|e| format!("{}: {e}", store.display()))
+    writeln!(f, "{}", trust_key(url)).map_err(|e| format!("{}: {e}", store.display()))
 }
 
 /// "Show it anyway", remembered. This can't make the webview accept a certificate;
@@ -454,6 +466,18 @@ mod tests {
         web_trust_at(&store, url).unwrap();
         assert_eq!(std::fs::read_to_string(&store).unwrap().lines().count(), 1);
         assert!(!web_trusted_at(&store, "https://192.168.1.9:5001/"));
+        // The webview navigates where the config only named an origin, and a redirect
+        // lands on a path. Same certificate, same answer, still one line.
+        for same in [
+            "https://192.168.1.20:5001",
+            "https://192.168.1.20:5001/webman/index.cgi",
+        ] {
+            assert!(web_trusted_at(&store, same), "{same} asked again");
+            web_trust_at(&store, same).unwrap();
+        }
+        assert_eq!(std::fs::read_to_string(&store).unwrap().lines().count(), 1);
+        // A different port is a different certificate.
+        assert!(!web_trusted_at(&store, "https://192.168.1.20:5000/"));
     }
 
     #[test]
