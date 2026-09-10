@@ -251,6 +251,7 @@ function dropTab(id) {
   if (s.master != null) invoke("close_session", { id: s.master }).catch(() => {});
   clearInterval(s.wait);
   clearTimeout(s.noteTimer);
+  clearTimeout(s.checkTimer);
   s.unlisten.forEach((f) => f());
   s.term?.dispose();
   s.host.remove();
@@ -337,8 +338,32 @@ function watchOverlays() {
   }
 }
 
-// Runs alongside the view, not before it. A webview paints nothing for an untrusted
-// certificate, so this is the only thing that can say why.
+// How long a page gets to paint before we go looking for a reason. Only a tab that
+// showed nothing is ever explained.
+const WEB_PATIENCE = 5000;
+
+// Our own check is a *prediction*, and it is made with rustls, which cannot see the
+// per-host waiver `security add-trusted-cert -e hostnameMismatch` writes. So a
+// certificate you trusted still reads as untrusted here while the webview loads the
+// page perfectly well. A page that rendered outranks any prediction: arm the check,
+// and let `web-load` cancel it.
+function armWebCheck(s, url) {
+  clearTimeout(s.checkTimer);
+  s.checkTimer = setTimeout(() => checkWeb(s, url), WEB_PATIENCE);
+}
+
+// The page painted, so whatever we were about to explain isn't true. Also clears a
+// panel already up: a slow device that beat the timer must not keep the apology.
+function webLoaded(s) {
+  clearTimeout(s.checkTimer);
+  if (!s.failed) return;
+  s.failed = s.failedUrl = null;
+  s.dead = false;
+  s.host.innerHTML = "";
+  renderTabs();
+  placeWebViews();
+}
+
 function checkWeb(s, url) {
   invoke("web_check", { url }).catch((e) => {
     if (!sessions.has(s.id) || s.failed) return;
@@ -766,14 +791,17 @@ async function openWebSession(name) {
   try {
     s.unlisten.push(
       await listen(`web-nav:${id}`, (e) => {
-        if (e.payload !== url && !s.failed) checkWeb(s, e.payload);
+        // Each navigation is a fresh page to be patient with; the one that paints
+        // cancels the check for all of them.
+        armWebCheck(s, e.payload);
       }),
     );
+    s.unlisten.push(await listen(`web-load:${id}`, () => webLoaded(s)));
   } catch {
     /* no capability means no redirect notice, not a broken tab */
   }
 
-  checkWeb(s, url);
+  armWebCheck(s, url);
 }
 
 function renderTabs() {

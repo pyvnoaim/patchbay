@@ -82,6 +82,7 @@ pub async fn open_web_view(
     }
     let window = app.get_window("main").ok_or("the main window has gone")?;
     let reporter = app.clone();
+    let loaded = app.clone();
     window
         .add_child(
             tauri::webview::WebviewBuilder::new(web_label(id), tauri::WebviewUrl::External(parsed))
@@ -95,6 +96,15 @@ pub async fn open_web_view(
                         let _ = reporter.emit(&format!("web-nav:{id}"), to.to_string());
                     }
                     true
+                })
+                // A page that rendered is the only proof that beats a preflight. WebKit
+                // finishes no navigation it refused a certificate for, so this arriving
+                // means the tab is fine whatever `web_check` would have predicted.
+                .on_page_load(move |_, payload| {
+                    use tauri::Emitter;
+                    if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                        let _ = loaded.emit(&format!("web-load:{id}"), payload.url().to_string());
+                    }
                 }),
             tauri::LogicalPosition::new(x, y),
             tauri::LogicalSize::new(width.max(1.0), height.max(1.0)),
@@ -103,9 +113,13 @@ pub async fn open_web_view(
     Ok(url)
 }
 
-/// Move and size a web tab, in logical pixels. A zero size is how it is hidden: a
-/// child webview ignores CSS and sits above every sheet, so anything opening over it
-/// calls this first.
+/// Move and size a web tab, in logical pixels. A child webview obeys no CSS of ours -
+/// not `hidden`, not z-index, not a sheet - so anything opening over it calls this
+/// with a zero size first.
+///
+/// Zero size *and* `hide()`: a 0x0 WKWebView still drew, which is what put the
+/// settings sheet behind a Synology's login page. Only a tab whose page had failed
+/// looked right, because that one was already sized away for its own reasons.
 #[tauri::command]
 pub fn place_web_view(
     app: tauri::AppHandle,
@@ -119,10 +133,14 @@ pub fn place_web_view(
     let Some(w) = app.get_webview(&web_label(id)) else {
         return Ok(());
     };
+    if width <= 0.0 || height <= 0.0 {
+        return w.hide().map_err(|e| e.to_string());
+    }
     w.set_position(tauri::LogicalPosition::new(x, y))
         .map_err(|e| e.to_string())?;
-    w.set_size(tauri::LogicalSize::new(width.max(0.0), height.max(0.0)))
-        .map_err(|e| e.to_string())
+    w.set_size(tauri::LogicalSize::new(width, height))
+        .map_err(|e| e.to_string())?;
+    w.show().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
