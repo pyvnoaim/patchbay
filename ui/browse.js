@@ -555,7 +555,7 @@ const move = (d) => select(sel + d);
 // A folder row taken as the list: the click and the arrow keys land here.
 function pickGroup(id, foldable) {
   group = id;
-  if (foldable) expanded.add(gkey(id));
+  if (foldable) openGroup(gkey(id));
   sel = 0;
   marked.clear();
   detailMode = "group"; // the pane describes the folder, not its first device
@@ -570,7 +570,7 @@ function stepTree(d) {
   const id = cur?.dataset.group ? { path: cur.dataset.path } : null;
   const open = id && cur.dataset.hasKids === "true" && expanded.has(gkey(id));
   if (id && cur.dataset.hasKids === "true" && d < 0 === !!open) {
-    open ? expanded.delete(gkey(id)) : expanded.add(gkey(id));
+    toggleGroup(gkey(id));
     return render();
   }
   const next = rows[at + d];

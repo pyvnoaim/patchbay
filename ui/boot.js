@@ -20,7 +20,7 @@ treeEl.addEventListener("click", (e) => {
   // Clicking the triangle folds; clicking the row selects.
   const foldable = el.dataset.hasKids === "true";
   if (e.target.closest(".twist") && foldable) {
-    expanded.has(gkey(id)) ? expanded.delete(gkey(id)) : expanded.add(gkey(id));
+    toggleGroup(gkey(id));
     render();
   } else pickGroup(id, foldable);
 });
@@ -363,11 +363,10 @@ async function load() {
     notes = new Map(noteRows.map((n) => [n.path, n.note]));
     noteStamps = new Map(noteRows.map((n) => [n.path, n.stamp]));
     loadErr = "";
-    // Open the first level on the first load only, or focus would re-open folders.
+    // Last session's open folders, on the first load only: a focus would re-open
+    // what has been closed since. Nothing remembered means everything folded.
     if (!seeded) {
-      for (const j of all) {
-        for (const f of j.folders) expanded.add(gkey({ path: f.split("/")[0] }));
-      }
+      expanded = new Set(recallList("expanded"));
       seeded = true;
     }
     applyTheme();

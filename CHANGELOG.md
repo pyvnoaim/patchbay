@@ -10,6 +10,8 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- The sidebar opens the way you left it. Folders you folded stay folded, and a first
+  run starts with all of them closed instead of every one unfolded.
 - An import from Royal TS keeps the way in each connection had: an RDP or web entry
   opens as a desktop or a web tab, not as ssh.
 - A remote desktop follows the window: widen it and the picture grows with the pane

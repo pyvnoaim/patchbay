@@ -120,6 +120,18 @@ const recallList = (key) => {
   }
 };
 
+// Which folders are open is this machine's habit, not part of the list, so it lives
+// beside the theme and the palette's recency rather than in the config.
+const keepExpanded = () => remember("expanded", JSON.stringify([...expanded]));
+const openGroup = (key) => {
+  expanded.add(key);
+  keepExpanded();
+};
+const toggleGroup = (key) => {
+  expanded.has(key) ? expanded.delete(key) : expanded.add(key);
+  keepExpanded();
+};
+
 const esc = (s) =>
   String(s ?? "").replace(
     /[&<>"]/g,

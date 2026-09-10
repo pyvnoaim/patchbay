@@ -645,7 +645,7 @@ async function newGroup(parent) {
   const leaf = name.replace(/^\/+|\/+$/g, "");
   const id = { path: parent?.path ? `${parent.path}/${leaf}` : leaf };
   pending.set(gkey(id), id);
-  expanded.add(gkey({ path: id.path.split("/")[0] }));
+  openGroup(gkey({ path: id.path.split("/")[0] }));
   group = id;
   render();
 }
@@ -711,7 +711,7 @@ async function moveJacks(js, to) {
   }
   if (!moved) return;
   if (to !== null) {
-    expanded.add(gkey({ path: to.split("/")[0] }));
+    openGroup(gkey({ path: to.split("/")[0] }));
     pending.delete(gkey({ path: to }));
   }
   marked.clear();
