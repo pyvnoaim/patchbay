@@ -840,6 +840,11 @@ function renderTabs() {
       ${s.kind === "sftp" ? `<span class="tabkind">${icon("folder")}</span>` : ""}
       ${s.task ? `<span class="tabkind">${icon(s.task === "trace" ? "waypoints" : "plug")}</span>` : ""}
       <span class="lbl">${esc(s.task ? `${s.task} ${s.name}` : s.name)}</span>
+      ${
+        s.kind === "web" && webextRunning && !s.dead
+          ? `<span class="x" data-bw="${s.id}" data-tip="Fill · right-click for Bitwarden">${icon("key-round")}</span>`
+          : ""
+      }
       <span class="x" data-close="${s.id}" data-tip="Close  ${chord("w")}">${icon("x")}</span>
     </div>`);
   }
@@ -876,7 +881,27 @@ function markTabOverflow() {
 }
 tabsEl.addEventListener("scroll", markTabOverflow, { passive: true });
 
+// The key on a web tab. A click fills, the way ⌘⇧L does in a browser, so a login in
+// steps is one click per step; the popup closed itself after every fill. Right-click
+// opens Bitwarden itself, for signing in and picking a login by hand. Whatever it
+// shows hangs from the key.
+function bitwardenKey(el, popup) {
+  const r = el.getBoundingClientRect();
+  const at = { x: r.left, y: r.top, width: r.width, height: r.height };
+  invoke("webext_key", { id: +el.dataset.bw, ...at, popup }).catch(alertish);
+}
+tabsEl.addEventListener("contextmenu", (e) => {
+  const bw = e.target.closest("[data-bw]");
+  if (!bw) return;
+  e.preventDefault();
+  // Before the document's own handler, which would draw the app's menu over it.
+  e.stopPropagation();
+  bitwardenKey(bw, true);
+});
+
 tabsEl.addEventListener("click", (e) => {
+  const bw = e.target.closest("[data-bw]");
+  if (bw) return bitwardenKey(bw, false);
   const close = e.target.closest("[data-close]")?.dataset.close;
   if (close) return closeSession(+close);
   const bclose = e.target.closest("[data-bclose]")?.dataset.bclose;

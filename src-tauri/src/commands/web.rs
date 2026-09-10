@@ -83,32 +83,69 @@ pub async fn open_web_view(
     let window = app.get_window("main").ok_or("the main window has gone")?;
     let reporter = app.clone();
     let loaded = app.clone();
+    let at = tauri::LogicalPosition::new(x, y);
+    let size = tauri::LogicalSize::new(width.max(1.0), height.max(1.0));
+    let build = move || {
+        tauri::webview::WebviewBuilder::new(web_label(id), tauri::WebviewUrl::External(parsed))
+            .on_navigation(move |to| {
+                use tauri::Emitter;
+                // Only a page worth re-checking. A login flow navigates to
+                // `about:blank` and `blob:` on its way, and reporting one of those
+                // put "only http:// and https:// urls can be opened" over a tab
+                // that was loading fine. Never false: this reports, never blocks.
+                if is_web_url(to.as_str()) {
+                    let _ = reporter.emit(&format!("web-nav:{id}"), to.to_string());
+                }
+                true
+            })
+            // A page that rendered is the only proof that beats a preflight. WebKit
+            // finishes no navigation it refused a certificate for, so this arriving
+            // means the tab is fine whatever `web_check` would have predicted.
+            .on_page_load(move |_, payload| {
+                use tauri::Emitter;
+                if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                    let _ = loaded.emit(&format!("web-load:{id}"), payload.url().to_string());
+                }
+            })
+    };
+
+    // With the extension up the whole build moves to the main thread: a
+    // `WKWebViewConfiguration` can only be made there and cannot be sent, and WebKit
+    // reads the controller off it when the view is created rather than after.
+    #[cfg(target_os = "macos")]
+    if crate::webext::running() {
+        let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+        let w = window.clone();
+        app.run_on_main_thread(move || {
+            let mut b = build();
+            if let Some(mtm) = objc2::MainThreadMarker::new() {
+                if let Some(conf) = crate::webext::tab_configuration(mtm) {
+                    b = b.with_webview_configuration(conf);
+                }
+            }
+            let _ = tx.send(
+                w.add_child(b, at, size)
+                    .map(|v| {
+                        // The extension learns of a tab through its WKWebView, which
+                        // only `with_webview` hands out.
+                        let _ = v.with_webview(move |p| crate::webext::open_tab(id, p.inner()));
+                    })
+                    .map_err(|e| e.to_string()),
+            );
+        })
+        .map_err(|e| format!("could not reach the main thread: {e}"))?;
+        let out = tauri::async_runtime::spawn_blocking(move || {
+            rx.recv_timeout(std::time::Duration::from_secs(20))
+                .unwrap_or_else(|_| Err("the tab never opened".into()))
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        out.map_err(|e| format!("\"{resolved}\": {e}"))?;
+        return Ok(url);
+    }
+
     window
-        .add_child(
-            tauri::webview::WebviewBuilder::new(web_label(id), tauri::WebviewUrl::External(parsed))
-                .on_navigation(move |to| {
-                    use tauri::Emitter;
-                    // Only a page worth re-checking. A login flow navigates to
-                    // `about:blank` and `blob:` on its way, and reporting one of those
-                    // put "only http:// and https:// urls can be opened" over a tab
-                    // that was loading fine. Never false: this reports, never blocks.
-                    if is_web_url(to.as_str()) {
-                        let _ = reporter.emit(&format!("web-nav:{id}"), to.to_string());
-                    }
-                    true
-                })
-                // A page that rendered is the only proof that beats a preflight. WebKit
-                // finishes no navigation it refused a certificate for, so this arriving
-                // means the tab is fine whatever `web_check` would have predicted.
-                .on_page_load(move |_, payload| {
-                    use tauri::Emitter;
-                    if payload.event() == tauri::webview::PageLoadEvent::Finished {
-                        let _ = loaded.emit(&format!("web-load:{id}"), payload.url().to_string());
-                    }
-                }),
-            tauri::LogicalPosition::new(x, y),
-            tauri::LogicalSize::new(width.max(1.0), height.max(1.0)),
-        )
+        .add_child(build(), at, size)
         .map_err(|e| format!("\"{resolved}\": {e}"))?;
     Ok(url)
 }
@@ -140,11 +177,21 @@ pub fn place_web_view(
         .map_err(|e| e.to_string())?;
     w.set_size(tauri::LogicalSize::new(width, height))
         .map_err(|e| e.to_string())?;
+    // The tab in front is the one Bitwarden fills. Queued rather than called: the
+    // extension's state is the main thread's, whichever thread this runs on.
+    #[cfg(target_os = "macos")]
+    if crate::webext::running() {
+        let _ = app.run_on_main_thread(move || crate::webext::activate(id));
+    }
     w.show().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn close_web_view(app: tauri::AppHandle, id: u32) {
+    #[cfg(target_os = "macos")]
+    if crate::webext::running() {
+        let _ = app.run_on_main_thread(move || crate::webext::close_tab(id));
+    }
     if let Some(w) = app.get_webview(&web_label(id)) {
         let _ = w.close();
     }
@@ -287,6 +334,102 @@ pub fn web_trust(url: String) -> Result<(), String> {
         return Err(NOT_WEB.into());
     }
     web_trust_at(&web_trust_store(), &url)
+}
+
+// A hosted browser extension is the web tab's story too, so its thin surface sits here
+// rather than in a file of its own; `webext.rs` is where the work is.
+
+/// Whether the toggle is offerable at all: `WKWebExtension` is macOS 15.4 and newer.
+#[tauri::command]
+pub fn webext_supported() -> bool {
+    crate::webext::supported()
+}
+
+/// What the installed Bitwarden extension turns out to be. Settings shows the answer
+/// beside the toggle, because a build `WKWebExtension` won't take has to say so rather
+/// than leave a switch that quietly does nothing.
+#[tauri::command]
+pub async fn webext_inspect(app: tauri::AppHandle) -> Result<crate::webext::Package, String> {
+    let path = crate::webext::package()?;
+    crate::webext::inspect(&app, path).await
+}
+
+/// Every device url in the list, as the match patterns the extension is allowed to see.
+/// This is the whole of its reach, so it is computed from the list and nowhere else.
+fn web_hosts() -> Result<Vec<String>, String> {
+    let jacks = load_jacks()?;
+    let mut seen: Vec<String> = jacks
+        .values()
+        .filter_map(|j| j.url.as_deref())
+        .filter_map(crate::webext::host_pattern)
+        .collect();
+    seen.sort();
+    seen.dedup();
+    Ok(seen)
+}
+
+/// Start the extension over the web tabs. Called when the toggle goes on, at launch when
+/// it already was, and on every opening of Settings, where it reports what is running.
+#[tauri::command]
+pub async fn webext_start(app: tauri::AppHandle) -> Result<crate::webext::Package, String> {
+    let hosts = web_hosts()?;
+    let out = crate::webext::load(&app, hosts).await;
+    // A failure at launch only ever reaches a pill; the log is where to find it after.
+    if let Err(e) = &out {
+        eprintln!("patchbay: bitwarden start failed: {e}");
+    }
+    out
+}
+
+/// Run `work` on the main thread, where every WebKit object lives, and wait for its
+/// answer without making the main thread wait for anything.
+async fn on_main<T: Send + 'static>(
+    app: &tauri::AppHandle,
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        let _ = tx.send(work());
+    })
+    .map_err(|e| format!("could not reach the main thread: {e}"))?;
+    blocking(move || {
+        rx.recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap_or_else(|_| Err("Bitwarden didn't answer".into()))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn webext_stop(app: tauri::AppHandle) -> Result<(), String> {
+    on_main(&app, crate::webext::unload).await
+}
+
+/// The key button on a web tab: a fill, or with `popup` Bitwarden itself. The rect is
+/// the button's, so whatever Bitwarden shows hangs from it.
+#[tauri::command]
+pub async fn webext_key(
+    app: tauri::AppHandle,
+    id: u32,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    popup: bool,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let window = app.get_window("main").ok_or("the main window has gone")?;
+        on_main(&app, move || {
+            let view = window.ns_view().map_err(|e| e.to_string())?;
+            crate::webext::key(view, id, (x, y, width, height), popup)
+        })
+        .await
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, id, x, y, width, height, popup);
+        Err("Bitwarden only runs on macOS".into())
+    }
 }
 
 /// What the user is asked to trust, in the words the OS dialog would use.

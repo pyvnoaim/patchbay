@@ -95,6 +95,7 @@ let lastProbe = 0; // epoch ms of the last sweep, for the throttle below
 // pressing twice after clicking back into the window: `focus` reloads and redraws.
 let pressing = false;
 let missedRender = false;
+let webextRunning = false; // Bitwarden is loaded, so web tabs get its key button
 let detailMode = "jack"; // what the right pane describes: "jack" or "group"
 // "list" is the flat column; "map" groups devices by the route to them.
 let listMode = "list";

@@ -14,6 +14,7 @@ mod rdp;
 mod rdp_session;
 mod sftp;
 mod terminal;
+mod webext;
 
 use commands::{app, files, jacks, remote, sessions, settings, web};
 use tauri::Manager;
@@ -115,6 +116,11 @@ fn main() {
             web::web_trust,
             web::web_cert,
             web::web_trust_cert,
+            web::webext_supported,
+            web::webext_inspect,
+            web::webext_start,
+            web::webext_stop,
+            web::webext_key,
             remote::open_rdp,
             remote::open_rdp_session,
             remote::close_rdp_session,

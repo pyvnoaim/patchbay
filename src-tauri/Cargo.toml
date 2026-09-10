@@ -79,7 +79,30 @@ tauri-plugin-dialog = "2"
 window-vibrancy = "0.5"
 # The change counter behind `clipboard::stamp()`: one integer per poll tick instead of
 # reading the clipboard's text. Already in the tree through arboard; only the feature is new.
-objc2-app-kit = { version = "0.3", features = ["NSPasteboard"] }
+objc2-app-kit = { version = "0.3", features = ["NSPasteboard", "NSPopover", "NSResponder", "NSView"] }
+# WKWebExtension, for hosting Bitwarden's own extension over the web tabs. Both objc2
+# generations are already here - 0.5 under arboard, 0.6 under wry - so this pulls in
+# no version that wasn't being built anyway.
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSDate", "NSDictionary", "NSEnumerator", "NSError", "NSGeometry", "NSSet", "NSString", "NSURL"] }
+objc2-web-kit = { version = "0.3.2", features = [
+    "WKWebExtension",
+    "WKWebExtensionAction",
+    "WKWebExtensionCommand",
+    "WKWebExtensionContext",
+    "WKWebExtensionController",
+    "WKWebExtensionControllerConfiguration",
+    "WKWebExtensionControllerDelegate",
+    "WKWebExtensionMatchPattern",
+    "WKWebExtensionPermission",
+    "WKWebExtensionTab",
+    "WKWebExtensionWindow",
+    "WKWebView",
+    "WKWebViewConfiguration",
+    "block2",
+    "objc2-app-kit",
+] }
 
 [target.'cfg(windows)'.dependencies]
 # Same counter, Windows' one. Already in the tree through tauri.

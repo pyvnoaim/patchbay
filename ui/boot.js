@@ -559,8 +559,16 @@ document.addEventListener("pointercancel", releasePress, true);
 // render there is.
 window.addEventListener("blur", releasePress);
 
+// Before the tabs come back: a web tab built without the controller never gets one,
+// because WebKit reads it when the view is created.
+async function startWebext() {
+  if (!prefs.webext) return;
+  const p = await invoke("webext_start").catch(alertish);
+  webextRunning = !!p?.loaded;
+}
+
 // Errands run behind the first paint.
-load().then(restoreTabs).then(takeLink).then(offerUpdate).then(offerSshCleanup);
+load().then(startWebext).then(restoreTabs).then(takeLink).then(offerUpdate).then(offerSshCleanup);
 setInterval(refreshProbes, PROBE_EVERY);
 setInterval(pollList, PROBE_EVERY);
 // The config is hand-edited, so reload on focus.

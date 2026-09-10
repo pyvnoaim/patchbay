@@ -1021,6 +1021,12 @@ async function openSettings(pane) {
   resetSources();
   showPane(pane);
   $("pick-list").innerHTML = `${icon("folder-open")}Choose…`;
+  // Hidden rather than disabled where the OS can't host one at all: a pane that
+  // could only ever say no is a pane not worth a row in the list.
+  invoke("webext_supported")
+    .then((ok) => ($("setnav").querySelector('[data-pane="webext"]').hidden = !ok))
+    .catch(() => {});
+  sayWebext();
   $("page-openconfig").innerHTML = `${icon("file-pen-line")}Open config file`;
   $("page-checkupdate").innerHTML = `${icon("rotate-cw")}Check for updates`;
   // When the last check happened is still true; its answer is not.
@@ -1104,6 +1110,32 @@ setForm.addEventListener("submit", async (e) => {
   }
 });
 $("set-cancel").addEventListener("click", closeSettings);
+// What Bitwarden for Mac has installed. Read rather than assumed, so an extension
+// WKWebExtension won't take says so here instead of leaving a toggle that does nothing.
+async function sayWebext() {
+  const said = $("webext-said");
+  said.textContent = "Reading…";
+  try {
+    // Started when the toggle is on, so the answer describes what is *running*
+    // rather than what is merely on disk. A second start just reports.
+    const on = setForm.elements.webext.checked;
+    // The toggle acts at once; Save is what makes it stick for the next launch.
+    if (!on) await invoke("webext_stop");
+    const p = await invoke(on ? "webext_start" : "webext_inspect");
+    webextRunning = p.loaded;
+    renderTabs();
+    const bad = p.errors.length ? ` · ${p.errors.length} warning(s)` : "";
+    const state = p.loaded
+      ? `running over ${p.hosts} device${p.hosts === 1 ? "" : "s"}`
+      : "not running";
+    said.textContent = `${p.name} ${p.version} · ${state}${bad}`;
+  } catch (err) {
+    said.textContent = String(err);
+  }
+}
+
+setForm.elements.webext.addEventListener("change", sayWebext);
+
 // The picker answers with null when it is cancelled, which must not clear a path
 // somebody typed.
 $("pick-list").addEventListener("click", async () => {

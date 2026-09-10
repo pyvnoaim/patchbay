@@ -618,6 +618,11 @@ pub struct Settings {
     /// and written there instead. Everything else in this file stays this machine's.
     #[serde(default)]
     pub list: Option<String>,
+    /// Host a browser extension over the web tabs. Off by default and opt-in on
+    /// purpose: it is a whole extension runtime, and one nobody asked for should not
+    /// be running.
+    #[serde(default)]
+    pub webext: bool,
 }
 
 fn yes() -> bool {
@@ -649,6 +654,7 @@ impl Default for Settings {
             font_size: font_size(),
             sidebar: sidebar(),
             list: None,
+            webext: false,
         }
     }
 }
@@ -745,6 +751,7 @@ pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
     t["font_size"] = value(s.font_size.clamp(8.0, 32.0));
     t["sidebar"] = value(s.sidebar.clamp(150.0, 480.0));
     set_str(t, "list", s.list.as_deref());
+    t["webext"] = value(s.webext);
     write_doc(file, &doc, was.as_deref())
 }
 

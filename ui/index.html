@@ -189,6 +189,7 @@
             <button type="button" data-pane="team" data-icon="users">Team</button>
             <button type="button" data-pane="appearance" data-icon="monitor">Appearance</button>
             <button type="button" data-pane="import" data-icon="download">Import</button>
+            <button type="button" data-pane="webext" data-icon="key-round" hidden>Bitwarden</button>
             <button type="button" data-pane="updates" data-icon="rotate-cw">Updates</button>
             <button type="button" data-pane="config" data-icon="file-pen-line">Config file</button>
             <button type="button" data-pane="keys" data-icon="keyboard">Shortcuts</button>
@@ -322,6 +323,23 @@
               </div>
               <p class="page-note">You tick what comes across. Passwords never do.</p>
               <p class="sheet-err" id="imp-perr" hidden></p>
+            </section>
+
+            <section class="pane" data-pane="webext" hidden>
+              <div class="d-sec">Bitwarden</div>
+              <p class="page-note">
+                Fills a device's login with Bitwarden's own extension, from the Bitwarden for Mac
+                you already have. You sign in to Bitwarden itself; patchbay never sees your vault or
+                your master password.
+              </p>
+              <label class="opt"
+                ><input type="checkbox" name="webext" />
+                <span
+                  ><b>Fill logins with Bitwarden</b> A key appears on each web tab: click it to
+                  fill, right-click it to open Bitwarden.</span
+                ></label
+              >
+              <p class="space-note" id="webext-said"></p>
             </section>
 
             <section class="pane" data-pane="updates" hidden>

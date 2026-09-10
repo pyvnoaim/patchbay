@@ -10,6 +10,8 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- Bitwarden fills device logins. Tick it in Settings ▸ Bitwarden and each web tab gets a
+  key: click to fill, right-click to open Bitwarden. Needs Bitwarden for Mac installed.
 - Settings no longer opens behind a device's web page.
 - Settings ▸ Team has a file picker for the shared list, and a lot less text.
 - A button works on the first press. Coming back to the window redrew the pane under

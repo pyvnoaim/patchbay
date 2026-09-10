@@ -20,6 +20,7 @@ One front end over one config format:
 - `src-tauri/src/rdp.rs` - remote desktop by handoff: writes a `.rdp`, and forwards a local port over the jump chain when there is one. ssh's stderr is read on its own thread (a pipe nobody drains blocks ssh) and its last line is the error a failed tunnel shows; `list()` drops a tunnel whose ssh has since exited and hands the reason back, so the window can say so. Its `Tunnels` and `free_port` are what `vnc = <port>` uses too - VNC is a handoff and nothing else, `vnc://` to whatever viewer the machine has, so there is no `vnc_session.rs` and adding one needs the same argument `rdp_session.rs` had to win.
 - `src-tauri/src/rdp_session.rs` - the other remote desktop: IronRDP decoded to a framebuffer and blitted onto a `<canvas>`, the way `pty.rs` streams a terminal. The only place patchbay speaks a protocol itself. **A resize is a round trip, not a CSS scale**: the pane's new size goes down the Display Control channel as one more `Input` on the session's queue (only that thread may touch the socket), the server answers with a Deactivate All, and `reactivate` re-runs the capabilities exchange on the same socket - rebuilding the fast path processor too, because the frame acknowledgements carry the old share id. The new size reaches the window as a tile header with no pixels behind it, in line with the tiles so nothing painted before the change is dropped. A server without the channel says nothing and the canvas letterboxes, which is also what the window shows for the round trip.
 - `src-tauri/src/clipboard.rs` - the CLIPRDR backend behind `rdp_session.rs`. Text only, both directions lazy. The local side is polled (no desktop tells an unfocused process the clipboard changed), but `stamp()` asks the OS change counter first - NSPasteboard's `changeCount`, `GetClipboardSequenceNumber` - so a tick is one integer, and the text is only read once it moved. X11 has no counter, so there the text is the comparison.
+- `src-tauri/src/webext.rs` - Bitwarden's own extension over the web tabs, through `WKWebExtension` (macOS 15.4+), off unless ticked. **Loaded from the installed Bitwarden for Mac, never bundled:** the Chrome build asks for offscreen documents and a side panel WebKit doesn't have, and its worker waits on them forever. patchbay answers as a browser in `shim` - a tab per web tab, one window, a delegate that draws the popup - and everything else takes WebKit's default, which denies. **Host access is the device urls in the list plus Bitwarden's own servers, never all hosts**; without the servers its fetches fail CORS and sign-in dies. Its web views say `Safari/` in the user agent because that is how Bitwarden works out where it is, and a bare WKWebView leaves it off. WebKit state is main-thread-only and lives in a thread-local; `RUNNING` is the atomic that command threads read, because the thread-local is empty there.
 - `src-tauri/capabilities/default.json` - grants `core:default`. Load-bearing; see Non-obvious.
 - `src-tauri/Info.plist` - merged into the macOS bundle. Load-bearing: without it a plain-http device page is a silent white pane.
 - Files kept *beside* the config, never in it, because each is this machine's answer rather than part of the list: `web_trusted` (checks waived), `rdp_known_hosts` (certs seen).
@@ -183,6 +184,13 @@ stands is: **never embed an ssh protocol implementation, never link FreeRDP.**
 in-window session is the default, not the only way. Watch memory per session; xterm
 scrollback is capped at 5000 lines on purpose, and an RDP session holds a full
 framebuffer.
+
+The Bitwarden host reads like the credential store this app refuses, and isn't: the
+vault, the master password and the sign-in are Bitwarden's own code in Bitwarden's own
+web views, and patchbay never holds or sees any of it. What stands is **patchbay stores
+no credentials and asks for none.** Its traffic to Bitwarden's servers is Bitwarden's,
+and only while ticked; the extension comes from the Bitwarden for Mac already
+installed, so patchbay ships nobody else's code.
 
 Grouping is a `folders` list on each jack - a string with slashes (`prod/eu/web`)
 nests in the sidebar. It's a **list**, and that's the load-bearing part: a jack sits
