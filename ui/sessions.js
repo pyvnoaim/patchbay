@@ -1189,6 +1189,22 @@ async function openRdpSession(name) {
     // The server picks the size; asking for one is only a suggestion.
     canvas.width = screen.width;
     canvas.height = screen.height;
+    // `max-width` only ever shrinks, so a window widened after the session opened left
+    // the desktop at its native size with black either side. Scaled here instead, and
+    // the element keeps the picture's aspect so `at()` stays a plain rect ratio.
+    // ponytail: upscaling is blurry; the desktop itself resizes once ironrdp-session
+    // hands back the share id that a DeactivateAll needs to be followed.
+    const scale = () => {
+      // A backgrounded tab has no box, and a canvas sized to nothing would stay that
+      // way if the observer didn't fire again on the way back.
+      if (!host.clientWidth || !host.clientHeight) return;
+      const k = Math.min(host.clientWidth / canvas.width, host.clientHeight / canvas.height);
+      canvas.style.width = `${Math.round(canvas.width * k)}px`;
+      canvas.style.height = `${Math.round(canvas.height * k)}px`;
+    };
+    const ro = new ResizeObserver(scale);
+    ro.observe(host);
+    s.unlisten.push(() => ro.disconnect());
     const held = queued;
     queued = null;
     held.forEach(paint);
@@ -1240,7 +1256,16 @@ async function openRdpSession(name) {
     },
     { passive: false },
   );
-  for (const [type, down] of [
+  // What the far end believes is held down. macOS delivers no keyup for a key pressed
+  // while ⌘ is held, and a chord that moves the focus (⌘K) takes the Meta keyup with
+  // it - either way Windows keeps the key down and every letter after it is a
+  // shortcut. Releasing on blur and after Meta is what stops that.
+  const down = new Set();
+  const release = () => {
+    for (const code of down) send("key", code, 0, false);
+    down.clear();
+  };
+  for (const [type, pressed] of [
     ["keydown", true],
     ["keyup", false],
   ]) {
@@ -1250,9 +1275,13 @@ async function openRdpSession(name) {
       // Window chords stay ours; everything else belongs to the remote desktop.
       if (chorded(e) && ["w", "k", "n", "[", "]"].includes(chordKey(e))) return;
       e.preventDefault();
-      send("key", code, 0, down);
+      if (pressed) down.add(code);
+      else down.delete(code);
+      send("key", code, 0, pressed);
+      if (!pressed && (e.code === "MetaLeft" || e.code === "MetaRight")) release();
     });
   }
+  canvas.addEventListener("blur", release);
 
   renderTabs();
   canvas.focus();

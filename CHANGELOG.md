@@ -10,6 +10,10 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- A remote desktop follows the window: widen it and the picture grows with the pane
+  instead of sitting in a black surround.
+- Keys no longer stick in a remote desktop. After a ⌘ chord or a switch to another app,
+  typing went to Windows as shortcuts; everything held is released now.
 - Free, all of it: every protocol, every tab and the shared list, at a company of any
   size. PolyForm Perimeter is the licence, and nothing in the app asks for a key.
 - Every write keeps the file it replaced as `patchbay.toml.bak`, beside your config. The
