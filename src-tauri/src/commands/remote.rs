@@ -168,6 +168,12 @@ pub fn rdp_input(
             scancode: a.clamp(0, 65535) as u16,
             down,
         },
+        // Not input, but it rides the same queue: the session thread is the only place
+        // that may touch the socket.
+        "resize" => rdp_session::Input::Resize {
+            width: a.clamp(0, 65535) as u16,
+            height: b.clamp(0, 65535) as u16,
+        },
         _ => return,
     };
     sessions.send(id, input);

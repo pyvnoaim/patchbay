@@ -16,8 +16,9 @@ it back. Nothing is retyped anywhere.
   run starts with all of them closed instead of every one unfolded.
 - An import from Royal TS keeps the way in each connection had: an RDP or web entry
   opens as a desktop or a web tab, not as ssh.
-- A remote desktop follows the window: widen it and the picture grows with the pane
-  instead of sitting in a black surround.
+- A remote desktop follows the window: resize it and the desktop changes resolution to
+  match, so there are no black bars and nothing to reconnect for. A host too old to be
+  asked has its picture scaled into the pane instead.
 - Keys no longer stick in a remote desktop. After a ⌘ chord or a switch to another app,
   typing went to Windows as shortcuts; everything held is released now.
 - Free, all of it: every protocol, every tab and the shared list, at a company of any

@@ -3,12 +3,18 @@
 //! speaks a protocol itself. A host behind a bastion arrives through the local port
 //! `rdp.rs` forwards, so this module only ever dials directly.
 
-use ironrdp::connector::{self, ConnectionResult, Credentials};
+use ironrdp::connector::connection_activation::{
+    ConnectionActivationFactory, ConnectionActivationState,
+};
+use ironrdp::connector::{self, ConnectionResult, Credentials, Sequence as _};
+use ironrdp::displaycontrol::client::DisplayControlClient;
+use ironrdp::displaycontrol::pdu::MonitorLayoutEntry;
+use ironrdp::dvc::DrdynvcClient;
 use ironrdp::pdu::gcc::KeyboardType;
 use ironrdp::pdu::rdp::capability_sets::MajorPlatformType;
 use ironrdp::pdu::rdp::client_info::PerformanceFlags;
 use ironrdp::session::image::DecodedImage;
-use ironrdp::session::{ActiveStage, ActiveStageBuilder, ActiveStageOutput};
+use ironrdp::session::{fast_path, ActiveStage, ActiveStageBuilder, ActiveStageOutput};
 use ironrdp_cliprdr::backend::ClipboardMessage;
 use ironrdp_cliprdr::CliprdrClient;
 use std::io::Write as _;
@@ -46,9 +52,16 @@ pub enum Input {
         scancode: u16,
         down: bool,
     },
+    /// The pane is a different size; ask the desktop to follow.
+    Resize {
+        width: u16,
+        height: u16,
+    },
 }
 
 impl Input {
+    /// [`Input::Resize`] is not an input event and is taken out of the queue before
+    /// this is called; `None` here would silently drop it.
     fn operation(self) -> Option<ironrdp_input::Operation> {
         use ironrdp_input::{MouseButton, MousePosition, Operation, Scancode, WheelRotations};
         Some(match self {
@@ -73,6 +86,7 @@ impl Input {
                     Operation::KeyReleased(c)
                 }
             }
+            Input::Resize { .. } => return None,
         })
     }
 }
@@ -93,6 +107,9 @@ pub struct Session {
     host: String,
     clipboard: Receiver<ClipboardMessage>,
     last_seen: crate::clipboard::LastSeen,
+    /// Builds the sequence a Server Deactivate All has to be answered with, which is
+    /// how a resize takes effect. Invariant for the life of the connection.
+    activation: ConnectionActivationFactory,
     pub width: u16,
     pub height: u16,
 }
@@ -196,6 +213,7 @@ pub fn open(
         host: host.to_owned(),
         clipboard,
         last_seen,
+        activation: result.activation_factory,
         width: result.desktop_size.width,
         height: result.desktop_size.height,
     })
@@ -207,6 +225,7 @@ pub fn pump(
     session: Session,
     input: Receiver<Input>,
     on_tile: impl Fn(Tile),
+    on_resize: impl Fn(u16, u16),
 ) -> Result<(), String> {
     let Session {
         mut framed,
@@ -215,6 +234,7 @@ pub fn pump(
         host,
         clipboard,
         last_seen,
+        activation,
         ..
     } = session;
     let mut keys = ironrdp_input::Database::new();
@@ -231,11 +251,21 @@ pub fn pump(
 
         // Drain the queue: a mouse drag is a burst, and one event per timeout crawls.
         let mut ops = Vec::new();
+        let mut resize = None;
         loop {
             match input.try_recv() {
+                // Only the last size matters: dragging a window edge is a burst of them.
+                Ok(Input::Resize { width, height }) => resize = Some((width, height)),
                 Ok(i) => ops.extend(i.operation()),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return Ok(()),
+            }
+        }
+        if let Some((width, height)) = resize {
+            if let Some(frame) = ask_resize(&mut stage, &image, width, height) {
+                framed
+                    .write_all(&frame?)
+                    .map_err(|e| format!("{host}: {e}"))?;
             }
         }
         if !ops.is_empty() {
@@ -243,7 +273,16 @@ pub fn pump(
             let outputs = stage
                 .process_fastpath_input(&mut image, &events)
                 .map_err(|e| e.to_string())?;
-            if drain(outputs, &mut framed, &image, &host, &on_tile)? {
+            if drain(
+                outputs,
+                &mut framed,
+                &mut stage,
+                &mut image,
+                &activation,
+                &host,
+                &on_tile,
+                &on_resize,
+            )? {
                 return Ok(());
             }
         }
@@ -251,16 +290,129 @@ pub fn pump(
         let (action, payload) = match framed.read_pdu() {
             Ok(pdu) => pdu,
             // The read timeout is how the input queue gets checked on an idle desktop.
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => continue,
+            Err(e) if waiting(&e) => continue,
             Err(e) => return Err(format!("{host}: {e}")),
         };
 
         let outputs = stage
             .process(&mut image, action, &payload)
             .map_err(|e| e.to_string())?;
-        if drain(outputs, &mut framed, &image, &host, &on_tile)? {
+        if drain(
+            outputs,
+            &mut framed,
+            &mut stage,
+            &mut image,
+            &activation,
+            &host,
+            &on_tile,
+            &on_resize,
+        )? {
             return Ok(());
+        }
+    }
+}
+
+/// A read that only ran out of time, rather than failing.
+fn waiting(e: &std::io::Error) -> bool {
+    matches!(
+        e.kind(),
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+    )
+}
+
+/// Ask the desktop to match the pane, over the Display Control channel (MS-RDPEDISP).
+/// `None` when it is already that size, or when the server never opened the channel -
+/// an older host keeps the size it was opened at and the canvas scales instead.
+fn ask_resize(
+    stage: &mut ActiveStage,
+    image: &DecodedImage,
+    width: u16,
+    height: u16,
+) -> Option<Result<Vec<u8>, String>> {
+    let (width, height) = MonitorLayoutEntry::adjust_display_size(width.into(), height.into());
+    if (width, height) == (u32::from(image.width()), u32::from(image.height())) {
+        return None;
+    }
+    Some(
+        stage
+            .encode_resize(width, height, None, None)?
+            .map_err(|e| e.to_string()),
+    )
+}
+
+/// MS-RDPBCGR 1.3.1.3: capabilities exchanged again on the same socket, which is what
+/// a Server Deactivate All asks for and how a resize actually lands. Answers with the
+/// size the server settled on, which is not always the one that was asked for.
+fn reactivate(
+    framed: &mut ironrdp_blocking::Framed<Upgraded>,
+    stage: &mut ActiveStage,
+    image: &mut DecodedImage,
+    activation: &ConnectionActivationFactory,
+    host: &str,
+) -> Result<(u16, u16), String> {
+    let mut sequence = activation.create();
+    let mut buf = ironrdp_core::WriteBuf::new();
+
+    loop {
+        if let ConnectionActivationState::Finalized {
+            desktop_size,
+            share_id,
+            enable_server_pointer,
+            pointer_software_rendering,
+        } = sequence.connection_activation_state()
+        {
+            stage.set_share_id(share_id);
+            stage.set_enable_server_pointer(enable_server_pointer);
+            // The frame acknowledgements carry the share id, so the fast path processor
+            // is rebuilt rather than left answering for the share that just went away.
+            stage.set_fastpath_processor(
+                fast_path::ProcessorBuilder {
+                    io_channel_id: activation.io_channel_id(),
+                    user_channel_id: activation.user_channel_id(),
+                    share_id,
+                    enable_server_pointer,
+                    pointer_software_rendering,
+                    // `config` never advertises compression, so none was negotiated.
+                    bulk_decompressor: None,
+                }
+                .build(),
+            );
+            // ponytail: the framebuffer starts blank and the server repaints after a
+            // reactivation; a RefreshRectangle request if one ever doesn't.
+            *image = DecodedImage::new(
+                ironrdp_graphics::image_processing::PixelFormat::RgbA32,
+                desktop_size.width,
+                desktop_size.height,
+            );
+            return Ok((desktop_size.width, desktop_size.height));
+        }
+
+        buf.clear();
+        let written = match sequence.next_pdu_hint() {
+            Some(hint) => {
+                // The socket's timeout is the input poll, far shorter than a round trip
+                // here, so a wait is retried rather than taken for a dead connection.
+                let deadline = std::time::Instant::now() + HANDSHAKE;
+                let pdu = loop {
+                    match framed.read_by_hint(hint) {
+                        Ok(pdu) => break pdu,
+                        Err(e) if waiting(&e) && std::time::Instant::now() < deadline => continue,
+                        Err(e) if waiting(&e) => {
+                            return Err(format!("\"{host}\" stopped answering mid-resize"))
+                        }
+                        Err(e) => return Err(format!("{host}: {e}")),
+                    }
+                };
+                sequence.step(&pdu, &mut buf)
+            }
+            None => sequence.step_no_input(&mut buf),
+        }
+        .map_err(|e| format!("{host}: {e}"))?;
+
+        if let Some(len) = written.size() {
+            framed
+                .write_all(&buf[..len])
+                .map_err(|e| format!("{host}: {e}"))?;
         }
     }
 }
@@ -378,12 +530,16 @@ fn crop(image: &DecodedImage, region: ironrdp::pdu::geometry::InclusiveRectangle
 
 /// Handle every output of the active stage in one place; input and PDU processing
 /// produce the same kinds. `Ok(true)` means terminate.
+#[allow(clippy::too_many_arguments)]
 fn drain(
     outputs: Vec<ActiveStageOutput>,
     framed: &mut ironrdp_blocking::Framed<Upgraded>,
-    image: &DecodedImage,
+    stage: &mut ActiveStage,
+    image: &mut DecodedImage,
+    activation: &ConnectionActivationFactory,
     host: &str,
     on_tile: &impl Fn(Tile),
+    on_resize: &impl Fn(u16, u16),
 ) -> Result<bool, String> {
     for out in outputs {
         match out {
@@ -398,15 +554,11 @@ fn drain(
                 }
             }
             ActiveStageOutput::Terminate(_) => return Ok(true),
-            // MS-RDPBCGR 1.3.1.3: the server wants capabilities exchanged again on the
-            // same socket, which Windows does when the logon desktop hands over.
-            // ponytail: reported, not followed; ironrdp-session 0.11 doesn't expose
-            // the new share id needed to re-run the sequence.
+            // The server rebuilt the session: a resize taking effect, or the logon
+            // desktop handing over. Follow it, and tell the window the new size.
             ActiveStageOutput::DeactivateAll => {
-                return Err(format!(
-                    "\"{host}\" rebuilt the session and patchbay can't follow it yet \
-                     - open it in the system client for now"
-                ))
+                let (width, height) = reactivate(framed, stage, image, activation, host)?;
+                on_resize(width, height);
             }
             _ => {}
         }
@@ -437,7 +589,13 @@ fn connect(
 
     let mut framed = ironrdp_blocking::Framed::new(stream);
     let mut connector = connector::ClientConnector::new(config, client_addr)
-        .with_static_channel(CliprdrClient::new(Box::new(clipboard)));
+        .with_static_channel(CliprdrClient::new(Box::new(clipboard)))
+        // The Display Control channel is the only way the desktop follows the window;
+        // nothing is sent when the capabilities arrive, the first resize does that.
+        .with_static_channel(
+            DrdynvcClient::new()
+                .with_dynamic_channel(DisplayControlClient::new(|_| Ok(Vec::new()))),
+        );
     let should_upgrade = ironrdp_blocking::connect_begin(&mut framed, &mut connector)
         .map_err(|e| format!("{host}: {e}"))?;
 
@@ -630,7 +788,8 @@ impl Sessions {
     /// Connect synchronously, then pump tiles into `on_tile` from a thread until
     /// closed; `rdp-exit:<id>` carries why it ended. Tiles go over an ipc channel, not
     /// an event, because `emit` would serialize the bytes as a JSON array. Each
-    /// message is an 8-byte header (x, y, w, h as little-endian u16) then raw RGBA.
+    /// message is an 8-byte header (x, y, w, h as little-endian u16) then raw RGBA;
+    /// a header with no pixels behind it is the desktop's new size.
     #[allow(clippy::too_many_arguments)]
     pub fn open(
         &self,
@@ -655,14 +814,22 @@ impl Sessions {
         self.0.lock().unwrap().insert(id, tx);
 
         std::thread::spawn(move || {
-            let ended = pump(session, rx, |t| {
-                let mut msg = Vec::with_capacity(8 + t.rgba.len());
-                for v in [t.x, t.y, t.width, t.height] {
+            let send = |head: [u16; 4], rgba: &[u8]| {
+                let mut msg = Vec::with_capacity(8 + rgba.len());
+                for v in head {
                     msg.extend_from_slice(&v.to_le_bytes());
                 }
-                msg.extend_from_slice(&t.rgba);
+                msg.extend_from_slice(rgba);
                 let _ = on_tile.send(tauri::ipc::InvokeResponseBody::Raw(msg));
-            });
+            };
+            let ended = pump(
+                session,
+                rx,
+                |t| send([t.x, t.y, t.width, t.height], &t.rgba),
+                // Down the same channel as the tiles, so it can't overtake the ones
+                // painted before the desktop changed size.
+                |width, height| send([0, 0, width, height], &[]),
+            );
             let _ = app.emit(&format!("rdp-exit:{id}"), ended.err());
         });
 
@@ -725,21 +892,26 @@ mod tests {
             println!("desktop {}x{}", session.width, session.height);
         }
 
-        let out = pump(session, rx, |t| {
-            let mut c = canvas.lock().unwrap();
-            let (buf, w, _) = &mut *c;
-            let stride = usize::from(*w) * 4;
-            for row in 0..usize::from(t.height) {
-                let dst = (usize::from(t.y) + row) * stride + usize::from(t.x) * 4;
-                let src = row * usize::from(t.width) * 4;
-                buf[dst..dst + usize::from(t.width) * 4]
-                    .copy_from_slice(&t.rgba[src..src + usize::from(t.width) * 4]);
-            }
-            // Enough of the desktop to judge.
-            if tiles.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 40 {
-                tx.lock().unwrap().take();
-            }
-        });
+        let out = pump(
+            session,
+            rx,
+            |t| {
+                let mut c = canvas.lock().unwrap();
+                let (buf, w, _) = &mut *c;
+                let stride = usize::from(*w) * 4;
+                for row in 0..usize::from(t.height) {
+                    let dst = (usize::from(t.y) + row) * stride + usize::from(t.x) * 4;
+                    let src = row * usize::from(t.width) * 4;
+                    buf[dst..dst + usize::from(t.width) * 4]
+                        .copy_from_slice(&t.rgba[src..src + usize::from(t.width) * 4]);
+                }
+                // Enough of the desktop to judge.
+                if tiles.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 40 {
+                    tx.lock().unwrap().take();
+                }
+            },
+            |_, _| {},
+        );
 
         let (buf, w, h) = &*canvas.lock().unwrap();
         assert!(out.is_ok(), "session failed: {out:?}");

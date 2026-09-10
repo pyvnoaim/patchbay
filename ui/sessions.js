@@ -1140,6 +1140,18 @@ async function openRdpSession(name) {
   renderTabs();
   renderTree();
 
+  // The desktop is letterboxed into the pane while it is a different size: a resize is
+  // a round trip to the server, and the window must not go black in the meantime. The
+  // element keeps the picture's aspect so `at()` stays a plain rect ratio.
+  const scale = () => {
+    // A backgrounded tab has no box, and a canvas sized to nothing would stay that
+    // way if the observer didn't fire again on the way back.
+    if (!host.clientWidth || !host.clientHeight) return;
+    const k = Math.min(host.clientWidth / canvas.width, host.clientHeight / canvas.height);
+    canvas.style.width = `${Math.round(canvas.width * k)}px`;
+    canvas.style.height = `${Math.round(canvas.height * k)}px`;
+  };
+
   // Tiles arrive before the invoke resolves, and setting canvas.width clears the
   // canvas, so they are held until the server has said how big the desktop is.
   let queued = [];
@@ -1148,6 +1160,13 @@ async function openRdpSession(name) {
     // 8-byte header (x, y, w, h as little-endian u16), then raw RGBA.
     const w = head.getUint16(4, true),
       h = head.getUint16(6, true);
+    // A header with no pixels behind it is the desktop's new size, in line with the
+    // tiles so nothing painted before the change is dropped on the floor.
+    if (buf.byteLength === 8) {
+      canvas.width = w;
+      canvas.height = h;
+      return scale();
+    }
     ctx.putImageData(
       new ImageData(new Uint8ClampedArray(buf, 8), w, h),
       head.getUint16(0, true),
@@ -1162,8 +1181,6 @@ async function openRdpSession(name) {
 
   // The pane's own size, so the desktop fits without being scaled. Even numbers
   // because the RDP codecs work in 2x2 blocks. Laid out by showTab() above.
-  // ponytail: measured once at open; a window resized later gets CSS scaling,
-  // the Display Control channel if that ever grates.
   const even = (n) => Math.max(640, Math.min(8192, n)) & ~1;
   try {
     const screen = await invoke("open_rdp_session", {
@@ -1178,22 +1195,33 @@ async function openRdpSession(name) {
     // The server picks the size; asking for one is only a suggestion.
     canvas.width = screen.width;
     canvas.height = screen.height;
-    // `max-width` only ever shrinks, so a window widened after the session opened left
-    // the desktop at its native size with black either side. Scaled here instead, and
-    // the element keeps the picture's aspect so `at()` stays a plain rect ratio.
-    // ponytail: upscaling is blurry; the desktop itself resizes once ironrdp-session
-    // hands back the share id that a DeactivateAll needs to be followed.
-    const scale = () => {
-      // A backgrounded tab has no box, and a canvas sized to nothing would stay that
-      // way if the observer didn't fire again on the way back.
+    // Every resize tears the session down and rebuilds it, so the pointer is only
+    // believed once it has stopped moving. A server without the Display Control
+    // channel ignores it and the letterboxing above is all there is.
+    let settle;
+    const ro = new ResizeObserver(() => {
+      // A hidden pane measures zero, and asking for that would shrink the desktop to
+      // the minimum every time another tab is looked at.
       if (!host.clientWidth || !host.clientHeight) return;
-      const k = Math.min(host.clientWidth / canvas.width, host.clientHeight / canvas.height);
-      canvas.style.width = `${Math.round(canvas.width * k)}px`;
-      canvas.style.height = `${Math.round(canvas.height * k)}px`;
-    };
-    const ro = new ResizeObserver(scale);
+      scale();
+      clearTimeout(settle);
+      settle = setTimeout(
+        () =>
+          invoke("rdp_input", {
+            id,
+            kind: "resize",
+            a: even(host.clientWidth),
+            b: even(host.clientHeight),
+            down: false,
+          }).catch(() => {}),
+        400,
+      );
+    });
     ro.observe(host);
-    s.unlisten.push(() => ro.disconnect());
+    s.unlisten.push(() => {
+      ro.disconnect();
+      clearTimeout(settle);
+    });
     const held = queued;
     queued = null;
     held.forEach(paint);
