@@ -1020,6 +1020,7 @@ async function openSettings(pane) {
   }
   resetSources();
   showPane(pane);
+  $("pick-list").innerHTML = `${icon("folder-open")}Choose…`;
   $("page-openconfig").innerHTML = `${icon("file-pen-line")}Open config file`;
   $("page-checkupdate").innerHTML = `${icon("rotate-cw")}Check for updates`;
   // When the last check happened is still true; its answer is not.
@@ -1103,6 +1104,16 @@ setForm.addEventListener("submit", async (e) => {
   }
 });
 $("set-cancel").addEventListener("click", closeSettings);
+// The picker answers with null when it is cancelled, which must not clear a path
+// somebody typed.
+$("pick-list").addEventListener("click", async () => {
+  try {
+    const path = await invoke("pick_list_file");
+    if (path) setForm.elements.list.value = path;
+  } catch (err) {
+    alertish(err);
+  }
+});
 $("page-openconfig").addEventListener("click", () => invoke("open_config").catch(alertish));
 $("page-checkupdate").addEventListener("click", () => checkUpdates($("update-said")));
 setWrap.addEventListener("mousedown", (e) => {

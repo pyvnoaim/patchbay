@@ -159,6 +159,27 @@ pub fn config_path() -> Paths {
     }
 }
 
+/// The OS file picker, for naming a shared list without typing a share's path. Returns
+/// `None` when the panel is cancelled, which is an answer rather than a failure.
+///
+/// `blocking_pick_file` must not run on the main thread, and a command doesn't: it is
+/// the runtime's, which is exactly what this needs.
+#[tauri::command]
+pub async fn pick_list_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt as _;
+    blocking(move || {
+        Ok(app
+            .dialog()
+            .file()
+            .add_filter("patchbay list", &["toml"])
+            .set_title("Choose a shared list")
+            .blocking_pick_file()
+            .and_then(|p| p.into_path().ok())
+            .map(|p| p.display().to_string()))
+    })
+    .await
+}
+
 /// Opens the list, which is what "the config" means to someone editing devices by
 /// hand. Only the own config is created on the way: a missing shared list is an error.
 #[tauri::command]

@@ -1570,6 +1570,17 @@ button.flat:hover {
 .sheet.small .f + .f {
   margin-top: 10px;
 }
+/* A field with a button beside it. The button is a sibling of the label rather than
+   inside it: a click on a <label> is forwarded to its control, which would fight the
+   button for the same press. */
+.f-pick {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.f-pick > .f {
+  flex: 1;
+}
 /* The field wraps its input in a <label>, so only the words and the control take clicks,
    not the dead space beside them. The association stays for screen readers. */
 .f {

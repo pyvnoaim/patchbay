@@ -30,6 +30,7 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Not DECORATIONS: the title bar is `Overlay` from tauri.conf.json, and a
         // restored decoration state would fight it.
@@ -94,6 +95,7 @@ fn main() {
             settings::ssh_leftovers,
             settings::clean_ssh_leftovers,
             settings::config_path,
+            settings::pick_list_file,
             jacks::list_stamp,
             jacks::reveal_list,
             settings::open_config,

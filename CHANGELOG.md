@@ -11,6 +11,7 @@ it back. Nothing is retyped anywhere.
 ## Unreleased
 
 - Settings no longer opens behind a device's web page.
+- Settings ▸ Team has a file picker for the shared list, and a lot less text.
 - A button works on the first press. Coming back to the window redrew the pane under
   your click, so Ping, Files and the rest needed pressing twice.
 - Trusting a device's certificate sticks. The page used to load and then be covered by

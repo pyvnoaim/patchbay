@@ -258,24 +258,19 @@
             <section class="pane" data-pane="team" hidden>
               <div class="d-sec">One shared list</div>
               <p class="page-note">
-                A team's device list is a file in a folder you already share. Put it on the team
-                drive or a synced folder, point this at it, and everyone sees the same devices and
-                folder notes. It holds no passwords, so sharing it shares hostnames and nothing
-                more.
+                Point this at a file in a folder you already share and everyone sees the same
+                devices and folder notes. It holds no passwords.
               </p>
-              <label class="f"
-                ><span>Shared list</span
-                ><input
-                  name="list"
-                  spellcheck="false"
-                  placeholder="/Volumes/team/patchbay.toml, or leave empty for just this machine"
-              /></label>
+              <div class="f-pick">
+                <label class="f"
+                  ><span>Shared list</span
+                  ><input name="list" spellcheck="false" placeholder="/Volumes/team/patchbay.toml"
+                /></label>
+                <button type="button" class="ghost" id="pick-list"></button>
+              </div>
               <p class="page-note">
-                A path that isn't there yet is seeded with the devices and defaults you have now; a
-                colleague points at the same path. Your own devices stay in this machine's file and
-                come back when you clear it. Who can edit is whoever can write the file. A folder
-                that syncs (OneDrive, Dropbox) works for a team that mostly reads; a team that edits
-                at the same time wants a real share.
+                Empty is just this machine. A new path is seeded with what you have now, and
+                clearing it brings your own devices back. Whoever can write the file can edit it.
               </p>
               <p class="page-note" id="team-own" hidden></p>
             </section>

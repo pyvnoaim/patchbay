@@ -70,6 +70,11 @@ tauri-plugin-window-state = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
+# The file picker behind Settings > Team. Driven from Rust, like deep-link, so the
+# window needs no capability for it - and an OS panel is the one way to name a path
+# that is certainly there, on a share whose spelling nobody remembers.
+tauri-plugin-dialog = "2"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.5"
 # The change counter behind `clipboard::stamp()`: one integer per poll tick instead of
