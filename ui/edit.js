@@ -923,6 +923,9 @@ impForm.addEventListener("submit", async (e) => {
           forward: h.forward,
           rdp: h.rdp ?? null,
           url: h.url ?? null,
+          // An rdp or web device is not also an ssh host; without this every import
+          // opens a shell, because that is what `primary` picks first.
+          ssh: h.ssh ?? null,
           os: h.os ?? null,
           desc: h.desc ?? null,
         },

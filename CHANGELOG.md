@@ -10,6 +10,8 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- An import from Royal TS keeps the way in each connection had: an RDP or web entry
+  opens as a desktop or a web tab, not as ssh.
 - A remote desktop follows the window: widen it and the picture grows with the pane
   instead of sitting in a black surround.
 - Keys no longer stick in a remote desktop. After a ⌘ chord or a switch to another app,

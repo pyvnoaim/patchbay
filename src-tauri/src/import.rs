@@ -19,6 +19,10 @@ pub struct Imported {
     pub folders: Vec<String>,
     pub rdp: Option<u16>,
     pub url: Option<String>,
+    /// `None` is ssh, the default for anything an ssh config named. A Royal TS RDP or
+    /// web connection sets `Some(false)`: without it `primary` finds ssh first and
+    /// every imported device opens a shell instead of what it was in Royal TS.
+    pub ssh: Option<bool>,
     pub os: Option<String>,
     pub desc: Option<String>,
     /// Forwards, spelled the way `patchbay::forward_arg` reads them back.
@@ -509,12 +513,14 @@ pub fn from_royal_ts(src: &str) -> Result<Found, String> {
                 j.host = uri.to_string();
                 j.rdp = Some(n.num("RDPPort").unwrap_or(3389));
                 j.os = Some("windows".into());
+                j.ssh = Some(false);
             }
             "RoyalWebConnection" => {
                 let (host, url) = web_parts(uri);
                 guessed += !uri.starts_with("http") as usize;
                 j.host = host;
                 j.url = Some(url);
+                j.ssh = Some(false);
             }
             "RoyalSSHConnection" => {
                 j.host = uri.to_string();
@@ -815,6 +821,8 @@ mod royal_tests {
         );
 
         assert_eq!(find(&f, "ts").rdp, Some(3389));
+        // Left unset, `primary` picks ssh and the device opens a shell it hasn't got.
+        assert_eq!(find(&f, "ts").ssh, Some(false));
         // A type with no answer here is named, not guessed at.
         assert!(
             !f.hosts.iter().any(|h| h.name == "kvm"),
@@ -843,8 +851,10 @@ mod royal_tests {
             ("10.9.0.1", None),
             "port 22 is not worth writing"
         );
+        assert_eq!(ssh.ssh, None, "ssh is the default, not something to write");
 
         let nas = find(&f, "NAS");
+        assert_eq!(nas.ssh, Some(false));
         assert_eq!(nas.url.as_deref(), Some("https://10.9.0.20:5001"));
         assert_eq!(nas.host, "10.9.0.20", "the probe wants a host, not a url");
 
