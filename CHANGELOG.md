@@ -10,6 +10,7 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- Sidebar folders sort A–Z. Ones with subfolders no longer go first.
 - Folders can be marked with ⌘-click or shift-click too, and removed together.
 - ⌘A marks every device in the list you are looking at, all of them or one folder's.
 - A remote desktop is sharp on a Retina screen, at the size Windows would draw it there.

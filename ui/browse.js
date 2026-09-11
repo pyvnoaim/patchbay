@@ -46,22 +46,15 @@ function renderTree() {
   ];
 
   const walk = (level, depth) => {
-    for (const node of [...level.values()].sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const node of [...level.values()].sort(byName)) {
       rows.push(row(node, depth, undefined, live, { path: node.path }));
       if (expanded.has(gkey({ path: node.path }))) walk(node.children, depth + 1);
     }
   };
 
-  // Nested folders sort ahead of flat ones so a hierarchy isn't buried among them.
   const tree = buildTree(all);
-  const roots = [...tree.values()].sort(
-    (a, b) => (b.children.size > 0) - (a.children.size > 0) || a.name.localeCompare(b.name),
-  );
-  if (roots.length) rows.push(`<div class="tree-sep"></div>`);
-  for (const node of roots) {
-    rows.push(row(node, 0, undefined, live, { path: node.path }));
-    if (expanded.has(gkey({ path: node.path }))) walk(node.children, 1);
-  }
+  if (tree.size) rows.push(`<div class="tree-sep"></div>`);
+  walk(tree, 0);
 
   treeEl.innerHTML = rows.join("");
 }
