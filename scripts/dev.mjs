@@ -9,7 +9,7 @@
 // npm scripts can't do two things portably: point at the dev config (an env-var prefix doesn't
 // work in cmd.exe) and find cargo (a terminal opened before rustup ran has no cargo on PATH).
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 
@@ -50,7 +50,21 @@ function openDmg(since) {
   const dmg = readdirSync(dir)
     .map((f) => join(dir, f))
     .find((f) => f.endsWith(".dmg") && statSync(f).mtimeMs >= since);
-  if (dmg) spawnSync("open", [dmg]);
+  if (!dmg) return;
+  dropBuiltApp();
+  spawnSync("open", [dmg]);
+}
+
+// Spotlight registers the bundle the image was made from, so Launchpad and Open With list a second
+// patchbay beside the installed one. Once it is in the image nothing reads it; the updater's
+// .tar.gz beside it stays. Unregistered first, or Launchpad keeps a dead icon until the next login.
+const LSREGISTER =
+  "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister";
+function dropBuiltApp() {
+  const app = resolve("src-tauri/target/release/bundle/macos/patchbay.app");
+  if (!existsSync(app)) return;
+  spawnSync(LSREGISTER, ["-u", app]);
+  rmSync(app, { recursive: true, force: true });
 }
 
 if (mode === "cargo") {
