@@ -22,6 +22,8 @@
   --tip-fg: #f2f2f6;
   /* The selection tint in a session. Tied to --accent, which doesn't flip, so neither does this. */
   --term-select: rgba(79, 157, 253, 0.35);
+  /* A find match that isn't the current one. Opaque: xterm drops a decoration's alpha. */
+  --term-match: #4a4a55;
   /* The terminal's 16 colours, read by theme() in sessions.js so a session repaints with the app. */
   --a-black: #2a2a30;
   --a-bright-black: #6d6d78;
@@ -61,6 +63,7 @@
   --bg: #f4f4f6;
   --tip: #2c2c33;
   --tip-fg: #f6f6f8;
+  --term-match: #d6d6de;
   /* On a light ground "bright" means more contrast, so these go darker. */
   --a-black: #2b2b33;
   --a-bright-black: #8b8b95;

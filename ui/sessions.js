@@ -99,6 +99,9 @@ function makeTerm(host) {
     cursorInactiveStyle: "outline",
     allowTransparency: true,
     scrollback: 5000,
+    // The search addon's highlights are decorations, still a proposed API: without this
+    // every search throws before it selects anything.
+    allowProposedApi: true,
     theme: theme(),
   });
   const fit = new FitAddon.FitAddon();
@@ -1045,7 +1048,7 @@ const findColors = () => {
   const v = (n) => css.getPropertyValue(n).trim();
   return {
     decorations: {
-      matchBackground: v("--row-hover"),
+      matchBackground: v("--term-match"),
       matchBorder: v("--line"),
       matchOverviewRuler: v("--fg-faint"),
       activeMatchBackground: v("--accent"),

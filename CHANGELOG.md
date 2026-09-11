@@ -16,6 +16,7 @@ it back. Nothing is retyped anywhere.
 - Terminal keys work like a Mac terminal: ⌘A selects all, ⌘←/⌘→ jump to the line's ends,
   ⌥←/⌥→ by word, ⌘⌫ deletes to the start, ⌘+/⌘-/⌘0 size the text.
 - Off macOS, Ctrl+Shift+C and Ctrl+Shift+V copy and paste in a terminal.
+- Find in a terminal finds things. ⌘F opened the box and then highlighted nothing.
 - Bitwarden stays signed in when patchbay restarts. Unlocking still follows Bitwarden's
   own timeout.
 - Bitwarden fills device logins. Tick it in Settings ▸ Bitwarden and each web tab gets a
