@@ -111,6 +111,7 @@ pub async fn open_rdp_session(
     password: String,
     width: u16,
     height: u16,
+    scale: u32,
     on_tile: tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>,
 ) -> Result<rdp_session::Screen, String> {
     let shared = tunnels.inner().clone();
@@ -130,7 +131,7 @@ pub async fn open_rdp_session(
             .ok_or_else(|| format!("\"{resolved}\" needs a user to sign in with"))?;
         let (domain, user) = split_domain(&user);
         rdp_sessions.open(
-            id, host, port, user, password, domain, width, height, on_tile, app,
+            id, host, port, user, password, domain, width, height, scale, on_tile, app,
         )
     })
     .await
@@ -151,6 +152,7 @@ pub fn rdp_input(
     a: i32,
     b: i32,
     down: bool,
+    scale: Option<u32>,
 ) {
     let input = match kind.as_str() {
         "move" => rdp_session::Input::Move {
@@ -173,6 +175,7 @@ pub fn rdp_input(
         "resize" => rdp_session::Input::Resize {
             width: a.clamp(0, 65535) as u16,
             height: b.clamp(0, 65535) as u16,
+            scale: scale.unwrap_or(100),
         },
         _ => return,
     };

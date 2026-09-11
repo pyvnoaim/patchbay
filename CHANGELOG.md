@@ -10,6 +10,7 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- A remote desktop is sharp on a Retina screen, at the size Windows would draw it there.
 - A remote desktop fills its tab, without a black frame around it.
 - FRITZ!Box is a device kind, with AVM's mark.
 - The device list sorts A–Z, by type (web, ssh, remote desktop) or by device (Windows,

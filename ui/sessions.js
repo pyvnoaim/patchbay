@@ -1309,17 +1309,21 @@ async function openRdpSession(name) {
     queued ? queued.push(buf) : paint(buf);
   };
 
-  // The pane's own size, so the desktop fits without being scaled. Even numbers
-  // because the RDP codecs work in 2x2 blocks. Laid out by showTab() above.
-  const even = (n) => Math.max(640, Math.min(8192, n)) & ~1;
+  // The pane's own size in device pixels, so the desktop fits without being scaled:
+  // in CSS pixels a 2x screen draws each one as a 2x2 block and the text goes soft.
+  // `scale` is what keeps it from being half the size. Even numbers because the RDP
+  // codecs work in 2x2 blocks. Laid out by showTab() above.
+  const px = (n) => Math.max(640, Math.min(8192, n * devicePixelRatio)) & ~1;
+  const percent = () => Math.round(devicePixelRatio * 100);
   try {
     const screen = await invoke("open_rdp_session", {
       id,
       name,
       user: creds.user,
       password: creds.password,
-      width: even(host.clientWidth),
-      height: even(host.clientHeight),
+      width: px(host.clientWidth),
+      height: px(host.clientHeight),
+      scale: percent(),
       onTile: chan,
     });
     // The server picks the size; asking for one is only a suggestion.
@@ -1328,6 +1332,8 @@ async function openRdpSession(name) {
     // Every resize tears the session down and rebuilds it, so the pointer is only
     // believed once it has stopped moving. A server without the Display Control
     // channel ignores it and the letterboxing above is all there is.
+    // ponytail: a move to a screen with another pixel ratio keeps the old size until
+    // the pane is next resized; a matchMedia on the resolution if that shows.
     let settle;
     const ro = new ResizeObserver(() => {
       // A hidden pane measures zero, and asking for that would shrink the desktop to
@@ -1340,9 +1346,10 @@ async function openRdpSession(name) {
           invoke("rdp_input", {
             id,
             kind: "resize",
-            a: even(host.clientWidth),
-            b: even(host.clientHeight),
+            a: px(host.clientWidth),
+            b: px(host.clientHeight),
             down: false,
+            scale: percent(),
           }).catch(() => {}),
         400,
       );

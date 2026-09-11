@@ -56,6 +56,8 @@ pub enum Input {
     Resize {
         width: u16,
         height: u16,
+        /// Percent, the window's `devicePixelRatio` times 100.
+        scale: u32,
     },
 }
 
@@ -120,6 +122,7 @@ fn config(
     domain: Option<String>,
     width: u16,
     height: u16,
+    scale: u32,
 ) -> connector::Config {
     connector::Config {
         credentials: Credentials::UsernamePassword { username, password },
@@ -155,7 +158,9 @@ fn config(
         pointer_software_rendering: true,
         multitransport_flags: None,
         performance_flags: PerformanceFlags::default(),
-        desktop_scale_factor: 0,
+        // The desktop is sized in device pixels, so without this a 2x screen gets
+        // everything at half size.
+        desktop_scale_factor: percent(scale),
         hardware_id: None,
         license_cache: None,
         timezone_info: ironrdp::pdu::rdp::client_info::TimezoneInfo::default(),
@@ -177,6 +182,7 @@ pub fn open(
     domain: Option<String>,
     width: u16,
     height: u16,
+    scale: u32,
 ) -> Result<Session, String> {
     let (to_session, clipboard) = std::sync::mpsc::channel();
     let last_seen: crate::clipboard::LastSeen =
@@ -184,7 +190,7 @@ pub fn open(
     let (result, framed) = connect(
         host,
         port,
-        config(username, password, domain, width, height),
+        config(username, password, domain, width, height, scale),
         crate::clipboard::Backend::new(to_session, std::sync::Arc::clone(&last_seen)),
     )?;
 
@@ -255,14 +261,18 @@ pub fn pump(
         loop {
             match input.try_recv() {
                 // Only the last size matters: dragging a window edge is a burst of them.
-                Ok(Input::Resize { width, height }) => resize = Some((width, height)),
+                Ok(Input::Resize {
+                    width,
+                    height,
+                    scale,
+                }) => resize = Some((width, height, scale)),
                 Ok(i) => ops.extend(i.operation()),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return Ok(()),
             }
         }
-        if let Some((width, height)) = resize {
-            if let Some(frame) = ask_resize(&mut stage, &image, width, height) {
+        if let Some((width, height, scale)) = resize {
+            if let Some(frame) = ask_resize(&mut stage, &image, width, height, scale) {
                 framed
                     .write_all(&frame?)
                     .map_err(|e| format!("{host}: {e}"))?;
@@ -328,6 +338,7 @@ fn ask_resize(
     image: &DecodedImage,
     width: u16,
     height: u16,
+    scale: u32,
 ) -> Option<Result<Vec<u8>, String>> {
     let (width, height) = MonitorLayoutEntry::adjust_display_size(width.into(), height.into());
     if (width, height) == (u32::from(image.width()), u32::from(image.height())) {
@@ -335,9 +346,15 @@ fn ask_resize(
     }
     Some(
         stage
-            .encode_resize(width, height, None, None)?
+            .encode_resize(width, height, Some(percent(scale)), None)?
             .map_err(|e| e.to_string()),
     )
+}
+
+/// MS-RDPEDISP's range. Out of it the resize fails to encode, which ends the session,
+/// so a zoomed-out webview's 0.9 has to become 100 rather than go through.
+fn percent(scale: u32) -> u32 {
+    scale.clamp(100, 500)
 }
 
 /// MS-RDPBCGR 1.3.1.3: capabilities exchanged again on the same socket, which is what
@@ -801,10 +818,11 @@ impl Sessions {
         domain: Option<String>,
         width: u16,
         height: u16,
+        scale: u32,
         on_tile: tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>,
         app: tauri::AppHandle,
     ) -> Result<Screen, String> {
-        let session = open(host, port, username, password, domain, width, height)?;
+        let session = open(host, port, username, password, domain, width, height, scale)?;
         let screen = Screen {
             width: session.width,
             height: session.height,
@@ -881,7 +899,7 @@ mod tests {
         let canvas = std::sync::Mutex::new((Vec::<u8>::new(), 0u16, 0u16));
         let tiles = std::sync::atomic::AtomicUsize::new(0);
 
-        let session = open(&host, port, user, pass, None, 1280, 1024).expect("connect");
+        let session = open(&host, port, user, pass, None, 1280, 1024, 100).expect("connect");
         {
             let mut c = canvas.lock().unwrap();
             *c = (
@@ -966,7 +984,7 @@ mod tests {
     #[test]
     fn a_refused_connection_names_the_host_and_port() {
         // Nothing listens on port 1, so this fails at TCP connect.
-        let err = open("127.0.0.1", 1, "u".into(), "p".into(), None, 1024, 768)
+        let err = open("127.0.0.1", 1, "u".into(), "p".into(), None, 1024, 768, 100)
             .err()
             .expect("nothing listens on port 1");
         assert!(err.contains("127.0.0.1:1"), "got {err}");
