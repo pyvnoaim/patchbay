@@ -10,6 +10,7 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- FRITZ!Box is a device kind, with AVM's mark.
 - The device list sorts A–Z, by type (web, ssh, remote desktop) or by device (Windows,
   Raspberry Pi…). Pick it from Sort at the top; the file keeps its own order.
 - Terminal keys work like a Mac terminal: ⌘A selects all, ⌘←/⌘→ jump to the line's ends,

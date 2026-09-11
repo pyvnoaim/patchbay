@@ -30,6 +30,7 @@ const BRANDS = {
   mikrotik: "Mikrotik",
   ubiquiti: "Ubiquiti",
   netgear: "Netgear",
+  fritz: "Fritz",
   homeassistant: "Homeassistant",
   nextcloud: "Nextcloud",
   postgres: "Postgresql",
@@ -57,7 +58,8 @@ const FALLBACKS = {
 
 // simple-icons carries each brand's official colour; [colors] can override it.
 const CUSTOM_COLORS = { windows: "#0078D4" };
-const CUSTOM_LABELS = { windows: "Windows", macos: "macOS" };
+// simple-icons calls it "FRITZ!", which nobody types for the box.
+const CUSTOM_LABELS = { windows: "Windows", macos: "macOS", fritz: "FRITZ!Box" };
 // Generic kinds aren't brands, so their casing is ours to pick.
 const FALLBACK_LABELS = {
   router: "Router",
