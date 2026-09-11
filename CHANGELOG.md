@@ -11,6 +11,7 @@ it back. Nothing is retyped anywhere.
 ## Unreleased
 
 - Folders can be marked with ⌘-click or shift-click too, and removed together.
+- ⌘A marks every device in the list you are looking at, all of them or one folder's.
 - A remote desktop is sharp on a Retina screen, at the size Windows would draw it there.
 - A remote desktop fills its tab, without a black frame around it.
 - FRITZ!Box is a device kind, with AVM's mark.

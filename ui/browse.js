@@ -593,6 +593,13 @@ function markRange(i) {
   paintRows();
 }
 
+// ⌘A: every device the list is showing, All devices or one folder.
+function markAll() {
+  unmarkFolders();
+  marked = new Set(shown.map((j) => j.name));
+  paintRows();
+}
+
 // What a bulk action applies to: a mark filtered out of view is not part of the ask.
 const markedHere = () => shown.filter((j) => marked.has(j.name));
 

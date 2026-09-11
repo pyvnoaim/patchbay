@@ -205,6 +205,15 @@ paletteEl.addEventListener("mousedown", (e) => {
   if (e.target === paletteEl) closePalette();
 });
 
+// On macOS ⌘A is the Edit menu's Select All and never a keydown (see makeTerm). With
+// nothing editable focused WebKit asks the body, which is what tells it from a drag
+// through the detail pane's text.
+document.addEventListener("selectstart", (e) => {
+  if (e.target !== document.body || activeId !== null || modalOpen()) return;
+  e.preventDefault();
+  markAll();
+});
+
 document.addEventListener("keydown", (e) => {
   const mod = chorded(e);
   const key = mod ? chordKey(e) : e.key;
@@ -339,6 +348,9 @@ document.addEventListener("keydown", (e) => {
     const bulk = markedHere();
     if (bulk.length > 1) removeMarked(bulk);
     else removeJack(shown[sel]);
+  } else if (mod && key === "a") {
+    e.preventDefault();
+    markAll();
   } else if (mod && key === "e") {
     e.preventDefault();
     invoke("open_config").catch(alertish);

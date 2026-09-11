@@ -1010,6 +1010,7 @@ function keysHtml() {
         ["Delete", ["⌫"]],
         ["Clear the marks, then the selection", ["Esc"]],
         ["Mark several devices or folders", [pickChord, "Shift-click"]],
+        ["Mark every device in view", [chord("a")]],
         ["Move into a folder", ["Drag onto it"]],
       ],
     ],
