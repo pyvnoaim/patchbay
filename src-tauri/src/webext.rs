@@ -221,6 +221,11 @@ pub fn tab_configuration(
     Some(conf)
 }
 
+/// Bitwarden's identity here, fixed for good: its storage (the account, the encrypted
+/// vault) is filed under it, so a new value is a signed-out Bitwarden for everyone.
+#[cfg(target_os = "macos")]
+const BITWARDEN_ID: &str = "5f6fd93f-7c8d-4e18-beb4-7c1cbda7f36c";
+
 /// Safari's user-agent suffix. Bitwarden decides which browser it is in by looking for
 /// `" Safari/"`, and a bare WKWebView leaves that off: it found no browser at all, and
 /// the popup died on a null device before it could draw anything.
@@ -603,6 +608,14 @@ pub async fn load(app: &tauri::AppHandle, hosts: Vec<String>) -> Result<Package,
                 // page and the popup, which is the only place their console errors are.
                 ctx.setInspectable(cfg!(debug_assertions));
                 ctx.setInspectionName(Some(&NSString::from_str("patchbay: Bitwarden")));
+                // Left at its random default, WebKit keeps the extension's storage in
+                // memory only, and every launch is a Bitwarden to sign in to again. The
+                // base URL is the origin its own pages store under, so it stays put too.
+                ctx.setUniqueIdentifier(&NSString::from_str(BITWARDEN_ID));
+                let base = format!("webkit-extension://{BITWARDEN_ID}/");
+                if let Some(base) = NSURL::URLWithString(&NSString::from_str(&base)) {
+                    ctx.setBaseURL(&base);
+                }
                 // Both grants are dictionaries of thing -> when it expires, and an
                 // expiry is not what decides this: the toggle is, and turning it off
                 // unloads the context outright.
