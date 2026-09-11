@@ -1,15 +1,15 @@
 // The one entry point for running patchbay locally.
 //
 //   npm run dev      the app window
-//   npm run build    a release bundle
+//   npm run build    a release bundle, and on macOS opens the .dmg it made
 //   npm test         cargo, with PATH sorted out
 //
 // Always through npm: `tauri` is resolved off node_modules/.bin, which only npm puts on PATH.
 //
 // npm scripts can't do two things portably: point at the dev config (an env-var prefix doesn't
 // work in cmd.exe) and find cargo (a terminal opened before rustup ran has no cargo on PATH).
-import { spawn } from "node:child_process";
-import { copyFileSync, existsSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 
@@ -32,16 +32,32 @@ if (existsSync(signingKey) && !process.env.TAURI_SIGNING_PRIVATE_KEY) {
   process.env.TAURI_SIGNING_PRIVATE_KEY = signingKey;
 }
 
-const run = (cmd, args, env) =>
+const run = (cmd, args, env, then) =>
   spawn(cmd, args, { stdio: "inherit", shell: true, env: { ...process.env, ...env } }).on(
     "exit",
-    (code) => process.exit(code ?? 1),
+    (code) => {
+      if (code === 0) then?.();
+      process.exit(code ?? 1);
+    },
   );
+
+// The disk image lands four directories down, where nobody finds it. Only one written by this
+// build: a `--target` or `--bundles app` run leaves an older image in this folder behind.
+function openDmg(since) {
+  if (process.platform !== "darwin") return;
+  const dir = resolve("src-tauri/target/release/bundle/dmg");
+  if (!existsSync(dir)) return;
+  const dmg = readdirSync(dir)
+    .map((f) => join(dir, f))
+    .find((f) => f.endsWith(".dmg") && statSync(f).mtimeMs >= since);
+  if (dmg) spawnSync("open", [dmg]);
+}
 
 if (mode === "cargo") {
   run("cargo", rest);
 } else if (mode === "build") {
-  run("tauri", ["build", ...rest]); // a real bundle reads the real config
+  const started = Date.now();
+  run("tauri", ["build", ...rest], {}, () => openDmg(started)); // a real bundle reads the real config
 } else {
   run("tauri", ["dev", ...rest], { PATCHBAY_CONFIG: DEV_CONFIG });
 }

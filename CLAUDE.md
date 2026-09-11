@@ -39,7 +39,7 @@ npm run dev      # the app window, against dev/patchbay.toml
 npm test         # cargo test, through dev.mjs so PATH and the config path are right
 npm run check    # prettier --check, cargo fmt --check, cargo clippy -D warnings; what CI runs
 npm run fmt      # prettier --write and cargo fmt
-npm run build    # patchbay.app / .exe / .deb
+npm run build    # patchbay.app / .exe / .deb; on macOS opens the .dmg it made
 npm run icon     # regenerate the app icon from scripts/icon.mjs
 npm run dmg      # regenerate the .dmg window background from scripts/dmg.mjs (macOS: needs tiffutil)
 npm run bump 0.1.0   # the version, in the four files that carry it; then commit and tag
