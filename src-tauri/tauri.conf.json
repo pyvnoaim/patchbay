@@ -41,6 +41,7 @@
       "icons/icon.ico"
     ],
     "macOS": {
+      "signingIdentity": "-",
       "dmg": {
         "background": "../assets/dmg-background.tiff",
         "windowSize": { "width": 660, "height": 400 },

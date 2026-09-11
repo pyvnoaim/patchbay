@@ -3,8 +3,9 @@
 # landed, because publishing is the moment every installed copy starts offering the
 # update: a platform that failed to build must not be the one it offers.
 #
-# Unsigned until the Apple and Windows certificates exist: the secrets are already
-# wired below, so adding them is a repository setting and not a change here.
+# Ad-hoc signed on macOS and unsigned on Windows until certificates exist. The
+# APPLE_* variables go on tauri-action's env only then: a missing secret is still an
+# empty variable, and an empty APPLE_CERTIFICATE fails the bundle trying to import it.
 name: release
 
 on:
@@ -69,6 +70,12 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # The tauri CLI is a devDependency; tauri-action runs it but installs nothing.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0 as of 2026-09-02
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -77,13 +84,6 @@ jobs:
           # and nothing will accept an update.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Empty until the certificates exist, which is a plain unsigned build.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: patchbay ${{ github.ref_name }}
@@ -94,6 +94,8 @@ jobs:
           # one already on the release, so the matrix ends with a single latest.json.
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+          # Its default is `npm run tauri`, a script package.json doesn't have.
+          tauriScript: npx tauri
 
       # A copy of each bundle without the version in its name, so the site's
       # `releases/latest/download/patchbay_x64-setup.exe` links never go stale.
@@ -109,12 +111,69 @@ jobs:
             gh release upload "$GITHUB_REF_NAME" "$plain" --clobber
           done
 
-  # Only after every build leg succeeded; one failure leaves the draft for a person.
+  # The draft's own files, installed the way someone would, before anyone is offered
+  # them: a bundle that builds can still be one that won't install or won't open.
+  install:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      # A bundle whose resources aren't sealed is "damaged" to Gatekeeper once it has
+      # been downloaded, with no Open Anyway; --strict is the check that tells them apart.
+      - if: runner.os == 'macOS'
+        run: |
+          for pair in aarch64:arm64 x64:x86_64; do
+            arch=${pair%:*} want=${pair#*:}
+            gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" -p "patchbay_$arch.dmg"
+            hdiutil attach "patchbay_$arch.dmg" -nobrowse -readonly -mountpoint /Volumes/patchbay
+            rm -rf /Applications/patchbay.app
+            cp -R /Volumes/patchbay/patchbay.app /Applications/
+            hdiutil detach /Volumes/patchbay
+            codesign --verify --deep --strict /Applications/patchbay.app
+            lipo -archs /Applications/patchbay.app/Contents/MacOS/patchbay | grep -q "$want"
+          done
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY -p patchbay_x64-setup.exe
+          Start-Process .\patchbay_x64-setup.exe -ArgumentList '/S' -Wait
+          if (-not (Test-Path "$env:LOCALAPPDATA\patchbay\patchbay.exe")) {
+            Get-ChildItem $env:LOCALAPPDATA -Recurse -Filter patchbay.exe -ErrorAction SilentlyContinue
+            exit 1
+          }
+      # apt resolves the .deb's own Depends on a runner that has never seen webkit, so a
+      # missing one fails here rather than on someone's desktop.
+      - if: runner.os == 'Linux'
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            -p patchbay_amd64.deb -p patchbay_amd64.AppImage
+          sudo apt-get update
+          sudo apt-get install -y ./patchbay_amd64.deb
+          if ldd /usr/bin/patchbay | grep "not found"; then exit 1; fi
+          chmod +x patchbay_amd64.AppImage
+          ./patchbay_amd64.AppImage --appimage-extract > /dev/null
+          test -x squashfs-root/usr/bin/patchbay
+
+  # Only after every install passed; one failure leaves the draft for a person.
   # A draft is not `releases/latest`, so until this runs nothing is offered.
   publish:
-    needs: build
+    needs: install
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+      # Each build leg merges its platform into latest.json; one that signed nothing
+      # leaves a platform the updater would answer with an error.
+      - run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" -p latest.json
+          node -e '
+            const p = require("./latest.json").platforms ?? {};
+            const want = ["darwin-aarch64", "darwin-x86_64", "windows-x86_64", "linux-x86_64"];
+            const bad = want.filter((k) => !p[k]?.signature || !p[k]?.url);
+            if (bad.length) { console.error("latest.json has no signed " + bad.join(", ")); process.exit(1); }'
+      - run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
