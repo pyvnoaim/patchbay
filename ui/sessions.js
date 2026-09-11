@@ -63,9 +63,8 @@ function termKey(e, term) {
   if (e.key === "-" || e.key === "_") return () => zoomTerminals(-1);
   if (e.code === "Digit0") return () => zoomTerminals(0);
   const key = chordKey(e);
-  // xterm selects all on ⌘A but lets the key through, and the Edit menu's Select All
-  // then moves the page's selection into xterm's hidden textarea, which clears it.
-  if (key === "a") return () => term.selectAll();
+  // Off macOS only: there ⌘A is the Edit menu's and arrives as a selectstart (makeTerm).
+  if (key === "a") return () => selectWritten(term);
   // ⌘C and ⌘V are the Edit menu's; off macOS there is none, and xterm would send ^C.
   if (!isMac && key === "c")
     return () => navigator.clipboard.writeText(term.getSelection()).catch(alertish);
@@ -87,6 +86,15 @@ function zoomTerminals(step) {
   restyleTerminals();
   clearTimeout(fontSave);
   fontSave = setTimeout(() => invoke("save_settings", { next: prefs }).catch(alertish), 500);
+}
+
+// Select All up to the last line with something on it, as a Mac terminal does. xterm's
+// own paints every empty row under the prompt and copies them as blank lines.
+function selectWritten(term) {
+  const buf = term.buffer.active;
+  let last = buf.length - 1;
+  while (last > 0 && !buf.getLine(last)?.translateToString(true)) last--;
+  term.selectLines(0, last);
 }
 
 function makeTerm(host) {
@@ -126,6 +134,13 @@ function makeTerm(host) {
     return false;
   });
   term.open(host);
+  // ⌘A never reaches the handler above: the page is a child webview (`unstable`), and
+  // wry hands a child's ⌘-keys to the menu first. Its Select All lands on xterm's hidden
+  // textarea, and WebKit asks that with a selectstart before selecting nothing.
+  term.textarea.addEventListener("selectstart", (e) => {
+    e.preventDefault();
+    selectWritten(term);
+  });
   // No webgl renderer: it leaves the previous frame behind on the transparent
   // background macOS vibrancy needs.
   return { term, fit, search };
