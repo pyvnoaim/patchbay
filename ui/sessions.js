@@ -40,6 +40,55 @@ function restyleTerminals() {
   }
 }
 
+// What a Mac terminal sends that xterm doesn't: nothing at all for ⌘ with an arrow or
+// ⌫, and ⌥-arrows as sequences no shell binds. These are readline's own keys, so bash,
+// zsh and fish all understand them. Only on the shell's screen: in vim ^A is increment.
+const MAC_KEYS = {
+  "Meta+ArrowLeft": "\x01",
+  "Meta+ArrowRight": "\x05",
+  "Meta+Backspace": "\x15",
+  "Alt+ArrowLeft": "\x1bb",
+  "Alt+ArrowRight": "\x1bf",
+};
+
+// The terminal's own chords, or null for a key that belongs to the shell.
+function termKey(e, term) {
+  if (isMac && !e.ctrlKey && !e.shiftKey && e.metaKey !== e.altKey) {
+    const send = MAC_KEYS[`${e.metaKey ? "Meta" : "Alt"}+${e.key}`];
+    if (send && term.buffer.active.type === "normal") return () => term.input(send);
+  }
+  if (!chorded(e)) return null;
+  // Read off `key` with Shift's answer beside it: Ctrl+Shift+= says "+".
+  if (e.key === "+" || e.key === "=") return () => zoomTerminals(1);
+  if (e.key === "-" || e.key === "_") return () => zoomTerminals(-1);
+  if (e.code === "Digit0") return () => zoomTerminals(0);
+  const key = chordKey(e);
+  // xterm selects all on ⌘A but lets the key through, and the Edit menu's Select All
+  // then moves the page's selection into xterm's hidden textarea, which clears it.
+  if (key === "a") return () => term.selectAll();
+  // ⌘C and ⌘V are the Edit menu's; off macOS there is none, and xterm would send ^C.
+  if (!isMac && key === "c")
+    return () => navigator.clipboard.writeText(term.getSelection()).catch(alertish);
+  if (!isMac && key === "v")
+    return () =>
+      navigator.clipboard
+        .readText()
+        .then((t) => term.paste(t))
+        .catch(alertish);
+  return null;
+}
+
+// One step of text size for every terminal. Saved once the keys stop: two saves in
+// flight and the second is refused as a file that moved under it.
+let fontSave;
+function zoomTerminals(step) {
+  const { font_size, ...rest } = prefs;
+  prefs = step ? { ...rest, font_size: Math.min(32, Math.max(8, termFont() + step)) } : rest;
+  restyleTerminals();
+  clearTimeout(fontSave);
+  fontSave = setTimeout(() => invoke("save_settings", { next: prefs }).catch(alertish), 500);
+}
+
 function makeTerm(host) {
   const term = new Terminal({
     fontFamily: getComputedStyle(document.documentElement).getPropertyValue("--mono").trim(),
@@ -63,6 +112,16 @@ function makeTerm(host) {
       invoke("open_link", { url: uri }).catch(alertish);
     }),
   );
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.type !== "keydown") return true;
+    const act = termKey(e, term);
+    if (!act) return true;
+    // Stopped here, or the window's handler reads ⌘+ on a German layout as ⌘].
+    e.preventDefault();
+    e.stopPropagation();
+    act();
+    return false;
+  });
   term.open(host);
   // No webgl renderer: it leaves the previous frame behind on the transparent
   // background macOS vibrancy needs.

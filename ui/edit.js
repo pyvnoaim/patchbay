@@ -978,6 +978,15 @@ function keysHtml() {
       "In a session",
       [
         ["Find in the scrollback", [chord("f")]],
+        ["Select all, copy, paste", [chord("a"), chord("c"), chord("v")]],
+        ["Text size bigger, smaller, reset", [chord("+"), chord("-"), chord("0")]],
+        ...(isMac
+          ? [
+              ["Start, end of the line", ["⌘←", "⌘→"]],
+              ["Back, forward a word", ["⌥←", "⌥→"]],
+              ["Delete to the start of the line", ["⌘⌫"]],
+            ]
+          : []),
         ["Run it again, or reconnect, once it has ended", ["⏎"]],
       ],
     ],

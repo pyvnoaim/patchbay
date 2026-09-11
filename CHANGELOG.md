@@ -10,6 +10,9 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- Terminal keys work like a Mac terminal: ⌘A selects all, ⌘←/⌘→ jump to the line's ends,
+  ⌥←/⌥→ by word, ⌘⌫ deletes to the start, ⌘+/⌘-/⌘0 size the text.
+- Off macOS, Ctrl+Shift+C and Ctrl+Shift+V copy and paste in a terminal.
 - Bitwarden fills device logins. Tick it in Settings ▸ Bitwarden and each web tab gets a
   key: click to fill, right-click to open Bitwarden. Needs Bitwarden for Mac installed.
 - Settings no longer opens behind a device's web page.
