@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.0 - 2026-09-11
 
 - ⌘K finds folders too: pick one and the list opens on it.
 - A device clicked in ⌘K opens the way Enter opens it. A click always started ssh.
