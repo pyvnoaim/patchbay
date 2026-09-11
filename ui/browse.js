@@ -171,8 +171,8 @@ const SORT_KEY = {
 };
 // `listSort` came back from localStorage, so it is checked before it is used.
 const sorted = () => listSort !== "file" && Object.hasOwn(SORTS, listSort);
-const byName = (a, b) =>
-  a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+const collate = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+const byName = (a, b) => collate(a.name, b.name);
 function sortJacks(js) {
   if (!sorted()) return js;
   const key = SORT_KEY[listSort] ?? (() => 0);
@@ -740,17 +740,35 @@ function closePalette() {
 }
 
 // Recency first, file order behind it (stable sort). Only the palette ranks by
-// recency; the list stays in file order.
+// recency; the list stays in file order. A folder is a `{ path }`, the selection's
+// shape, and sits after the devices whose own name matches: a name typed in full still
+// connects on Enter, and a customer's name lands on their folder before its devices.
 function palMatches() {
   const f = pq.value.trim().toLowerCase();
   const rank = (j) => {
     const i = recent.indexOf(j.name);
     return i < 0 ? recent.length : i;
   };
-  return all
-    .filter((j) => hit(j, f))
-    .sort((a, b) => rank(a) - rank(b))
-    .slice(0, 40);
+  const jacks = all.filter((j) => hit(j, f)).sort((a, b) => rank(a) - rank(b));
+  const named = jacks.filter((j) => j.name.toLowerCase().includes(f));
+  const folders = f
+    ? [...folderPaths()]
+        .filter((p) => p.toLowerCase().includes(f))
+        .sort(collate)
+        .map((path) => ({ path }))
+    : [];
+  return [...named, ...folders, ...jacks.filter((j) => !named.includes(j))].slice(0, 40);
+}
+function palPick(p) {
+  closePalette();
+  if (!p.path) return primary(p.name);
+  const parts = p.path.split("/");
+  for (let i = 1; i < parts.length; i++) openGroup(gkey({ path: parts.slice(0, i).join("/") }));
+  // The folder view is the list, and a session tab covers it.
+  activeId = null;
+  showTab();
+  renderTabs();
+  pickGroup({ path: p.path });
 }
 // A quick connect when nothing matches: `user@host` or `host:2222`, one word. Rust
 // applies the same guard a configured host gets.
@@ -770,6 +788,13 @@ function renderPalette() {
     : rows.length
       ? rows
           .map((j, i) => {
+            if (j.path) {
+              const at = j.path.lastIndexOf("/");
+              return `<div class="jack" data-pi="${i}" aria-selected="${i === palSel}">
+        <span class="os">${icon("folder")}</span>
+        <span class="name">${esc(j.path.slice(at + 1))}</span>
+        <span class="host">${esc(at < 0 ? "folder" : j.path.slice(0, at))}</span></div>`;
+            }
             // Same rule as the list: no brand colour on the selected row.
             const tint = i === palSel ? null : osColor(j.os);
             return `<div class="jack" data-pi="${i}" aria-selected="${i === palSel}">

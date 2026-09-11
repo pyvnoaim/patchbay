@@ -193,9 +193,7 @@ presultsEl.addEventListener("click", (e) => {
   }
   const row = e.target.closest("[data-pi]");
   if (!row) return;
-  const j = palMatches()[+row.dataset.pi];
-  closePalette();
-  connect(j.name);
+  palPick(palMatches()[+row.dataset.pi]);
 });
 pq.addEventListener("input", () => {
   palSel = 0;
@@ -290,9 +288,7 @@ document.addEventListener("keydown", (e) => {
       renderPalette();
     } else if (e.key === "Enter" && rows[palSel]) {
       e.preventDefault();
-      const n = rows[palSel].name;
-      closePalette();
-      primary(n);
+      palPick(rows[palSel]);
     } else if (e.key === "Enter" && adhoc()) {
       e.preventDefault();
       const q = adhoc();

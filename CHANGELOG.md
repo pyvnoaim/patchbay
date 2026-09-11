@@ -10,6 +10,8 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- ⌘K finds folders too: pick one and the list opens on it.
+- A device clicked in ⌘K opens the way Enter opens it. A click always started ssh.
 - Sidebar folders sort A–Z. Ones with subfolders no longer go first.
 - Folders can be marked with ⌘-click or shift-click too, and removed together.
 - ⌘A marks every device in the list you are looking at, all of them or one folder's.
