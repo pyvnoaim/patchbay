@@ -7,6 +7,26 @@ $("viewmode").addEventListener("click", () => {
   listMode = listMode === "map" ? "list" : "map";
   render();
 });
+$("sortby").addEventListener("click", (e) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  const items = Object.entries(SORTS).map(([k, label]) => ({
+    label,
+    icon: k === listSort ? "check" : "",
+    run: () => {
+      // The selection is an index; keep it on the same device, not the same row.
+      const was = shown[sel]?.name;
+      listSort = k;
+      remember("sort", k);
+      shown = sortJacks(all.filter(inGroup));
+      sel = Math.max(
+        0,
+        shown.findIndex((j) => j.name === was),
+      );
+      render();
+    },
+  }));
+  showCtx(r.left, r.bottom + 4, "Sort by", items);
+});
 $("newjack").addEventListener("click", () => openJack(null, group));
 $("newgroup").addEventListener("click", () => newGroup({ path: null }));
 $("editcfg").addEventListener("click", () => invoke("open_config").catch(alertish));

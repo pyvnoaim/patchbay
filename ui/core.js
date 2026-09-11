@@ -99,6 +99,14 @@ let webextRunning = false; // Bitwarden is loaded, so web tabs get its key butto
 let detailMode = "jack"; // what the right pane describes: "jack" or "group"
 // "list" is the flat column; "map" groups devices by the route to them.
 let listMode = "list";
+// The flat list's order, one of SORTS in browse.js. This machine's habit, like the theme.
+let listSort = (() => {
+  try {
+    return localStorage.sort || "file";
+  } catch {
+    return "file";
+  }
+})();
 let prefs = {}; // [settings] from the config
 let colors = {}; // [colors] overrides, os key -> hex
 let cfgPath = ""; // where the list lives, shown on first run
@@ -202,12 +210,14 @@ const icon = (name) =>
 // Matched loosely so "Ubuntu 22.04" and "ubuntu" agree. Brand marks are filled paths;
 // the fallbacks are stroked Lucide shapes.
 const osKey = (os) => (os ?? "").toLowerCase().replace(/[^a-z]/g, "");
+const osBrand = (k) =>
+  k
+    ? Object.keys(BRANDS).find((b) => k.startsWith(b) || (b.startsWith(k) && k.length > 2))
+    : undefined;
 function osIcon(os) {
   const k = osKey(os);
-  const brand = Object.keys(BRANDS).find(
-    (b) => k.startsWith(b) || (b.startsWith(k) && k.length > 2),
-  );
-  if (k && brand) {
+  const brand = osBrand(k);
+  if (brand) {
     return `<svg class="i brand" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${BRANDS[brand]}"/></svg>`;
   }
   const fb = Object.keys(BRAND_FALLBACKS).find((b) => k === b);

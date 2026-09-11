@@ -45,6 +45,7 @@ const USED = [
   "chevron-up", // find in session
   "chevron-down",
   "list", // the two ways the middle column lists
+  "arrow-up-down", // sort the list
   "share-2", // the map: a route, branching
   "radio-tower", // broadcast: input fanning out to every pane
   "square", // the broadcast tab chip's mute state

@@ -10,6 +10,8 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- The device list sorts A–Z, by type (web, ssh, remote desktop) or by device (Windows,
+  Raspberry Pi…). Pick it from Sort at the top; the file keeps its own order.
 - Terminal keys work like a Mac terminal: ⌘A selects all, ⌘←/⌘→ jump to the line's ends,
   ⌥←/⌥→ by word, ⌘⌫ deletes to the start, ⌘+/⌘-/⌘0 size the text.
 - Off macOS, Ctrl+Shift+C and Ctrl+Shift+V copy and paste in a terminal.

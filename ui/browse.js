@@ -108,7 +108,7 @@ function render() {
     return;
   }
   renderTree();
-  shown = all.filter(inGroup);
+  shown = sortJacks(all.filter(inGroup));
   // Both the device sheet and the settings sheet suggest jump targets.
   $("jacknames").innerHTML = all.map((x) => `<option value="${esc(x.name)}">`).join("");
   $("sshkeys").innerHTML = sshKeys.map((k) => `<option value="${esc(k)}">`).join("");
@@ -118,6 +118,9 @@ function render() {
     .join("");
 
   renderTabs();
+  // The map orders itself by route, so the sort would be a control that does nothing.
+  $("sortby").hidden = listMode === "map";
+  $("sortby").innerHTML = `${icon("arrow-up-down")}${esc(sorted() ? SORTS[listSort] : "Sort")}`;
   searchBtn.innerHTML = `${icon("search")}Search<kbd>${chord("k")}</kbd>`;
   $("viewmode").innerHTML = listMode === "map" ? `${icon("list")}List` : `${icon("share-2")}Map`;
   $("viewmode").dataset.tip =
@@ -163,6 +166,26 @@ const KIND = {
   vnc: ["screen-share", "VNC"],
   web: ["globe", "Web UI"],
 };
+
+// Never by recency: a row moving under someone reading it is a worse list. Ties go
+// A–Z, and a device with no `os` sorts after every one that has.
+const SORTS = { file: "File order", name: "A–Z", kind: "Type", os: "Device" };
+const SORT_KEY = {
+  kind: (j) => Object.keys(KIND).indexOf(j.primary ?? "ssh"),
+  os: (j) => osBrand(osKey(j.os)) ?? (osKey(j.os) || "\uffff"),
+};
+// `listSort` came back from localStorage, so it is checked before it is used.
+const sorted = () => listSort !== "file" && Object.hasOwn(SORTS, listSort);
+const byName = (a, b) =>
+  a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+function sortJacks(js) {
+  if (!sorted()) return js;
+  const key = SORT_KEY[listSort] ?? (() => 0);
+  return [...js].sort((a, b) => {
+    const [x, y] = [key(a), key(b)];
+    return (x < y ? -1 : x > y ? 1 : 0) || byName(a, b);
+  });
+}
 
 // One row, the same in the list and the map, so selection, double-click and the
 // context menu work in both. `i` indexes `shown`. `hub` and `behind` are the map's:
