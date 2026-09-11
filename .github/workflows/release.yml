@@ -103,13 +103,15 @@ jobs:
       - shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # find, not `shopt -s globstar`: the macOS runner's /bin/bash is 3.2, which has none.
         run: |
-          shopt -s globstar nullglob
-          for f in src-tauri/target/**/release/bundle/**/patchbay_*.{dmg,exe,deb,AppImage}; do
-            plain=$(basename "$f" | sed -E 's/^patchbay_[0-9]+\.[0-9]+\.[0-9]+_/patchbay_/')
-            cp "$f" "$plain"
-            gh release upload "$GITHUB_REF_NAME" "$plain" --clobber
-          done
+          find src-tauri/target -path '*/release/bundle/*' -type f \( -name 'patchbay_*.dmg' \
+            -o -name 'patchbay_*.exe' -o -name 'patchbay_*.deb' -o -name 'patchbay_*.AppImage' \) |
+            while read -r f; do
+              plain=$(basename "$f" | sed -E 's/^patchbay_[0-9]+\.[0-9]+\.[0-9]+_/patchbay_/')
+              cp "$f" "$plain"
+              gh release upload "$GITHUB_REF_NAME" "$plain" --clobber
+            done
 
   # The draft's own files, installed the way someone would, before anyone is offered
   # them: a bundle that builds can still be one that won't install or won't open.
@@ -135,14 +137,15 @@ jobs:
             cp -R /Volumes/patchbay/patchbay.app /Applications/
             hdiutil detach /Volumes/patchbay
             codesign --verify --deep --strict /Applications/patchbay.app
-            lipo -archs /Applications/patchbay.app/Contents/MacOS/patchbay | grep -q "$want"
+            # The executable keeps the crate's name, patchbay-app, not the product's.
+            lipo -archs /Applications/patchbay.app/Contents/MacOS/patchbay-app | grep -q "$want"
           done
       - if: runner.os == 'Windows'
         shell: pwsh
         run: |
           gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY -p patchbay_x64-setup.exe
           Start-Process .\patchbay_x64-setup.exe -ArgumentList '/S' -Wait
-          if (-not (Test-Path "$env:LOCALAPPDATA\patchbay\patchbay.exe")) {
+          if (-not (Test-Path "$env:LOCALAPPDATA\patchbay\patchbay*.exe")) {
             Get-ChildItem $env:LOCALAPPDATA -Recurse -Filter patchbay.exe -ErrorAction SilentlyContinue
             exit 1
           }
@@ -154,10 +157,10 @@ jobs:
             -p patchbay_amd64.deb -p patchbay_amd64.AppImage
           sudo apt-get update
           sudo apt-get install -y ./patchbay_amd64.deb
-          if ldd /usr/bin/patchbay | grep "not found"; then exit 1; fi
+          if ldd /usr/bin/patchbay-app | grep "not found"; then exit 1; fi
           chmod +x patchbay_amd64.AppImage
           ./patchbay_amd64.AppImage --appimage-extract > /dev/null
-          test -x squashfs-root/usr/bin/patchbay
+          test -x squashfs-root/usr/bin/patchbay-app
 
   # Only after every install passed; one failure leaves the draft for a person.
   # A draft is not `releases/latest`, so until this runs nothing is offered.
