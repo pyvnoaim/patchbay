@@ -1964,8 +1964,11 @@ button:disabled {
 }
 
 /* The letterbox around a desktop that doesn't fill the pane. Black in either theme:
-   it reads as the screen's own bezel, not as a surface of ours. */
+   it reads as the screen's own bezel, not as a surface of ours. No padding: the size
+   asked of the server is clientWidth/Height, which counts it, so .termhost's gutter
+   was a frame of black and a desktop scaled down to fit inside it. */
 .rdphost {
+  padding: 0;
   display: grid;
   place-items: center;
   background: #000;
