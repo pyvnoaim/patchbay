@@ -1,6 +1,7 @@
-# A tag is the whole trigger: `npm run bump 0.1.0`, commit, `git tag v0.1.0`, push.
-# The builds land in a *draft* release, because publishing it is also the moment every
-# installed copy starts offering the update - that click stays yours.
+# A tag is the whole trigger: `npm run bump`, commit, `git tag v0.1.0`, push.
+# The builds land in a *draft* release and `publish` lets it out once all four have
+# landed, because publishing is the moment every installed copy starts offering the
+# update: a platform that failed to build must not be the one it offers.
 #
 # Unsigned until the Apple and Windows certificates exist: the secrets are already
 # wired below, so adding them is a repository setting and not a change here.
@@ -10,7 +11,7 @@ on:
   push:
     tags: ["v*"]
 
-# Creating the draft and uploading to it; nothing else.
+# Creating the draft, uploading to it and publishing it; nothing else.
 permissions:
   contents: write
 
@@ -107,3 +108,13 @@ jobs:
             cp "$f" "$plain"
             gh release upload "$GITHUB_REF_NAME" "$plain" --clobber
           done
+
+  # Only after every build leg succeeded; one failure leaves the draft for a person.
+  # A draft is not `releases/latest`, so until this runs nothing is offered.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
