@@ -72,7 +72,8 @@ function row(node, depth, glyph, live, id) {
   const g = glyph ?? (kids && open ? "folder-open" : "folder");
   // The dot is always in the layout for its auto margin; painted only with a live session.
   const on = live && [...node.members].some((n) => live.has(n));
-  return `<div class="group" data-path="${esc(id?.path ?? "")}"
+  const mark = id && markedFolders.has(id.path) ? " marked" : "";
+  return `<div class="group${mark}" data-path="${esc(id?.path ?? "")}"
        data-group="${id ? "1" : ""}" data-has-kids="${kids}"
        aria-current="${sameGroup(group, id)}" style="padding-left:${8 + depth * 13}px">
     <span class="twist ${kids ? "" : "leaf"} ${open ? "open" : ""}">${icon("chevron-right")}</span>
@@ -109,6 +110,7 @@ function render() {
   }
   renderTree();
   shown = sortJacks(all.filter(inGroup));
+  renderDock(); // an empty list never reaches paintRows, and folder marks still need theirs
   // Both the device sheet and the settings sheet suggest jump targets.
   $("jacknames").innerHTML = all.map((x) => `<option value="${esc(x.name)}">`).join("");
   $("sshkeys").innerHTML = sshKeys.map((k) => `<option value="${esc(k)}">`).join("");
@@ -510,6 +512,8 @@ function renderJack(j, live) {
 function select(i) {
   detailMode = "jack";
   if (!shown.length) return;
+  // A device is where the keyboard is now; a folder mark left behind would take its ⌫.
+  unmarkFolders();
   sel = (i + shown.length) % shown.length;
   paintRows();
   renderDetail();
@@ -532,6 +536,17 @@ function paintRows() {
 function renderDock() {
   const dock = $("dock");
   if (!dock) return;
+  const btn = (a, ic, lbl, extra = "") =>
+    `<button type="button" class="ghost" data-a="${esc(a)}"${extra}>${icon(ic)}${esc(lbl)}</button>`;
+  // Guarded: this runs on every arrow key, and foldersMarked walks every device.
+  const fs = markedFolders.size > 1 ? foldersMarked() : [];
+  if (fs.length > 1) {
+    dock.innerHTML = `
+    <span class="count"><b>${fs.length}</b> folders selected</span>
+    ${btn("delfolders", "trash-2", `Remove ${fs.length}`, ' data-danger="1"')}`;
+    dock.hidden = false;
+    return;
+  }
   const bulk = markedHere();
   if (bulk.length < 2) {
     dock.hidden = true;
@@ -539,8 +554,6 @@ function renderDock() {
     return;
   }
   const ssh = bulk.filter((j) => j.ssh).length;
-  const btn = (a, ic, lbl, extra = "") =>
-    `<button type="button" class="ghost" data-a="${esc(a)}"${extra}>${icon(ic)}${esc(lbl)}</button>`;
   dock.innerHTML = `
     <span class="count"><b>${bulk.length}</b> selected</span>
     ${ssh >= 2 ? btn("bcast", "radio-tower", `Broadcast to ${ssh}`) : ""}
@@ -553,6 +566,7 @@ $("dock")?.addEventListener("click", (e) => {
   const el = e.target.closest("[data-a]");
   const a = el?.dataset.a;
   if (!a) return;
+  if (a === "delfolders") return removeFolders(foldersMarked());
   const bulk = markedHere();
   if (!bulk.length) return;
   if (a === "bcast") return openBroadcast(bulk);
@@ -566,6 +580,7 @@ $("dock")?.addEventListener("click", (e) => {
 function markToggle(i) {
   const n = shown[i]?.name;
   if (!n) return;
+  unmarkFolders();
   // The first ⌘-click also marks the selected row, or three rows are lit and the
   // dock says two.
   if (!marked.size && i !== sel && shown[sel]) marked.add(shown[sel].name);
@@ -573,12 +588,40 @@ function markToggle(i) {
   paintRows();
 }
 function markRange(i) {
+  unmarkFolders();
   for (let k = Math.min(sel, i); k <= Math.max(sel, i); k++) marked.add(shown[k].name);
   paintRows();
 }
 
 // What a bulk action applies to: a mark filtered out of view is not part of the ask.
 const markedHere = () => shown.filter((j) => marked.has(j.name));
+
+// The same two gestures in the tree, anchored on the folder being looked at. A range
+// is the rows as drawn, so a folded branch contributes only its own row.
+function markFolder(path) {
+  marked.clear();
+  if (!markedFolders.size && group?.path && group.path !== path) markedFolders.add(group.path);
+  markedFolders.has(path) ? markedFolders.delete(path) : markedFolders.add(path);
+  renderTree();
+  paintRows();
+}
+function markFolderRange(path) {
+  marked.clear();
+  const rows = [...treeEl.querySelectorAll('.group[data-group="1"]')].map((r) => r.dataset.path);
+  const from = rows.indexOf(group?.path);
+  const to = rows.indexOf(path);
+  for (const p of rows.slice(Math.min(from < 0 ? to : from, to), Math.max(from, to) + 1))
+    markedFolders.add(p);
+  renderTree();
+  paintRows();
+}
+function unmarkFolders() {
+  if (!markedFolders.size) return;
+  markedFolders.clear();
+  renderTree();
+}
+// A mark on a folder that has since gone (renamed elsewhere, emptied) is dropped.
+const foldersMarked = () => [...folderPaths()].filter((p) => markedFolders.has(p));
 
 const move = (d) => select(sel + d);
 
@@ -588,6 +631,7 @@ function pickGroup(id, foldable) {
   if (foldable) openGroup(gkey(id));
   sel = 0;
   marked.clear();
+  markedFolders.clear();
   detailMode = "group"; // the pane describes the folder, not its first device
   render();
 }

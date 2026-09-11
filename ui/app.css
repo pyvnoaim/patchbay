@@ -827,10 +827,12 @@ body.dragging * {
 
 /* Marked with ⌘-click or shift-click, for a bulk action. Not the selected row, which is where the
    keyboard is, so a faint accent tint; both can be true of one row. */
-.jack.marked {
+.jack.marked,
+.group.marked {
   background: color-mix(in oklab, var(--accent) 14%, transparent);
 }
-.jack.marked:not([aria-selected="true"]):hover {
+.jack.marked:not([aria-selected="true"]):hover,
+.group.marked:hover {
   background: color-mix(in oklab, var(--accent) 22%, transparent);
 }
 /* Selected wins over marked. */

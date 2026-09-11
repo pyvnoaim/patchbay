@@ -175,6 +175,19 @@ document.addEventListener("contextmenu", (e) => {
   if (groupRow) {
     const id = { path: groupRow.dataset.path || null };
     if (!id.path) return; // "All jacks" isn't a folder
+    if (!markedFolders.has(id.path)) unmarkFolders();
+    const fs = foldersMarked();
+    if (fs.length > 1) {
+      return showCtx(e.clientX, e.clientY, `${fs.length} folders`, [
+        {
+          icon: "trash-2",
+          label: `Remove ${fs.length} folders`,
+          key: "⌫",
+          danger: true,
+          run: () => removeFolders(fs),
+        },
+      ]);
+    }
     return showCtx(e.clientX, e.clientY, id.path, [
       { icon: "plus", label: "New device here…", run: () => openJack(null, id) },
       { icon: "folder-plus", label: "New subfolder…", run: () => newGroup(id) },
@@ -678,6 +691,32 @@ async function removeGroup(id) {
   }
 }
 
+// Loops the single-folder command, like `removeMarked`. A folder inside another marked
+// one goes with it, so it is neither counted nor asked for twice.
+async function removeFolders(paths) {
+  const tops = paths.filter((p) => !paths.some((q) => p.startsWith(q + "/")));
+  if (tops.length === 1) return removeGroup({ path: tops[0] });
+  const under = (f) => tops.some((p) => f === p || f.startsWith(p + "/"));
+  const n = all.filter((j) => j.folders.some(under)).length;
+  const msg =
+    `Remove ${tops.length} folders from ${n} device${n === 1 ? "" : "s"}? The devices stay.` +
+    `\n\n${tops.slice(0, 8).join(", ")}${tops.length > 8 ? `, and ${tops.length - 8} more` : ""}`;
+  if (!(await ask(msg, null, "Remove"))) return;
+  const failed = [];
+  for (const p of tops) {
+    try {
+      await invoke("delete_group", { path: p });
+      pending.delete(gkey({ path: p }));
+    } catch {
+      failed.push(p);
+    }
+  }
+  markedFolders.clear();
+  if (group?.path && under(group.path)) group = null;
+  await load();
+  if (failed.length) alertish(`could not remove ${failed.join(", ")}`);
+}
+
 // Put devices in a folder. Seen from inside a folder it is a move: every entry under
 // that folder becomes `to`, and `to` of null takes them out of it. Seen from All
 // devices it is an add, because there is nothing to move out of. Only the folders list
@@ -970,7 +1009,7 @@ function keysHtml() {
         ["Open, the way the device is reached", ["⏎"]],
         ["Delete", ["⌫"]],
         ["Clear the marks, then the selection", ["Esc"]],
-        ["Mark several", [pickChord, "Shift-click"]],
+        ["Mark several devices or folders", [pickChord, "Shift-click"]],
         ["Move into a folder", ["Drag onto it"]],
       ],
     ],

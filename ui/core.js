@@ -80,6 +80,8 @@ let expanded = new Set(); // open rows, by gkey
 let sel = 0;
 // Marks are names, not indexes: the list is refiltered under them by every render.
 let marked = new Set();
+// Folder paths marked in the tree. Never alongside `marked`: one dock, one Delete.
+let markedFolders = new Set();
 let palSel = 0;
 let editing = null; // jack name being edited, or null when adding
 let editStamp = null; // the table as it was when the sheet opened, sent back with the save

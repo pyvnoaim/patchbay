@@ -39,6 +39,8 @@ treeEl.addEventListener("click", (e) => {
   const id = el.dataset.group ? { path: el.dataset.path || null } : null;
   // Clicking the triangle folds; clicking the row selects.
   const foldable = el.dataset.hasKids === "true";
+  if (id && picking(e)) return markFolder(id.path);
+  if (id && e.shiftKey) return markFolderRange(id.path);
   if (e.target.closest(".twist") && foldable) {
     toggleGroup(gkey(id));
     render();
@@ -320,14 +322,18 @@ document.addEventListener("keydown", (e) => {
     primary(shown[sel].name);
   } else if (e.key === "Escape") {
     // Two-stage: marks first, folder and selection second.
-    if (marked.size) {
+    if (marked.size || markedFolders.size) {
       marked.clear();
+      unmarkFolders();
       paintRows();
     } else {
       group = null;
       sel = 0;
       render();
     }
+  } else if (foldersMarked().length && (e.key === "Backspace" || e.key === "Delete")) {
+    e.preventDefault();
+    removeFolders(foldersMarked());
   } else if (shown[sel] && (e.key === "Backspace" || e.key === "Delete")) {
     e.preventDefault();
     const bulk = markedHere();
