@@ -83,6 +83,16 @@
   --a-bright-white: #16161a;
 }
 
+/* Off macOS there is no vibrancy layer, so a 0.72 wash over --bg lands within two shades
+   of it: the sidebar and the panels read as one flat slab. Opaque, and a step off the
+   background, gives the two surfaces back. */
+body:not([data-os="macos"]) {
+  --panel: #202026;
+}
+:root[data-theme="light"] body:not([data-os="macos"]) {
+  --panel: #fff;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

@@ -8,6 +8,12 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Windows and Linux: the sidebar and the panels are no longer the same near-black.
+  Without macOS's vibrancy behind them the two surfaces were within two shades of
+  each other, so the whole window read as one flat slab.
+
 ## 0.1.0 - 2026-09-11
 
 - ⌘K finds folders too: pick one and the list opens on it.
