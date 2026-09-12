@@ -1839,6 +1839,11 @@ footer {
   color: var(--ink-dim);
   font-weight: 500;
 }
+/* The one caveat that needs a sentence rather than a label, so it takes the measure
+   the rest of the page's prose does. */
+.plats p {
+  max-width: var(--measure);
+}
 .sheet {
   border: 1px solid var(--line);
   border-radius: 14px;
