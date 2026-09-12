@@ -91,9 +91,32 @@ pub fn set_theme(window: tauri::WebviewWindow, theme: String) -> String {
         _ => None,
     };
     let _ = window.set_theme(want);
-    match want.or_else(|| window.theme().ok()) {
-        Some(tauri::Theme::Light) => "light".into(),
-        _ => "dark".into(),
+    let pick = match want.or_else(|| window.theme().ok()) {
+        Some(tauri::Theme::Light) => "light",
+        _ => "dark",
+    };
+    #[cfg(windows)]
+    paint_caption(&window, pick == "dark");
+    pick.into()
+}
+
+/// Windows paints the title bar its own dark, a few shades off ours, so the window reads
+/// as two slabs stacked. DWM takes a COLORREF, which is `0x00bbggrr` rather than a hex
+/// colour; both values are `--bg` in `app.css`. Win11 22000 and up - an older build fails
+/// the call and keeps the default title bar, which is what it had anyway.
+#[cfg(windows)]
+fn paint_caption(window: &tauri::WebviewWindow, dark: bool) {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR,
+    };
+    let Ok(hwnd) = window.hwnd() else { return };
+    let bg: u32 = if dark { 0x001a_1717 } else { 0x00f6_f4f4 };
+    let p = std::ptr::addr_of!(bg).cast();
+    let n = std::mem::size_of::<u32>() as u32;
+    // SAFETY: a live window's handle, and DWM reads `n` bytes out of a `u32` that outlives the call.
+    unsafe {
+        DwmSetWindowAttribute(hwnd.0 as _, DWMWA_CAPTION_COLOR as u32, p, n);
+        DwmSetWindowAttribute(hwnd.0 as _, DWMWA_BORDER_COLOR as u32, p, n);
     }
 }
 

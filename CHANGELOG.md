@@ -13,6 +13,8 @@ it back. Nothing is retyped anywhere.
 - Windows and Linux: the sidebar and the panels are no longer the same near-black.
   Without macOS's vibrancy behind them the two surfaces were within two shades of
   each other, so the whole window read as one flat slab.
+- Windows 11: the title bar takes the app's own colour instead of the system's, so the
+  window is one piece rather than two.
 
 ## 0.1.0 - 2026-09-11
 
