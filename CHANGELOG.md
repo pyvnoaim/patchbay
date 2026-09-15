@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.2 - 2026-09-15
 
 - The command palette puts folders first, with a line between them and the devices.
 - Remote desktop: right-clicking a session no longer opens the webview's own Reload
