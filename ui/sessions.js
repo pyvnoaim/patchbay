@@ -1401,12 +1401,31 @@ async function openRdpSession(name) {
       Math.round((e.clientY - r.top) * (canvas.height / r.height)),
     ];
   };
-  canvas.addEventListener("mousemove", (e) => send("move", ...at(e)));
+  // One move per frame, not per event: a drag fires a hundred a second, each of them an
+  // invoke and a layout read for the rect, and only the last position in a frame is one
+  // the far end can act on. A button flushes first, or the click lands where the pointer
+  // was a frame ago.
+  let pending = null,
+    frame = 0;
+  const flush = () => {
+    cancelAnimationFrame(frame);
+    frame = 0;
+    if (pending) send("move", ...at(pending));
+    pending = null;
+  };
+  canvas.addEventListener("mousemove", (e) => {
+    pending = e;
+    frame ||= requestAnimationFrame(flush);
+  });
   canvas.addEventListener("mousedown", (e) => {
     canvas.focus();
+    flush();
     send("button", e.button, 0, true);
   });
-  canvas.addEventListener("mouseup", (e) => send("button", e.button, 0, false));
+  canvas.addEventListener("mouseup", (e) => {
+    flush();
+    send("button", e.button, 0, false);
+  });
   // Right-click belongs to the far end, but stopping propagation alone skips the
   // document handler's preventDefault and leaves the webview's own Reload menu.
   canvas.addEventListener("contextmenu", (e) => {
@@ -1417,6 +1436,8 @@ async function openRdpSession(name) {
     "wheel",
     (e) => {
       e.preventDefault();
+      // A wheel carries no coordinates either: it lands wherever the last move left it.
+      flush();
       send("wheel", e.deltaY > 0 ? -120 : 120);
     },
     { passive: false },

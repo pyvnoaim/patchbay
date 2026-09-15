@@ -12,6 +12,8 @@ it back. Nothing is retyped anywhere.
 
 - Remote desktop: opening one no longer renegotiates the screen a moment after it
   appears, which is what made the first few seconds look like it was calibrating.
+- Remote desktop: the mouse is sent once a frame rather than once an event, so a drag
+  is a fraction of the traffic.
 
 ## 0.1.2 - 2026-09-15
 
