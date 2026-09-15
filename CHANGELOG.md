@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.6 - 2026-09-15
 
 - Scrollbars match the theme instead of painting a light grey strip down a dark list.
 
