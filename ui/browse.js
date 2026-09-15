@@ -741,8 +741,8 @@ function closePalette() {
 
 // Recency first, file order behind it (stable sort). Only the palette ranks by
 // recency; the list stays in file order. A folder is a `{ path }`, the selection's
-// shape, and sits after the devices whose own name matches: a name typed in full still
-// connects on Enter, and a customer's name lands on their folder before its devices.
+// shape, and folders lead: typing a customer's name is asking for their folder, and a
+// device typed in full is one arrow key away.
 function palMatches() {
   const f = pq.value.trim().toLowerCase();
   const rank = (j) => {
@@ -757,7 +757,7 @@ function palMatches() {
         .sort(collate)
         .map((path) => ({ path }))
     : [];
-  return [...named, ...folders, ...jacks.filter((j) => !named.includes(j))].slice(0, 40);
+  return [...folders, ...named, ...jacks.filter((j) => !named.includes(j))].slice(0, 40);
 }
 function palPick(p) {
   closePalette();
@@ -780,6 +780,8 @@ function renderPalette() {
   const rows = palMatches();
   palSel = Math.min(palSel, Math.max(0, rows.length - 1));
   const quick = adhoc();
+  // Folders lead, so the first device is where the two halves meet.
+  const cutAt = rows.findIndex((r) => !r.path);
   presultsEl.innerHTML = quick
     ? `<div class="jack" data-adhoc="1" aria-selected="true">
         <span class="os">${icon("square-terminal")}</span>
@@ -788,6 +790,7 @@ function renderPalette() {
     : rows.length
       ? rows
           .map((j, i) => {
+            const cut = i === cutAt && i > 0 ? " cut" : "";
             if (j.path) {
               const at = j.path.lastIndexOf("/");
               return `<div class="jack" data-pi="${i}" aria-selected="${i === palSel}">
@@ -797,7 +800,7 @@ function renderPalette() {
             }
             // Same rule as the list: no brand colour on the selected row.
             const tint = i === palSel ? null : osColor(j.os);
-            return `<div class="jack" data-pi="${i}" aria-selected="${i === palSel}">
+            return `<div class="jack${cut}" data-pi="${i}" aria-selected="${i === palSel}">
         <span class="os"${tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(j.os)}</span>
         <span class="name">${esc(j.name)}</span>
         <span class="host">${esc(j.host)}</span></div>`;

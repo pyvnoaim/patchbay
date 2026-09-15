@@ -1270,6 +1270,14 @@ button.ghost {
   padding: 6px;
   scrollbar-width: thin;
 }
+/* The rule sits above the row's own pill, not across it: a selected or hovered row
+   paints its background inside the border. */
+#presults .jack.cut {
+  border-top: 1px solid var(--line);
+  margin-top: 5px;
+  padding-top: 5px;
+  background-clip: padding-box;
+}
 
 /* ── sidebar footer ────────────────────────────────────────── */
 .side-foot {

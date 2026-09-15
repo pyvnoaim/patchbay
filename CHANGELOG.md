@@ -8,6 +8,9 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- The command palette puts folders first, with a line between them and the devices.
 ## 0.1.1 - 2026-09-12
 
 - Windows and Linux: the sidebar and the panels are no longer the same near-black.
