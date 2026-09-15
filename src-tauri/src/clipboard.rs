@@ -56,7 +56,8 @@ pub fn local_text() -> Option<String> {
     arboard::Clipboard::new().ok()?.get_text().ok()
 }
 
-fn set_local_text(text: &str) {
+/// Also the Bitwarden popup's Copy, which asks the app around the extension to do it.
+pub fn set_local_text(text: &str) {
     if let Ok(mut c) = arboard::Clipboard::new() {
         let _ = c.set_text(text);
     }

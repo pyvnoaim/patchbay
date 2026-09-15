@@ -28,6 +28,8 @@
              so the strip stays plain and this never-scrolling sibling takes it. -->
           <div class="tabfill" data-tauri-drag-region></div>
           <div class="tabactions">
+            <!-- Bitwarden, with no device in it: shown only while the extension is running. -->
+            <button class="chip" id="vault" hidden></button>
             <button class="chip" id="sortby" data-tip="Sort the list"></button>
             <button class="chip" id="viewmode"></button>
             <button class="chip" id="searchbtn"></button>
@@ -337,7 +339,8 @@
                 ><input type="checkbox" name="webext" />
                 <span
                   ><b>Fill logins with Bitwarden</b> A key appears on each web tab: click it to
-                  fill, right-click it to open Bitwarden.</span
+                  fill, right-click it to open Bitwarden. The key beside Search opens your vault on
+                  its own, for a password to read rather than fill.</span
                 ></label
               >
               <p class="space-note" id="webext-said"></p>

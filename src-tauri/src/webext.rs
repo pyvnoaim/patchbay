@@ -377,6 +377,27 @@ mod shim {
                 super::live::read(|h| h.window.clone()).map(ProtocolObject::from_retained)
             }
 
+            // Bitwarden's Safari build never touches the clipboard itself: a copy is a
+            // message to the app around the extension, which in Safari is Bitwarden's
+            // own app extension and here is us. Unanswered, Copy password in the popup
+            // quietly did nothing at all.
+            #[unsafe(method(webExtensionController:sendMessage:toApplicationWithIdentifier:forExtensionContext:replyHandler:))]
+            fn send_message(
+                &self,
+                _controller: &WKWebExtensionController,
+                message: &objc2::runtime::AnyObject,
+                _application: Option<&objc2_foundation::NSString>,
+                _context: &WKWebExtensionContext,
+                reply: &block2::DynBlock<dyn Fn(*mut objc2::runtime::AnyObject, *mut NSError)>,
+            ) {
+                let answer = super::app_message(message);
+                let ptr = answer
+                    .as_ref()
+                    .map(|s| Retained::as_ptr(s) as *mut objc2::runtime::AnyObject)
+                    .unwrap_or(std::ptr::null_mut());
+                reply.call((ptr, std::ptr::null_mut()));
+            }
+
             #[unsafe(method(webExtensionController:presentPopupForAction:forExtensionContext:completionHandler:))]
             fn present_popup(
                 &self,
@@ -469,12 +490,16 @@ pub fn activate(id: u32) {
 /// where the popup closed itself after every fill and had to be opened again. `popup`
 /// opens Bitwarden instead, for signing in and picking by hand.
 ///
+/// `id` is the tab the key sits on, or `None` from the toolbar's own key, which is a
+/// vault to look something up in rather than a page to fill: whatever tab is in front
+/// is used if there is one, and Bitwarden opens unattached when there isn't.
+///
 /// `view` is the window's content view and `at` the button's rect, in CSS pixels from
 /// the top. A locked vault answers a fill with the popup, which hangs from there too.
 #[cfg(target_os = "macos")]
 pub fn key(
     view: *mut std::ffi::c_void,
-    id: u32,
+    id: Option<u32>,
     at: (f64, f64, f64, f64),
     popup: bool,
 ) -> Result<(), String> {
@@ -497,17 +522,21 @@ pub fn key(
         false => (view.bounds().size.height - y - height, NSRectEdge::MinY),
     };
     let rect = NSRect::new(NSPoint::new(x, y), NSSize::new(width, height));
-    activate(id);
+    if let Some(id) = id {
+        activate(id);
+    }
     let (context, tab) = live::read(|h| {
         h.anchor = Some((view.clone(), rect, edge));
-        let tab = h.tabs.iter().find(|t| t.ivars().id == id).cloned();
+        // The toolbar's key names no tab, so it acts on whatever is in front.
+        let want = id.or(h.active);
+        let tab = want.and_then(|w| h.tabs.iter().find(|t| t.ivars().id == w).cloned());
         (h.context.clone(), tab)
     })
     .ok_or("Bitwarden isn't running")?;
-    let tab = tab.ok_or("this tab opened before Bitwarden was on - close it and open it again")?;
     if popup {
-        unsafe { context.performActionForTab(Some(ProtocolObject::from_ref(&*tab))) };
+        unsafe { context.performActionForTab(tab.as_deref().map(ProtocolObject::from_ref)) };
     } else {
+        tab.ok_or("this tab opened before Bitwarden was on - close it and open it again")?;
         // Bitwarden's own "autofill_login", which acts on the active tab `activate` set.
         let fill = unsafe { context.commands() }
             .iter()
@@ -524,6 +553,32 @@ pub fn key(
 fn log_errors(context: &objc2_web_kit::WKWebExtensionContext) {
     for e in unsafe { context.errors() }.iter() {
         eprintln!("patchbay: bitwarden: {}", e.localizedDescription());
+    }
+}
+
+/// The `{ command, data }` an extension sends to the application around it. Only
+/// Bitwarden's two clipboard commands are answered - the rest of its native messaging
+/// talks to the Bitwarden desktop app's own IPC, which is not us and never will be.
+#[cfg(target_os = "macos")]
+fn app_message(
+    message: &objc2::runtime::AnyObject,
+) -> Option<objc2::rc::Retained<objc2_foundation::NSString>> {
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSDictionary, NSString};
+
+    let dict = message.downcast_ref::<NSDictionary>()?;
+    let at = |k: &str| -> Option<objc2::rc::Retained<AnyObject>> {
+        dict.objectForKey(&NSString::from_str(k))
+    };
+    let command = at("command")?.downcast::<NSString>().ok()?.to_string();
+    match command.as_str() {
+        "copyToClipboard" => {
+            let text = at("data")?.downcast::<NSString>().ok()?;
+            crate::clipboard::set_local_text(&text.to_string());
+            None
+        }
+        "readFromClipboard" => Some(NSString::from_str(&crate::clipboard::local_text()?)),
+        _ => None,
     }
 }
 
@@ -558,7 +613,8 @@ pub fn unload() -> Result<(), String> {
 /// `hosts` are the pages it may see: one match pattern per device URL in the list, plus
 /// Bitwarden's own servers. Never `allHostsAndSchemesMatchPattern` - an extension that
 /// can read every site is the thing patchbay would be adding, and the pages here are a
-/// handful of appliances you named yourself.
+/// handful of appliances you named yourself. An empty list is not a refusal: the vault
+/// is worth opening for a password to read even where nothing here can be filled.
 #[cfg(target_os = "macos")]
 pub async fn load(app: &tauri::AppHandle, hosts: Vec<String>) -> Result<Package, String> {
     use block2::RcBlock;
@@ -579,9 +635,6 @@ pub async fn load(app: &tauri::AppHandle, hosts: Vec<String>) -> Result<Package,
         p.loaded = true;
         p.hosts = live::hosts();
         return Ok(p);
-    }
-    if hosts.is_empty() {
-        return Err("no device in your list has a web address to fill in".into());
     }
     let path = package()?;
     let name = path.display().to_string();
@@ -631,11 +684,8 @@ pub async fn load(app: &tauri::AppHandle, hosts: Vec<String>) -> Result<Package,
                 let pattern = |h: &str| {
                     WKWebExtensionMatchPattern::matchPatternWithString(&NSString::from_str(h), mtm)
                 };
+                // None is fine: with no device page to fill, the vault still opens.
                 let mut patterns: Vec<_> = hosts.iter().filter_map(|h| pattern(h)).collect();
-                if patterns.is_empty() {
-                    let _ = tx.send(Err("none of those addresses is a usable pattern".into()));
-                    return;
-                }
                 let devices = patterns.len();
                 patterns.extend(BITWARDEN_SERVERS.iter().filter_map(|h| pattern(h)));
                 let pk: Vec<_> = patterns.iter().map(|p| &**p).collect();

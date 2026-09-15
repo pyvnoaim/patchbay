@@ -404,12 +404,13 @@ pub async fn webext_stop(app: tauri::AppHandle) -> Result<(), String> {
     on_main(&app, crate::webext::unload).await
 }
 
-/// The key button on a web tab: a fill, or with `popup` Bitwarden itself. The rect is
-/// the button's, so whatever Bitwarden shows hangs from it.
+/// The key button: a fill, or with `popup` Bitwarden itself. `id` is the web tab it
+/// sits on, or `None` for the toolbar's key, which is the vault rather than a page.
+/// The rect is the button's, so whatever Bitwarden shows hangs from it.
 #[tauri::command]
 pub async fn webext_key(
     app: tauri::AppHandle,
-    id: u32,
+    id: Option<u32>,
     x: f64,
     y: f64,
     width: f64,

@@ -926,6 +926,11 @@ function renderTabs() {
     </div>`);
   }
   tabsEl.innerHTML = browse + chips.join("");
+  // Here rather than in render(): the extension starts after the first paint.
+  const vault = $("vault");
+  vault.hidden = !webextRunning;
+  vault.innerHTML = `${icon("key-round")}Vault`;
+  vault.dataset.tip = "Open Bitwarden";
   // Scroll the active tab into view by hand: scrollIntoView walks up to any scrollable
   // ancestor and took the detail pane off the side of the window with it.
   const active = tabsEl.querySelector('[aria-selected="true"]');
@@ -962,10 +967,13 @@ tabsEl.addEventListener("scroll", markTabOverflow, { passive: true });
 // steps is one click per step; the popup closed itself after every fill. Right-click
 // opens Bitwarden itself, for signing in and picking a login by hand. Whatever it
 // shows hangs from the key.
+// The toolbar's key carries no tab: Bitwarden opens on whatever page is in front, or
+// on nothing, which is the vault as a vault rather than a form to fill.
 function bitwardenKey(el, popup) {
   const r = el.getBoundingClientRect();
   const at = { x: r.left, y: r.top, width: r.width, height: r.height };
-  invoke("webext_key", { id: +el.dataset.bw, ...at, popup }).catch(alertish);
+  const id = el.dataset.bw ? +el.dataset.bw : null;
+  invoke("webext_key", { id, ...at, popup }).catch(alertish);
 }
 tabsEl.addEventListener("contextmenu", (e) => {
   const bw = e.target.closest("[data-bw]");

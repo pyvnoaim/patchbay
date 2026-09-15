@@ -8,6 +8,12 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- A key beside Search opens Bitwarden anywhere, so a password is one click to read
+  whether or not a web tab is open.
+- Copy in the Bitwarden popup now actually copies.
+
 ## 0.1.4 - 2026-09-15
 
 - A session's last line is no longer cut in half by the bottom of the window.

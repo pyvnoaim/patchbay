@@ -3,6 +3,7 @@
 
 // ── events ─────────────────────────────────────────────────────────────────
 searchBtn.addEventListener("click", () => openPalette());
+$("vault").addEventListener("click", (e) => bitwardenKey(e.currentTarget, true));
 $("viewmode").addEventListener("click", () => {
   listMode = listMode === "map" ? "list" : "map";
   render();
@@ -599,6 +600,7 @@ async function startWebext() {
   if (!prefs.webext) return;
   const p = await invoke("webext_start").catch(alertish);
   webextRunning = !!p?.loaded;
+  renderTabs();
 }
 
 // Errands run behind the first paint.
