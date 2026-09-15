@@ -8,6 +8,14 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- A session's last line is no longer cut in half by the bottom of the window.
+- Sending the window to a screen with a different scale no longer leaves the page
+  drawn at half the window.
+- The detail pane steps aside sooner, so the header's buttons stop running over it
+  in a narrow window.
+
 ## 0.1.3 - 2026-09-15
 
 - Remote desktop: opening one no longer renegotiates the screen a moment after it

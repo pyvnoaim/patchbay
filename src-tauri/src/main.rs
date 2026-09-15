@@ -52,12 +52,36 @@ fn main() {
         .manage(app::PendingLink::default())
         // Closing with a live session is asked about in the window, so the close is
         // held here and answered by `quit`.
-        .on_window_event(|w, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|w, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
                 use tauri::Emitter;
                 api.prevent_close();
                 let _ = w.emit("window:close", ());
             }
+            // Sent to the other display by a window manager, the resize and the scale
+            // change reach the runtime together and it divides the one by the other:
+            // the page is laid out at half the window, or twice it, with bare window
+            // behind the rest. Re-asserted off the window once both have landed -
+            // from another thread, because on this one the correction would run
+            // before the resize it is correcting.
+            // ponytail: a sleep, because there is no "the move is done" event; a
+            // `Moved` settling timer if a slower machine still shows the wrong frame.
+            tauri::WindowEvent::ScaleFactorChanged { .. } => {
+                let w = w.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(120));
+                    let (Ok(size), Ok(scale)) = (w.inner_size(), w.scale_factor()) else {
+                        return;
+                    };
+                    for v in w.webviews() {
+                        // Web tabs are placed by the window, over their own host div.
+                        if v.label() == w.label() {
+                            let _ = v.set_size(size.to_logical::<f64>(scale));
+                        }
+                    }
+                });
+            }
+            _ => {}
         })
         .setup(|app| {
             setup_links(app);
