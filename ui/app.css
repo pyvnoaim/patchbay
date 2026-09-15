@@ -343,10 +343,12 @@ body:not([data-os="macos"]) .tabs {
 .terms[hidden] {
   display: none !important;
 }
+/* Inset rather than padded: xterm's fit() measures this element's computed height to
+   pick a row count, and a padding box there is 12px it can spend twice - the last row
+   then hangs below the window and is cut in half. */
 .termhost {
   position: absolute;
-  inset: 0;
-  padding: 8px 4px 4px 10px;
+  inset: 8px 4px 4px 10px;
 }
 .termhost[hidden] {
   display: none !important;
