@@ -1401,7 +1401,12 @@ async function openRdpSession(name) {
     send("button", e.button, 0, true);
   });
   canvas.addEventListener("mouseup", (e) => send("button", e.button, 0, false));
-  canvas.addEventListener("contextmenu", (e) => e.stopPropagation());
+  // Right-click belongs to the far end, but stopping propagation alone skips the
+  // document handler's preventDefault and leaves the webview's own Reload menu.
+  canvas.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
   canvas.addEventListener(
     "wheel",
     (e) => {
