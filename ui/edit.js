@@ -299,6 +299,9 @@ askWrap.addEventListener("mousedown", (e) => {
 let upVersion = "";
 // Set once the new bundle is in place; the same button then restarts.
 let upReady = false;
+// An offer found from inside Settings. The pill sits under every overlay, so showing it
+// there puts the only Install button behind the sheet's blur, unclickable.
+let upWaiting = null;
 
 // Release notes from the changelog. Escaped first and marked up after, so the code
 // spans are ours and everything inside them is theirs.
@@ -395,16 +398,18 @@ slClean.addEventListener("click", async () => {
 
 // A check someone asked for answers either way; the launch check stays quiet unless
 // there is something to install. `said` is the line beside the settings button, because
-// the pill is hidden behind that sheet.
+// the pill is hidden behind that sheet - and an offer found there waits for it to close
+// rather than showing an Install button nobody can reach.
 async function checkUpdates(said) {
   const say = (m) => said && (said.textContent = m);
   say("Checking…");
   try {
     const offer = await invoke("update_check");
     if (offer) {
-      showUpdate(offer);
       checkedNow();
-      say(`${offer.version} is ready to install`);
+      say(`${offer.version} is ready - close Settings to install it`);
+      if (said) upWaiting = offer;
+      else showUpdate(offer);
       return;
     }
     const now = await invoke("app_version").catch(() => "");
@@ -1089,6 +1094,10 @@ async function openSettings(pane) {
 }
 const closeSettings = () => {
   setWrap.hidden = true;
+  if (upWaiting) {
+    showUpdate(upWaiting);
+    upWaiting = null;
+  }
 };
 
 // A hidden pane is still in the form, so Save stays one submit.

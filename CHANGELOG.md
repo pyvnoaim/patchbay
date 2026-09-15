@@ -13,6 +13,8 @@ it back. Nothing is retyped anywhere.
 - A key beside Search opens Bitwarden anywhere, so a password is one click to read
   whether or not a web tab is open.
 - Copy in the Bitwarden popup now actually copies.
+- An update found from Settings shows its Install button once the sheet is closed,
+  instead of sitting behind it.
 
 ## 0.1.4 - 2026-09-15
 
