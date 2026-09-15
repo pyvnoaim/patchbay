@@ -1,6 +1,6 @@
 {
   "name": "patchbay",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Every host, one jack away.",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",

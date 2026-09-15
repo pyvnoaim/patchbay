@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.5 - 2026-09-15
 
 - A key beside Search opens Bitwarden anywhere, so a password is one click to read
   whether or not a web tab is open.
