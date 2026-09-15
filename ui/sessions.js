@@ -1315,15 +1315,18 @@ async function openRdpSession(name) {
   // codecs work in 2x2 blocks. Laid out by showTab() above.
   const px = (n) => Math.max(640, Math.min(8192, n * devicePixelRatio)) & ~1;
   const percent = () => Math.round(devicePixelRatio * 100);
+  // What the far end was last asked for. The observer below fires once the moment it
+  // starts observing, and the pane is still the size the session was opened at.
+  let asked = [px(host.clientWidth), px(host.clientHeight), percent()];
   try {
     const screen = await invoke("open_rdp_session", {
       id,
       name,
       user: creds.user,
       password: creds.password,
-      width: px(host.clientWidth),
-      height: px(host.clientHeight),
-      scale: percent(),
+      width: asked[0],
+      height: asked[1],
+      scale: asked[2],
       onTile: chan,
     });
     // The server picks the size; asking for one is only a suggestion.
@@ -1340,16 +1343,19 @@ async function openRdpSession(name) {
       // the minimum every time another tab is looked at.
       if (!host.clientWidth || !host.clientHeight) return;
       scale();
+      const want = [px(host.clientWidth), px(host.clientHeight), percent()];
+      if (want.every((n, i) => n === asked[i])) return;
+      asked = want;
       clearTimeout(settle);
       settle = setTimeout(
         () =>
           invoke("rdp_input", {
             id,
             kind: "resize",
-            a: px(host.clientWidth),
-            b: px(host.clientHeight),
+            a: want[0],
+            b: want[1],
             down: false,
-            scale: percent(),
+            scale: want[2],
           }).catch(() => {}),
         400,
       );
