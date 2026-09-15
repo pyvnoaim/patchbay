@@ -14,7 +14,7 @@
         "title": "patchbay",
         "width": 940,
         "height": 620,
-        "minWidth": 560,
+        "minWidth": 640,
         "minHeight": 380,
         "center": true,
         "transparent": true,

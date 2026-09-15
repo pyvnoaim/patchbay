@@ -192,7 +192,7 @@ msgAct.addEventListener("click", () => {
 });
 
 // Every failure the window can't put in a form. A pill, because the detail pane's
-// command box is absent when a folder is selected and gone under 720px.
+// command box is absent when a folder is selected and gone under 960px.
 function alertish(e) {
   flash(String(e), true);
 }
