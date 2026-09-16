@@ -1,10 +1,6 @@
-// `node scripts/notes.mjs 0.1.0` - the CHANGELOG section for one version, as a
-// GITHUB_OUTPUT assignment the release workflow feeds to tauri-action.
-//
-// A step of its own rather than three lines of shell: the body is multi-line, and a
-// multi-line output needs the heredoc form with a delimiter the text can't contain.
+// `node scripts/notes.mjs 0.1.0` - the CHANGELOG section for one version, which the
+// release workflow hands to `gh release create --notes-file`.
 import { readFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
 
 const version = process.argv[2];
 const log = readFileSync("CHANGELOG.md", "utf8");
@@ -22,5 +18,4 @@ if (!notes) {
   process.exit(1);
 }
 
-const end = `EOF_${randomUUID()}`;
-console.log(`notes<<${end}\n${notes}\n${end}`);
+console.log(notes);

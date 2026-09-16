@@ -1,55 +1,113 @@
-# A tag is the whole trigger: `npm run bump`, commit, `git tag v0.1.0`, push.
-# The builds land in a *draft* release and `publish` lets it out once all four have
-# landed, because publishing is the moment every installed copy starts offering the
-# update: a platform that failed to build must not be the one it offers.
+# One run per push. `test` always runs; a push whose last commit is `release x.y.z`
+# (what `npm run bump` tells you to write) also builds all four platforms into a *draft*
+# release, and `publish` lets it out once every install and the tests passed, because
+# publishing is the moment every installed copy starts offering the update: a platform
+# that failed to build must not be the one it offers. The tag is made by publishing, so
+# there is nothing to push but `main`.
+#
+# Builds run on `main`, never on a tag, because a cache saved under a tag is only ever
+# read by that tag: every release used to start cold.
 #
 # Ad-hoc signed on macOS and unsigned on Windows until certificates exist. The
 # APPLE_* variables go on tauri-action's env only then: a missing secret is still an
 # empty variable, and an empty APPLE_CERTIFICATE fails the bundle trying to import it.
-name: release
+name: ci
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  pull_request:
 
-# Creating the draft, uploading to it and publishing it; nothing else.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  # Ten minutes into four runners is a bad time to find out the tag and the config
-  # disagree - and the version in the bundle is the one the updater compares.
-  version:
+  # The app, cargo test. Node is here for scripts/dev.mjs, which is what puts cargo
+  # on PATH and points the tests at a scratch config.
+  test:
     runs-on: ubuntu-latest
-    outputs:
-      notes: ${{ steps.notes.outputs.notes }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # tauri links against the system webview even for `cargo test`.
       - run: |
-          tagged="${GITHUB_REF_NAME#v}"
-          in_config=$(node -p "require('./src-tauri/tauri.conf.json').version")
-          if [ "$tagged" != "$in_config" ]; then
-            echo "tag $GITHUB_REF_NAME says $tagged, tauri.conf.json says $in_config" >&2
-            echo "run: npm run bump $tagged" >&2
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+
+  # Seconds, not minutes into four runners, is when to find out the commit and the
+  # config disagree - the version in the bundle is the one the updater compares. The
+  # draft is made here, once, so the four legs upload into it instead of racing to
+  # make their own.
+  version:
+    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release ')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      MESSAGE: ${{ github.event.head_commit.message }}
+    outputs:
+      tag: ${{ steps.draft.outputs.tag }}
+      id: ${{ steps.draft.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: draft
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          subject=$(printf '%s\n' "$MESSAGE" | head -1)
+          if [ "$subject" != "release $version" ]; then
+            echo "commit says \"$subject\", tauri.conf.json says $version" >&2
+            echo "run: npm run bump" >&2
             exit 1
           fi
-      # CHANGELOG.md is the source: this section becomes the release body, which
-      # becomes the notes in latest.json, which is what the app shows before it
-      # installs anything. Written once, read in three places.
-      - id: notes
-        run: node scripts/notes.mjs "${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "v$version" > /dev/null; then
+            echo "v$version is already released; run: npm run bump" >&2
+            exit 1
+          fi
+          # CHANGELOG.md is the source: this section becomes the release body, which
+          # becomes the notes in latest.json, which is what the app shows before it
+          # installs anything. Written once, read in three places.
+          node scripts/notes.mjs "$version" > notes.md
+          gh release create "v$version" --draft --target "$GITHUB_SHA" \
+            --title "patchbay v$version" --notes-file notes.md
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+            --jq ".[] | select(.draft and .tag_name == \"v$version\") | .id" | head -1)
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
 
   build:
     needs: version
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
+        # Only the bundles someone installs or the updater fetches.
         include:
-          - { os: macos-latest, target: aarch64-apple-darwin, args: --target aarch64-apple-darwin }
-          - { os: macos-latest, target: x86_64-apple-darwin, args: --target x86_64-apple-darwin }
-          - { os: windows-latest, target: "", args: "" }
-          - { os: ubuntu-22.04, target: "", args: "" }
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            args: "--target aarch64-apple-darwin --bundles app,dmg"
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            args: "--target x86_64-apple-darwin --bundles app,dmg"
+          - os: windows-latest
+            target: ""
+            args: "--bundles nsis"
+          - os: ubuntu-22.04
+            target: ""
+            args: "--bundles deb,appimage"
     runs-on: ${{ matrix.os }}
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,9 +124,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable, 2026-09-02
         with:
           targets: ${{ matrix.target }}
+      # Keyed by target: both macOS legs are the same job on the same OS, and
+      # otherwise save over each other.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
+          key: ${{ matrix.target }}
 
       # The tauri CLI is a devDependency; tauri-action runs it but installs nothing.
       - uses: actions/setup-node@v4
@@ -85,11 +146,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: patchbay ${{ github.ref_name }}
-          releaseBody: ${{ needs.version.outputs.notes }}
-          releaseDraft: true
-          prerelease: false
+          releaseId: ${{ needs.version.outputs.id }}
+          # Still needed with the id: a draft's asset urls say `untagged-...`, and
+          # this is what latest.json's urls are rewritten to.
+          tagName: ${{ needs.version.outputs.tag }}
           # The manifest the app fetches. Each runner merges its platform into the
           # one already on the release, so the matrix ends with a single latest.json.
           includeUpdaterJson: true
@@ -110,20 +170,24 @@ jobs:
             while read -r f; do
               plain=$(basename "$f" | sed -E 's/^patchbay_[0-9]+\.[0-9]+\.[0-9]+_/patchbay_/')
               cp "$f" "$plain"
-              gh release upload "$GITHUB_REF_NAME" "$plain" --clobber
+              gh release upload "$TAG" "$plain" --clobber
             done
 
   # The draft's own files, installed the way someone would, before anyone is offered
   # them: a bundle that builds can still be one that won't install or won't open.
   install:
-    needs: build
+    needs: [version, build]
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
+    # A draft is invisible to a token that can't write to the repo.
+    permissions:
+      contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.version.outputs.tag }}
     steps:
       # A bundle whose resources aren't sealed is "damaged" to Gatekeeper once it has
       # been downloaded, with no Open Anyway; --strict is the check that tells them apart.
@@ -131,7 +195,7 @@ jobs:
         run: |
           for pair in aarch64:arm64 x64:x86_64; do
             arch=${pair%:*} want=${pair#*:}
-            gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" -p "patchbay_$arch.dmg"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p "patchbay_$arch.dmg"
             hdiutil attach "patchbay_$arch.dmg" -nobrowse -readonly -mountpoint /Volumes/patchbay
             rm -rf /Applications/patchbay.app
             cp -R /Volumes/patchbay/patchbay.app /Applications/
@@ -143,7 +207,7 @@ jobs:
       - if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY -p patchbay_x64-setup.exe
+          gh release download $env:TAG --repo $env:GITHUB_REPOSITORY -p patchbay_x64-setup.exe
           Start-Process .\patchbay_x64-setup.exe -ArgumentList '/S' -Wait
           if (-not (Test-Path "$env:LOCALAPPDATA\patchbay\patchbay*.exe")) {
             Get-ChildItem $env:LOCALAPPDATA -Recurse -Filter patchbay.exe -ErrorAction SilentlyContinue
@@ -153,7 +217,7 @@ jobs:
       # missing one fails here rather than on someone's desktop.
       - if: runner.os == 'Linux'
         run: |
-          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
             -p patchbay_amd64.deb -p patchbay_amd64.AppImage
           sudo apt-get update
           sudo apt-get install -y ./patchbay_amd64.deb
@@ -162,21 +226,24 @@ jobs:
           ./patchbay_amd64.AppImage --appimage-extract > /dev/null
           test -x squashfs-root/usr/bin/patchbay-app
 
-  # Only after every install passed; one failure leaves the draft for a person.
-  # A draft is not `releases/latest`, so until this runs nothing is offered.
+  # Only after every install and the tests passed; one failure leaves the draft for a
+  # person. A draft is not `releases/latest`, so until this runs nothing is offered.
   publish:
-    needs: install
+    needs: [version, install, test]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.version.outputs.tag }}
     steps:
       # Each build leg merges its platform into latest.json; one that signed nothing
       # leaves a platform the updater would answer with an error.
       - run: |
-          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" -p latest.json
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p latest.json
           node -e '
             const p = require("./latest.json").platforms ?? {};
             const want = ["darwin-aarch64", "darwin-x86_64", "windows-x86_64", "linux-x86_64"];
             const bad = want.filter((k) => !p[k]?.signature || !p[k]?.url);
             if (bad.length) { console.error("latest.json has no signed " + bad.join(", ")); process.exit(1); }'
-      - run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+      - run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest

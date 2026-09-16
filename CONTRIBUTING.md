@@ -3,7 +3,7 @@
 ## Setup
 
 You need Node 22+ and Rust (`rustup`), plus the platform packages Tauri needs on
-Linux (see `.github/workflows/test.yml` for the list).
+Linux (see `.github/workflows/ci.yml` for the list).
 
 ```sh
 npm ci

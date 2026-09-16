@@ -1,5 +1,5 @@
-// `npm run bump [0.1.0]`: the version lives in four files, and the release workflow refuses a
-// tag that disagrees with tauri.conf.json. Targeted line rewrites, so nothing else is reformatted.
+// `npm run bump [0.1.0]`: the version lives in four files, and CI refuses a `release x.y.z`
+// commit that disagrees with tauri.conf.json. Targeted line rewrites, so nothing else is reformatted.
 // No version is the next patch, because every push is a release.
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -38,6 +38,4 @@ if (!heading.test(log)) {
 const today = new Date().toISOString().slice(0, 10);
 writeFileSync("CHANGELOG.md", log.replace(heading, `## ${version} - ${today}`));
 
-console.log(
-  `${version}\n\n  git commit -am "release ${version}" && git tag v${version} && git push origin main v${version}`,
-);
+console.log(`${version}\n\n  git commit -am "release ${version}" && git push origin main`);
