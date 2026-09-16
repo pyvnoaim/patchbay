@@ -1,5 +1,5 @@
 # One run per push. `test` always runs; a push whose last commit is `release x.y.z`
-# (what `npm run bump` tells you to write) also builds all four platforms into a *draft*
+# (what `npm run bump` tells you to write) also builds macOS (both archs) and Linux into a *draft*
 # release, and `publish` lets it out once every install and the tests passed, because
 # publishing is the moment every installed copy starts offering the update: a platform
 # that failed to build must not be the one it offers. The tag is made by publishing, so
@@ -94,6 +94,9 @@ jobs:
       fail-fast: false
       matrix:
         # Only the bundles someone installs or the updater fetches.
+        # ponytail: Windows is off for now; to bring it back, restore
+        # `{ os: windows-latest, target: "", args: "--bundles nsis" }` here, in `install`
+        # and in `publish`'s list.
         include:
           - os: macos-latest
             target: aarch64-apple-darwin
@@ -101,9 +104,6 @@ jobs:
           - os: macos-latest
             target: x86_64-apple-darwin
             args: "--target x86_64-apple-darwin --bundles app,dmg"
-          - os: windows-latest
-            target: ""
-            args: "--bundles nsis"
           - os: ubuntu-22.04
             target: ""
             args: "--bundles deb,appimage"
@@ -182,7 +182,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-22.04]
+        os: [macos-latest, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     # A draft is invisible to a token that can't write to the repo.
     permissions:
@@ -245,7 +245,7 @@ jobs:
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p latest.json
           node -e '
             const p = require("./latest.json").platforms ?? {};
-            const want = ["darwin-aarch64", "darwin-x86_64", "windows-x86_64", "linux-x86_64"];
+            const want = ["darwin-aarch64", "darwin-x86_64", "linux-x86_64"];
             const bad = want.filter((k) => !p[k]?.signature || !p[k]?.url);
             if (bad.length) { console.error("latest.json has no signed " + bad.join(", ")); process.exit(1); }'
       - run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
