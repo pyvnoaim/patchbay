@@ -22,13 +22,19 @@ pub struct Entry {
 }
 
 /// One control socket per jack. A stale one is harmless: ssh only reuses a socket a
-/// live master still answers on.
+/// live master still answers on. The name is hashed to a fixed length: a socket path
+/// caps at 104 bytes on macOS, `$TMPDIR` there is already ~50, and ssh adds 17 more
+/// while it sets the socket up - a long device name made every session exit 255.
+/// `$XDG_RUNTIME_DIR` first: Linux's temp dir is the shared `/tmp`, where another user
+/// could put a socket at this predictable name before ours and have ssh talk to it.
 pub fn control_path(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "patchbay-sftp-{}-{}",
-        std::process::id(),
-        safe_name(name)
-    ))
+    use std::hash::{Hash, Hasher};
+    let mut h = std::hash::DefaultHasher::new();
+    name.hash(&mut h);
+    std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join(format!("pb-{}-{:016x}", std::process::id(), h.finish()))
 }
 
 /// A jack's name as one path segment; it comes from a file someone else may have written.
@@ -314,6 +320,14 @@ pub fn put(name: &str, local: &Path, remote_dir: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_long_device_name_still_fits_a_socket_path() {
+        let long = control_path(&"SRV-Kerio (Ubuntu) ".repeat(20));
+        let short = control_path("a");
+        assert_eq!(long.as_os_str().len(), short.as_os_str().len());
+        assert_ne!(long, short);
+    }
 
     #[test]
     fn a_listing_line_becomes_an_entry_and_junk_is_skipped() {
