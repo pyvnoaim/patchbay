@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.8 - 2026-09-16
 
 - Settings ▸ Team has New… to start a shared list in a folder and Open… to join one.
 - Shorter text in Settings ▸ Team and Bitwarden.
