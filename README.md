@@ -21,8 +21,28 @@ and passwords never come across.
 
 ## Install
 
-Download it from [Releases](https://github.com/pyvnoaim/patchbay/releases) - macOS,
-Linux and Windows.
+Download it from [Releases](https://github.com/pyvnoaim/patchbay/releases) - macOS and
+Linux. There is no Windows build for now; `npm run build` makes one from source.
+
+Or from a terminal, which lands in the same place and updates itself from then on:
+
+```sh
+# macOS, Apple Silicon
+curl -fsSL https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_aarch64.app.tar.gz | tar -xzC /Applications
+
+# macOS, Intel
+curl -fsSL https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_x64.app.tar.gz | tar -xzC /Applications
+
+# Linux, Debian/Ubuntu
+curl -fsSLo /tmp/patchbay.deb https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_amd64.deb && sudo apt install /tmp/patchbay.deb
+
+# Linux, anything else
+mkdir -p ~/.local/bin && curl -fsSLo ~/.local/bin/patchbay https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_amd64.AppImage && chmod +x ~/.local/bin/patchbay
+```
+
+The app isn't notarized, so a `.dmg` from the browser is refused on first launch: open
+it once, then System Settings → Privacy & Security → Open Anyway. The `curl` line above
+skips that, because a browser marks what it downloads as quarantined and `curl` doesn't.
 
 You need an `ssh` on your PATH. On Windows that means the OpenSSH Client, which ships
 with Windows 10/11 - if it's missing, enable it under Settings → Apps → Optional
