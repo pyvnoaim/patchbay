@@ -1074,7 +1074,8 @@ async function openSettings(pane) {
   }
   resetSources();
   showPane(pane);
-  $("pick-list").innerHTML = `${icon("folder-open")}Choose…`;
+  $("new-list").innerHTML = `${icon("folder-plus")}New…`;
+  $("pick-list").innerHTML = `${icon("folder-open")}Open…`;
   // Hidden rather than disabled where the OS can't host one at all: a pane that
   // could only ever say no is a pane not worth a row in the list.
   invoke("webext_supported")
@@ -1196,14 +1197,16 @@ setForm.elements.webext.addEventListener("change", sayWebext);
 
 // The picker answers with null when it is cancelled, which must not clear a path
 // somebody typed.
-$("pick-list").addEventListener("click", async () => {
+async function pickList(folder) {
   try {
-    const path = await invoke("pick_list_file");
+    const path = await invoke("pick_list_file", { folder });
     if (path) setForm.elements.list.value = path;
   } catch (err) {
     alertish(err);
   }
-});
+}
+$("new-list").addEventListener("click", () => pickList(true));
+$("pick-list").addEventListener("click", () => pickList(false));
 $("page-openconfig").addEventListener("click", () => invoke("open_config").catch(alertish));
 $("page-checkupdate").addEventListener("click", () => checkUpdates($("update-said")));
 setWrap.addEventListener("mousedown", (e) => {

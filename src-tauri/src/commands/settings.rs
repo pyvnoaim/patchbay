@@ -182,23 +182,34 @@ pub fn config_path() -> Paths {
     }
 }
 
-/// The OS file picker, for naming a shared list without typing a share's path. Returns
-/// `None` when the panel is cancelled, which is an answer rather than a failure.
+/// The OS picker, for naming a shared list without typing a share's path. Whoever
+/// starts the list has no file to pick yet, so `folder` asks for a folder and answers
+/// `patchbay.toml` in it, which `save_settings` seeds; everyone after picks the file.
+/// No panel here takes both, and a save panel would ask the next person whether to
+/// "replace" a list that is only going to be read. Returns `None` when the panel is
+/// cancelled, which is an answer rather than a failure.
 ///
-/// `blocking_pick_file` must not run on the main thread, and a command doesn't: it is
+/// The blocking pickers must not run on the main thread, and a command doesn't: it is
 /// the runtime's, which is exactly what this needs.
 #[tauri::command]
-pub async fn pick_list_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+pub async fn pick_list_file(app: tauri::AppHandle, folder: bool) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt as _;
     blocking(move || {
-        Ok(app
-            .dialog()
-            .file()
-            .add_filter("patchbay list", &["toml"])
-            .set_title("Choose a shared list")
-            .blocking_pick_file()
-            .and_then(|p| p.into_path().ok())
-            .map(|p| p.display().to_string()))
+        let panel = app.dialog().file();
+        let picked = if folder {
+            panel
+                .set_title("Choose a folder for the new list")
+                .blocking_pick_folder()
+                .and_then(|p| p.into_path().ok())
+                .map(|p| p.join("patchbay.toml"))
+        } else {
+            panel
+                .add_filter("patchbay list", &["toml"])
+                .set_title("Choose a shared list")
+                .blocking_pick_file()
+                .and_then(|p| p.into_path().ok())
+        };
+        Ok(picked.map(|p| p.display().to_string()))
     })
     .await
 }

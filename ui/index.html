@@ -261,20 +261,16 @@
 
             <section class="pane" data-pane="team" hidden>
               <div class="d-sec">One shared list</div>
-              <p class="page-note">
-                Point this at a file in a folder you already share and everyone sees the same
-                devices and folder notes. It holds no passwords.
-              </p>
               <div class="f-pick">
                 <label class="f"
                   ><span>Shared list</span
                   ><input name="list" spellcheck="false" placeholder="/Volumes/team/patchbay.toml"
                 /></label>
+                <button type="button" class="ghost" id="new-list"></button>
                 <button type="button" class="ghost" id="pick-list"></button>
               </div>
               <p class="page-note">
-                Empty is just this machine. A new path is seeded with what you have now, and
-                clearing it brings your own devices back. Whoever can write the file can edit it.
+                New… starts a list in a shared folder, Open… joins one. Holds no passwords.
               </p>
               <p class="page-note" id="team-own" hidden></p>
             </section>
@@ -330,17 +326,11 @@
 
             <section class="pane" data-pane="webext" hidden>
               <div class="d-sec">Bitwarden</div>
-              <p class="page-note">
-                Fills a device's login with Bitwarden's own extension, from the Bitwarden for Mac
-                you already have. You sign in to Bitwarden itself; patchbay never sees your vault or
-                your master password.
-              </p>
               <label class="opt"
                 ><input type="checkbox" name="webext" />
                 <span
-                  ><b>Fill logins with Bitwarden</b> A key appears on each web tab: click it to
-                  fill, right-click it to open Bitwarden. The key beside Search opens your vault on
-                  its own, for a password to read rather than fill.</span
+                  ><b>Fill logins with Bitwarden</b> Uses your installed Bitwarden. patchbay never
+                  sees your vault.</span
                 ></label
               >
               <p class="space-note" id="webext-said"></p>
