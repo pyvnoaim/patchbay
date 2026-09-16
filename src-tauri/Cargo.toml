@@ -119,7 +119,9 @@ too_many_arguments = "allow"
 
 [profile.release]
 opt-level = "s"
-lto = true
+# ponytail: thin, not fat, and parallel codegen - a fat single-unit link redoes the
+# whole program every release even on a warm cache, and CI has five minutes. Fat and
+# one unit shave the binary a little further if size ever matters more than that.
+lto = "thin"
 strip = true
-codegen-units = 1
 panic = "abort"
