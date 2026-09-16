@@ -28,16 +28,16 @@ Or from a terminal, which lands in the same place and updates itself from then o
 
 ```sh
 # macOS, Apple Silicon
-curl -fsSL https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_aarch64.app.tar.gz | tar -xzC /Applications
+curl -fsSLo /tmp/patchbay.app.tar.gz https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_aarch64.app.tar.gz && tar -xzf /tmp/patchbay.app.tar.gz -C /Applications && open /Applications/patchbay.app
 
 # macOS, Intel
-curl -fsSL https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_x64.app.tar.gz | tar -xzC /Applications
+curl -fsSLo /tmp/patchbay.app.tar.gz https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_x64.app.tar.gz && tar -xzf /tmp/patchbay.app.tar.gz -C /Applications && open /Applications/patchbay.app
 
 # Linux, Debian/Ubuntu
 curl -fsSLo /tmp/patchbay.deb https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_amd64.deb && sudo apt install /tmp/patchbay.deb
 
 # Linux, anything else
-mkdir -p ~/.local/bin && curl -fsSLo ~/.local/bin/patchbay https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_amd64.AppImage && chmod +x ~/.local/bin/patchbay
+mkdir -p ~/.local/bin && curl -fsSLo ~/.local/bin/patchbay https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_amd64.AppImage && chmod +x ~/.local/bin/patchbay && echo "installed: ~/.local/bin/patchbay"
 ```
 
 The app isn't notarized, so a `.dmg` from the browser is refused on first launch: open
