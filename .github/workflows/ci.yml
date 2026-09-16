@@ -27,8 +27,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       # tauri links against the system webview even for `cargo test`.
@@ -59,7 +59,7 @@ jobs:
       tag: ${{ steps.draft.outputs.tag }}
       id: ${{ steps.draft.outputs.id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: draft
         run: |
           version=$(node -p "require('./src-tauri/tauri.conf.json').version")
@@ -111,7 +111,7 @@ jobs:
     env:
       TAG: ${{ needs.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Everything tauri links against on Linux. The webview is the system's here.
       - if: matrix.os == 'ubuntu-22.04'
@@ -134,7 +134,7 @@ jobs:
           key: ${{ matrix.target }}
 
       # The tauri CLI is a devDependency; tauri-action runs it but installs nothing.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       - run: npm ci
