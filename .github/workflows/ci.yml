@@ -77,10 +77,12 @@ jobs:
           # becomes the notes in latest.json, which is what the app shows before it
           # installs anything. Written once, read in three places.
           node scripts/notes.mjs "$version" > notes.md
-          gh release create "v$version" --draft --target "$GITHUB_SHA" \
-            --title "patchbay v$version" --notes-file notes.md
-          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
-            --jq ".[] | select(.draft and .tag_name == \"v$version\") | .id" | head -1)
+          # The id from the create itself: the release list lags a new draft by
+          # seconds, and an empty id sends every leg off to make a release of its own.
+          id=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
+            -f tag_name="v$version" -f target_commitish="$GITHUB_SHA" \
+            -f name="patchbay v$version" -F draft=true -F body=@notes.md --jq .id)
+          test -n "$id"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
           echo "id=$id" >> "$GITHUB_OUTPUT"
 
