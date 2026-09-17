@@ -8,6 +8,15 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Trusting a device's certificate now survives its firmware update: the appliance's own signing certificate is trusted, not the one it replaces on every update. The sheet says when that is what you are trusting.
+- A web tab that stays blank now says so even for a device you have already trusted, instead of sitting empty.
+- A folder can lend its devices a user, port, key and jump host, so a customer's bastion is written once instead of on every device behind it. Select the folder to set them.
+- Wake on LAN: give a device a `mac` and its pane has a Wake button.
+- Search and the palette match a device's url as well as its host.
+- A device's pane names the folders it is in, and marks a user, port, key or jump host it inherited rather than set itself.
+
 ## 0.1.9 - 2026-09-16
 
 - A device with a long name connects again on macOS instead of exiting with a socket error.
