@@ -441,11 +441,14 @@ struct CertFacts {
     expires: String,
     /// SHA-256 over the DER, the digest every other tool prints.
     fingerprint: String,
+    /// The device's own signing certificate rather than the one it is serving today.
+    /// The window says so before asking: it is a wider answer than one certificate.
+    ca: bool,
 }
 
-/// A device's leaf certificate, fetched without judging it. The OS does the judging,
-/// and it can't judge what it hasn't been shown.
-fn peer_cert(url: &str) -> Result<(String, Vec<u8>), String> {
+/// The certificate a device should be trusted by, fetched without judging it. The OS
+/// does the judging, and it can't judge what it hasn't been shown.
+fn peer_cert(url: &str) -> Result<(String, Vec<u8>, bool), String> {
     use std::io::Write as _;
     use std::net::ToSocketAddrs as _;
     use tokio_rustls::rustls;
@@ -481,16 +484,54 @@ fn peer_cert(url: &str) -> Result<(String, Vec<u8>), String> {
     // The handshake hasn't reached the peer certificate until something is flushed.
     tls.flush().map_err(|e| format!("{host}: {e}"))?;
 
-    let der = tls
+    let chain: Vec<Vec<u8>> = tls
         .conn
         .peer_certificates()
-        .and_then(|c| c.first())
-        .map(|c| c.as_ref().to_vec())
-        .ok_or_else(|| format!("\"{host}\" sent no certificate"))?;
-    Ok((host, der))
+        .map(|c| c.iter().map(|c| c.as_ref().to_vec()).collect())
+        .unwrap_or_default();
+    let (der, ca) = anchor(chain).ok_or_else(|| format!("\"{host}\" sent no certificate"))?;
+    Ok((host, der, ca))
 }
 
-fn cert_facts(der: &[u8]) -> Result<CertFacts, String> {
+/// Which certificate of a chain is the one worth trusting, and whether that is the
+/// device's signer rather than the certificate it is serving.
+///
+/// The appliance's own CA rather than its leaf: a NAS regenerates the leaf on a
+/// firmware update, and trust pinned to that leaf dies with it - the tab blanks and the
+/// panel asks about a device already answered for. Only a *self-signed* tail counts,
+/// which is the appliance's own root and never a public CA's intermediate: `-s <host>`
+/// scopes the trust to this device, but a public intermediate has no business in
+/// anyone's keychain. Anything else is trusted as the leaf it is, as before.
+///
+/// macOS only, because that scoping is: Windows' `certutil -addstore Root` has no
+/// per-host policy, so a CA landing there could sign for anything. And the chain has to
+/// link - the tail is the signer of what the device is serving, or it is something the
+/// device appended and has no more claim on the keychain than any other stranger.
+fn anchor(chain: Vec<Vec<u8>>) -> Option<(Vec<u8>, bool)> {
+    use x509_cert::der::Decode as _;
+    let parsed: Vec<_> = chain
+        .iter()
+        .map(|d| x509_cert::Certificate::from_der(d).ok())
+        .collect();
+    let signed_by = |pair: &[Option<x509_cert::Certificate>]| match (&pair[0], &pair[1]) {
+        (Some(c), Some(up)) => c.tbs_certificate.issuer == up.tbs_certificate.subject,
+        _ => false,
+    };
+    let signs_itself = parsed.last().is_some_and(|c| {
+        c.as_ref()
+            .is_some_and(|c| c.tbs_certificate.subject == c.tbs_certificate.issuer)
+    });
+    let own_ca = cfg!(target_os = "macos")
+        && chain.len() > 1
+        && signs_itself
+        && parsed.windows(2).all(signed_by);
+    match own_ca {
+        true => chain.last().cloned().map(|tail| (tail, true)),
+        false => chain.into_iter().next().map(|leaf| (leaf, false)),
+    }
+}
+
+fn cert_facts(der: &[u8], ca: bool) -> Result<CertFacts, String> {
     use x509_cert::der::Decode as _;
     let c = x509_cert::Certificate::from_der(der).map_err(|e| e.to_string())?;
     let mut h = <sha2::Sha256 as sha2::Digest>::new();
@@ -505,6 +546,7 @@ fn cert_facts(der: &[u8]) -> Result<CertFacts, String> {
         issuer: c.tbs_certificate.issuer.to_string(),
         expires: c.tbs_certificate.validity.not_after.to_string(),
         fingerprint,
+        ca,
     })
 }
 
@@ -516,8 +558,8 @@ pub async fn web_cert(url: String) -> Result<serde_json::Value, String> {
         return Err(NOT_WEB.into());
     }
     blocking(move || {
-        let (_, der) = peer_cert(&url)?;
-        serde_json::to_value(cert_facts(&der)?).map_err(|e| e.to_string())
+        let (_, der, ca) = peer_cert(&url)?;
+        serde_json::to_value(cert_facts(&der, ca)?).map_err(|e| e.to_string())
     })
     .await
 }
@@ -529,7 +571,7 @@ pub async fn web_trust_cert(url: String) -> Result<(), String> {
         return Err(NOT_WEB.into());
     }
     blocking(move || {
-        let (host, der) = peer_cert(&url)?;
+        let (host, der, _) = peer_cert(&url)?;
         trust_cert(&host, &der)?;
         // Our own check still refuses a mismatched name, so record the waiver too or
         // the panel comes straight back for a page that now loads.
@@ -640,6 +682,21 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&store).unwrap().lines().count(), 1);
         // A different port is a different certificate.
         assert!(!web_trusted_at(&store, "https://192.168.1.20:5000/"));
+    }
+
+    #[test]
+    fn only_a_self_signed_tail_is_trusted_over_the_leaf() {
+        let leaf = b"leaf".to_vec();
+        let issuer = b"issuer".to_vec();
+        // Nothing that can't be read as a self-signed certificate that signed the one
+        // below it takes the leaf's place - every public CA's intermediate, a tail the
+        // device just appended, and this junk.
+        assert_eq!(
+            anchor(vec![leaf.clone(), issuer]),
+            Some((leaf.clone(), false))
+        );
+        assert_eq!(anchor(vec![leaf.clone()]), Some((leaf, false)));
+        assert_eq!(anchor(vec![]), None);
     }
 
     #[test]

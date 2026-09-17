@@ -426,6 +426,11 @@ const WEB_PATIENCE = 5000;
 // and let `web-load` cancel it.
 function armWebCheck(s, url) {
   clearTimeout(s.checkTimer);
+  s.painted = false;
+  // The page this tab is waiting on. A check for the one before it is still in flight
+  // on a redirect, and its answer would otherwise take this one's timer and then
+  // explain the wrong url - which is the url the panel's Trust button fetches.
+  s.checkUrl = url;
   s.checkTimer = setTimeout(() => checkWeb(s, url), WEB_PATIENCE);
 }
 
@@ -433,6 +438,9 @@ function armWebCheck(s, url) {
 // panel already up: a slow device that beat the timer must not keep the apology.
 function webLoaded(s) {
   clearTimeout(s.checkTimer);
+  // A check still in flight resolves after this and would arm the silence timer over a
+  // page that is up; it reads this rather than a timer that has already fired.
+  s.painted = true;
   if (!s.failed) return;
   s.failed = s.failedUrl = null;
   s.dead = false;
@@ -441,15 +449,39 @@ function webLoaded(s) {
   placeWebViews();
 }
 
+// How much longer a page gets when the check found nothing to explain. Its own
+// certificate was waived here once, so `web_check` answers instantly and says fine
+// about a page the webview is refusing - which is what a device updated since looks
+// like, because the certificate trusted then is not the one it serves now.
+const WEB_SILENCE = 10000;
+
 function checkWeb(s, url) {
-  invoke("web_check", { url }).catch((e) => {
-    if (!sessions.has(s.id) || s.failed) return;
-    s.dead = true;
-    s.failed = String(e);
-    s.failedUrl = url;
-    renderTabs();
-    showWebFailure(s);
-  });
+  invoke("web_check", { url }).then(
+    () => {
+      if (s.checkUrl !== url || s.painted) return;
+      s.checkTimer = setTimeout(
+        () =>
+          webFailed(
+            s,
+            url,
+            `"${url}" opened nothing and gave no reason - if the device has been ` +
+              `updated or rebuilt since you trusted it, it is serving a new certificate ` +
+              `this machine doesn't trust yet`,
+          ),
+        WEB_SILENCE,
+      );
+    },
+    (e) => webFailed(s, url, String(e)),
+  );
+}
+
+function webFailed(s, url, why) {
+  if (!sessions.has(s.id) || s.failed || s.painted || s.checkUrl !== url) return;
+  s.dead = true;
+  s.failed = why;
+  s.failedUrl = url;
+  renderTabs();
+  showWebFailure(s);
 }
 
 // Our own panel takes the pane; the webview is shrunk away by placeWebViews().
@@ -498,8 +530,15 @@ termsEl.addEventListener("click", async (e) => {
       // Show the certificate before asking: it was fetched over an unverified
       // connection, so this is the moment a man in the middle would be trusted.
       const c = await invoke("web_cert", { url: cert.dataset.webCert });
+      // What is trusted is the device's own signer when it sent one, so that a
+      // certificate it renews on an update is still trusted. Say so: it is a wider
+      // answer than the one certificate the page is serving today.
+      const scope = c.ca
+        ? `This is the device's own signing certificate, not the one it is serving ` +
+          `today - trusting it covers the certificates it issues for this device.\n\n`
+        : "";
       const ok = await ask(
-        `Trust this certificate?\n\n${c.subject}\nissued by ${c.issuer}\n` +
+        `Trust this certificate?\n\n${scope}${c.subject}\nissued by ${c.issuer}\n` +
           `expires ${c.expires}\nSHA-256 ${c.fingerprint}`,
         null,
         "Trust it",
