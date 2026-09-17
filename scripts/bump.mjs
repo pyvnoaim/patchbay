@@ -35,7 +35,12 @@ if (!heading.test(log)) {
   console.error("CHANGELOG.md has no `## Unreleased` section to release");
   process.exit(1);
 }
-const today = new Date().toISOString().slice(0, 10);
+// The local date: `toISOString` is UTC, so a release cut after midnight anywhere east
+// of it was dated yesterday.
+const now = new Date();
+const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+  now.getDate(),
+).padStart(2, "0")}`;
 writeFileSync("CHANGELOG.md", log.replace(heading, `## ${version} - ${today}`));
 
 console.log(`${version}\n\n  git commit -am "release ${version}" && git push origin main`);
