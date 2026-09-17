@@ -5,7 +5,7 @@
 use crate::patchbay;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use toml_edit::{value, Array, DocumentMut, Item, Table};
+use toml_edit::{value, Array, DocumentMut, Item, Table, Value};
 
 #[derive(Debug, Deserialize)]
 pub struct JackInput {
@@ -22,6 +22,7 @@ pub struct JackInput {
     pub ssh: Option<bool>,
     pub primary: Option<String>,
     pub desc: Option<String>,
+    pub mac: Option<String>,
     #[serde(default)]
     pub folders: Vec<String>,
     #[serde(default)]
@@ -394,6 +395,9 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     for f in &j.forward {
         patchbay::forward_arg(f)?;
     }
+    if let Some(m) = j.mac.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
+        patchbay::magic_packet(m)?;
+    }
 
     let (mut doc, was) = read_doc(path)?;
     let jacks = jack_table(&mut doc)?;
@@ -425,6 +429,7 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     set_str(t, "url", j.url.as_deref());
     set_str(t, "primary", j.primary.as_deref());
     set_str(t, "desc", j.desc.as_deref());
+    set_str(t, "mac", j.mac.as_deref());
     set_arr(t, "folders", &j.folders);
     set_arr(t, "forward", &j.forward);
     // Only written when false, to keep configs uncluttered.
@@ -476,6 +481,56 @@ pub fn set_note_at(
                 .ok_or("`folder` in that file is not a table")?;
             table[path]["note"] = value(note.trim());
         }
+    }
+    write_doc(file, &doc, was.as_deref())
+}
+
+/// Set or clear what a folder lends its devices. Its note is not touched: the sheet and
+/// the pane write different keys of the same table, and each leaves the other's alone.
+/// A folder with nothing left to say loses its table, as a cleared note does.
+pub fn set_folder_defaults_at(
+    file: &Path,
+    folder: &str,
+    d: &patchbay::Folder,
+    stamp: Option<&str>,
+) -> Result<(), String> {
+    let path = folder.trim().trim_matches('/');
+    if path.is_empty() {
+        return Err("settings belong to a folder".into());
+    }
+    let (mut doc, was) = read_doc(file)?;
+    stale(path, stamp, doc.get("folder").and_then(|f| f.get(path)))?;
+
+    let table = doc
+        .entry("folder")
+        .or_insert_with(|| {
+            let mut t = Table::new();
+            t.set_implicit(true);
+            Item::Table(t)
+        })
+        .as_table_mut()
+        .ok_or("`folder` in that file is not a table")?;
+    // The same indexing `set_note_at` writes a note with, so the two land in one table
+    // however toml_edit chose to shape it.
+    let t = &mut table[path];
+    let lend = |t: &mut Item, k: &str, v: Option<Value>| match v {
+        Some(v) => t[k] = Item::Value(v),
+        None => {
+            if let Some(table) = t.as_table_like_mut() {
+                table.remove(k);
+            }
+        }
+    };
+    let text = |s: Option<&str>| s.map(str::trim).filter(|s| !s.is_empty()).map(Value::from);
+    lend(t, "user", text(d.user.as_deref()));
+    lend(t, "key", text(d.key.as_deref()));
+    lend(t, "jump", text(d.jump.as_deref()));
+    lend(t, "port", d.port.map(|p| Value::from(i64::from(p))));
+    if t.as_table_like().is_some_and(|t| t.is_empty()) {
+        table.remove(path);
+    }
+    if table.is_empty() {
+        doc.remove("folder");
     }
     write_doc(file, &doc, was.as_deref())
 }
@@ -1027,6 +1082,12 @@ folders = ["prod/eu/web"]
     fn read(p: &Path) -> String {
         std::fs::read_to_string(p).unwrap()
     }
+    fn note(src: &str, path: &str) -> String {
+        patchbay::folders(src)
+            .get(path)
+            .and_then(|f| f.note.clone())
+            .unwrap_or_default()
+    }
     fn input(name: &str, host: &str) -> JackInput {
         JackInput {
             name: name.into(),
@@ -1042,6 +1103,7 @@ folders = ["prod/eu/web"]
             ssh: None,
             primary: None,
             desc: None,
+            mac: None,
             folders: vec![],
             forward: vec![],
             stamp: None,
@@ -1277,7 +1339,7 @@ folders = ["prod/eu/web"]
         .unwrap();
 
         assert_eq!(fold_spaces_at(&cfg).unwrap(), 3);
-        let jacks = patchbay::parse(&read(&cfg)).unwrap();
+        let jacks = patchbay::parse_all(&read(&cfg)).unwrap().0;
         assert_eq!(jacks.len(), 4);
         assert!(read(&cfg).contains("# mine"), "the file was re-serialized");
 
@@ -1315,6 +1377,47 @@ folders = ["prod/eu/web"]
     }
 
     #[test]
+    fn what_a_folder_lends_is_written_beside_its_note_and_reaches_the_devices() {
+        let p = scratch("folderdefaults");
+        std::fs::write(
+            &p,
+            "[jack.db]\nhost = \"10.0.0.5\"\nfolders = [\"acme/prod\"]\n",
+        )
+        .unwrap();
+        set_note_at(&p, "acme", "the bastion is theirs, not ours", None).unwrap();
+        set_folder_defaults_at(
+            &p,
+            "acme",
+            &patchbay::Folder {
+                jump: Some("acme-gw".into()),
+                port: Some(2222),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+
+        let jacks = patchbay::parse_all(&read(&p)).unwrap().0;
+        assert_eq!(jacks["db"].jump.as_deref(), Some("acme-gw"));
+        assert_eq!(jacks["db"].port, Some(2222));
+        assert_eq!(
+            note(&read(&p), "acme"),
+            "the bastion is theirs, not ours",
+            "the note and the settings share one table"
+        );
+
+        // Cleared one at a time; the note is still nobody else's business.
+        set_folder_defaults_at(&p, "acme", &patchbay::Folder::default(), None).unwrap();
+        assert_eq!(patchbay::parse_all(&read(&p)).unwrap().0["db"].jump, None);
+        assert_eq!(note(&read(&p), "acme"), "the bastion is theirs, not ours");
+        set_note_at(&p, "acme", "", None).unwrap();
+        assert!(
+            !read(&p).contains("[folder"),
+            "an empty table was left behind"
+        );
+    }
+
+    #[test]
     fn a_folder_note_survives_a_rename_and_goes_with_a_delete() {
         let p = scratch("notes");
         set_note_at(
@@ -1325,21 +1428,21 @@ folders = ["prod/eu/web"]
         )
         .unwrap();
         assert_eq!(
-            patchbay::notes(&read(&p))["prod/eu"],
+            note(&read(&p), "prod/eu"),
             "the recovery key is in the safe\nask Anna first",
             "a note has to survive a round trip with its line breaks"
         );
 
         rename_group_at(&p, "prod/eu", "prod/emea").unwrap();
-        let after = patchbay::notes(&read(&p));
+        let after = read(&p);
         assert!(
-            after.contains_key("prod/emea"),
+            !note(&after, "prod/emea").is_empty(),
             "the note was orphaned by a rename"
         );
-        assert!(!after.contains_key("prod/eu"));
+        assert!(note(&after, "prod/eu").is_empty());
 
         delete_group_at(&p, "prod/emea").unwrap();
-        assert!(patchbay::notes(&read(&p)).is_empty());
+        assert!(patchbay::folders(&read(&p)).is_empty());
         assert!(
             !read(&p).contains("[folder"),
             "an empty table was left behind"
@@ -1348,7 +1451,7 @@ folders = ["prod/eu/web"]
         // A blank note is a removal.
         set_note_at(&p, "prod", "x", None).unwrap();
         set_note_at(&p, "prod", "  ", None).unwrap();
-        assert!(patchbay::notes(&read(&p)).is_empty());
+        assert!(patchbay::folders(&read(&p)).is_empty());
         assert!(
             read(&p).contains("keep this comment"),
             "the file was re-serialized"
@@ -1681,7 +1784,7 @@ folders = ["prod/eu/web"]
         let mine = stamps_at(&p, "folder")["prod"].clone();
         set_note_at(&p, "prod", "theirs", None).unwrap();
         assert!(set_note_at(&p, "prod", "mine again", Some(&mine)).is_err());
-        assert!(patchbay::notes(&read(&p))["prod"] == "theirs");
+        assert!(note(&read(&p), "prod") == "theirs");
         std::fs::remove_file(&p).unwrap();
     }
 

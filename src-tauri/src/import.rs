@@ -676,13 +676,14 @@ Match host *.internal
 
     #[test]
     fn a_jack_comes_out_as_the_host_block_ssh_would_have_wanted() {
-        let jacks = patchbay::parse(
+        let jacks = patchbay::parse_all(
             "[jack.bastion]\nhost = \"bastion.example\"\nport = 2222\n\n\
              [jack.db]\nhost = \"db.internal\"\nuser = \"deploy\"\njump = \"bastion\"\n\
              key = \"~/.ssh/prod\"\nforward = [\"5432:localhost:5432\", \"-D 1080\"]\n\n\
              [jack.nas]\nhost = \"10.0.0.9\"\nssh = false\nurl = \"https://10.0.0.9\"\n",
         )
-        .unwrap();
+        .unwrap()
+        .0;
         let out = to_ssh_config(&jacks, &HashSet::new());
 
         assert!(out.contains("Host db\n"), "{out}");
@@ -702,9 +703,11 @@ Match host *.internal
 
     #[test]
     fn a_name_their_own_config_defines_is_left_to_them() {
-        let jacks =
-            patchbay::parse("[jack.web]\nhost = \"10.0.0.4\"\n[jack.db]\nhost = \"10.0.0.5\"\n")
-                .unwrap();
+        let jacks = patchbay::parse_all(
+            "[jack.web]\nhost = \"10.0.0.4\"\n[jack.db]\nhost = \"10.0.0.5\"\n",
+        )
+        .unwrap()
+        .0;
         let theirs =
             host_names("Host web\n  HostName elsewhere\nHost *\n  ServerAliveInterval 60\n");
         assert!(theirs.contains("web"));
@@ -732,10 +735,11 @@ Match host *.internal
         assert_eq!(ssh_value("  "), None);
 
         // End to end: the hostile jack goes, the one beside it stays.
-        let jacks = patchbay::parse(
+        let jacks = patchbay::parse_all(
             "[jack.ok]\nhost = \"10.0.0.4\"\n[jack.sneaky]\nhost = \"h\\nProxyCommand id\"\n",
         )
-        .unwrap();
+        .unwrap()
+        .0;
         let out = to_ssh_config(&jacks, &HashSet::new());
         assert!(!out.contains("ProxyCommand"), "{out}");
         assert!(out.contains("Host ok\n"), "{out}");

@@ -88,7 +88,8 @@ let editStamp = null; // the table as it was when the sheet opened, sent back wi
 // A new empty folder, held until a device lands in it. Dropped on reload.
 let pending = new Map(); // gkey -> { path }
 let notes = new Map(); // folder path -> the note hung on it
-let noteStamps = new Map(); // folder path -> the note's table as read, for the save
+let lends = new Map(); // folder path -> what it lends its devices (user, port, key, jump)
+let noteStamps = new Map(); // folder path -> the folder's table as read, for the save
 let seeded = false; // the tree's initial expansion is a one-off
 let lastProbe = 0; // epoch ms of the last sweep, for the throttle below
 // A press in flight, so a render doesn't replace the button under it. WebKit fires
@@ -303,10 +304,13 @@ function osColor(os) {
   return brand ? readable(BRAND_COLORS[brand]) : null;
 }
 
+// The url as well as the host: a device that is only a web UI has no host to find it
+// by, and an address pasted from a ticket is as likely to be one as the other.
 const hit = (j, f) =>
   !f ||
   j.name.toLowerCase().includes(f) ||
   j.host.toLowerCase().includes(f) ||
+  (j.url ?? "").toLowerCase().includes(f) ||
   (j.desc ?? "").toLowerCase().includes(f) ||
   j.folders.some((x) => x.toLowerCase().includes(f));
 

@@ -332,7 +332,16 @@ function renderGroup() {
     ${
       !real
         ? ""
-        : `<div class="d-sec">${icon("file-pen-line")}Notes</div>
+        : `<div class="d-sec">${icon("share-2")}Everything in here</div>
+      <div class="lends">
+        <label>User<input id="lend-user" spellcheck="false" placeholder="—"></label>
+        <label>Port<input id="lend-port" inputmode="numeric" placeholder="—"></label>
+        <label>Key<input id="lend-key" spellcheck="false" placeholder="—"></label>
+        <label>Jump<input id="lend-jump" spellcheck="false" placeholder="—"></label>
+      </div>
+      <p class="page-note">A device in this folder that doesn't say otherwise uses these.</p>
+
+      <div class="d-sec">${icon("file-pen-line")}Notes</div>
       <textarea class="d-note" id="gnote" rows="4" spellcheck="false"
         placeholder="What somebody arriving here needs to know."></textarea>`
     }
@@ -340,27 +349,64 @@ function renderGroup() {
 
   // Set as a value, not interpolated: a `</textarea>` in a note would end the element.
   if (real) {
+    // Saved on blur like the note below, and against the same stamp: one table holds
+    // both, so a save either way carries the other's value as it was read.
+    //
+    // One at a time, because tabbing through the fields blurs the next one before the
+    // last save's reload has landed: the maps read here would still be the file as it
+    // was, and the write, which sends all four, would clear what was just saved.
+    let saving = Promise.resolve();
+    const queue = (work) => (saving = saving.then(work).catch(alertish));
+
+    const fields = { user: "lend-user", port: "lend-port", key: "lend-key", jump: "lend-jump" };
+    const lent = lends.get(group.path) ?? {};
+    for (const [k, id] of Object.entries(fields)) $(id).value = lent[k] ?? "";
+    for (const [k, id] of Object.entries(fields)) {
+      $(id).addEventListener("blur", () => {
+        const path = group.path;
+        const v = $(id).value.trim();
+        if (k === "port" && v && !/^\d{1,5}$/.test(v)) return alertish(`"${v}" isn't a port`);
+        queue(async () => {
+          const was = lends.get(path) ?? {};
+          if (v === String(was[k] ?? "")) return;
+          const next = { ...was, [k]: k === "port" ? (v ? Number(v) : null) : v || null };
+          try {
+            await invoke("save_folder_defaults", {
+              path,
+              defaults: next,
+              stamp: noteStamps.get(path) ?? null,
+            });
+          } catch (e) {
+            alertish(e);
+          }
+          // Either way: a refusal means the pane is behind the file, and a save moved
+          // the stamp the note's own blur would send.
+          await load();
+        });
+      });
+    }
+
     const box = $("gnote");
     box.value = notes.get(group.path) ?? "";
     // On blur, not per keystroke: each save rewrites the whole config file.
-    box.addEventListener("blur", async () => {
-      const was = notes.get(group.path) ?? "";
-      if (box.value === was) return;
-      try {
-        await invoke("save_note", {
-          path: group.path,
-          note: box.value,
-          stamp: noteStamps.get(group.path) ?? null,
-        });
-        notes.set(group.path, box.value.trim());
-        // The stamp moved with the write; a second edit must not refuse itself.
-        await load();
-      } catch (e) {
-        alertish(e);
-        // Refused as someone else's: their note is now in the pane, and the next
-        // blur saves against it.
-        await load();
-      }
+    box.addEventListener("blur", () => {
+      const path = group.path;
+      const note = box.value;
+      // Behind the same queue: the settings above share this table and its stamp.
+      queue(async () => {
+        if (note === (notes.get(path) ?? "")) return;
+        try {
+          await invoke("save_note", { path, note, stamp: noteStamps.get(path) ?? null });
+          notes.set(path, note.trim());
+          // The stamp moved with the write; a second edit must not refuse itself.
+          await load();
+        } catch (e) {
+          alertish(e);
+          // Refused as someone else's: their note is now in the pane, and the next
+          // blur saves against it.
+          await load();
+        }
+      });
     });
   }
 
@@ -373,6 +419,15 @@ function renderGroup() {
         : ""
     }
 `;
+}
+
+// A value the device didn't set itself, and who lent it. Nothing for a device's own:
+// the marker is there to answer "why does it say that", not to label every row.
+function lentFrom(j, key) {
+  const who = j.from?.[key];
+  if (!who) return "";
+  const label = who === "defaults" ? "defaults" : who.split("/").join(" / ");
+  return `<span class="d-from" data-tip="Not set on this device">${esc(label)}</span>`;
 }
 
 function renderJack(j, live) {
@@ -403,11 +458,18 @@ function renderJack(j, live) {
     <div class="d-sec">${icon("server")}Target</div>
     <dl>
       <div class="d-row"><dt>host</dt><dd>${esc(j.host)}</dd></div>
-      ${j.user ? `<div class="d-row"><dt>user</dt><dd>${esc(j.user)}</dd></div>` : ""}
-      ${j.port ? `<div class="d-row"><dt>port</dt><dd>${esc(j.port)}</dd></div>` : ""}
-      ${j.key ? `<div class="d-row"><dt>key</dt><dd>${esc(j.key)}</dd></div>` : ""}
+      ${j.user ? `<div class="d-row"><dt>user</dt><dd>${esc(j.user)}${lentFrom(j, "user")}</dd></div>` : ""}
+      ${j.port ? `<div class="d-row"><dt>port</dt><dd>${esc(j.port)}${lentFrom(j, "port")}</dd></div>` : ""}
+      ${j.key ? `<div class="d-row"><dt>key</dt><dd>${esc(j.key)}${lentFrom(j, "key")}</dd></div>` : ""}
       ${j.url ? `<div class="d-row"><dt>web</dt><dd>${esc(j.url)}</dd></div>` : ""}
       ${j.rdp ? `<div class="d-row"><dt>rdp</dt><dd>${esc(j.rdp)}</dd></div>` : ""}
+      ${
+        j.folders.length
+          ? `<div class="d-row"><dt>in</dt><dd>${j.folders
+              .map((f) => `<span class="d-in">${esc(f.split("/").join(" / "))}</span>`)
+              .join("")}</dd></div>`
+          : ""
+      }
     </dl>
     ${
       mine.length
@@ -461,6 +523,11 @@ function renderJack(j, live) {
     <div class="btns">
       <button class="ghost" data-act="ping" data-tip="${j.hops.length ? `Ping from ${esc(j.hops.at(-1))}` : "Ping this host"}">${icon("plug")}Ping</button>
       <button class="ghost" data-act="trace" data-tip="${j.hops.length ? `Trace from ${esc(j.hops.at(-1))}` : "Trace the route there"}">${icon("waypoints")}Trace</button>
+      ${
+        j.mac
+          ? `<button class="ghost" data-act="wake" data-tip="Wake on LAN, from this network">${icon("power")}Wake</button>`
+          : ""
+      }
     </div>
 
     ${

@@ -60,6 +60,7 @@ host = "10.0.0.20"
 os = "synology"
 url = "https://10.0.0.20:5001"   # DSM, opens in your browser
 primary = "web"                  # ssh is there too, but DSM is what you usually want
+mac = "00:1b:21:92:0a:1f"        # gives the detail pane a Wake button
 desc = "DS920+"
 
 [jack.hypervisor]
@@ -84,22 +85,30 @@ os = "windows"
 # ── customers ──────────────────────────────────────────────────────────────
 # One folder per customer, so a whole engagement is one row in the sidebar.
 
+# What the folder lends: every device in it that doesn't say otherwise is reached
+# this way, so the bastion and the account are written once instead of per device.
+[folder.acme]
+jump = "bastion"
+user = "deploy"
+note = "their bastion, not ours - tickets first"
+
 [jack.acme-app]
 host = "10.80.0.10"
-user = "deploy"
 os   = "debian"
+folders = ["acme"]
 
 [jack.acme-db]
 host = "10.80.0.11"
 os   = "postgres"
+folders = ["acme"]
 
 [jack.acme-dc]
 host = "10.80.0.50"
-user = "administrator"
+user = "administrator"           # its own account wins over the folder's
 os   = "windows"
 rdp  = 3389                      # RDP has no ProxyJump, so patchbay forwards a port
-jump = "bastion"
-desc = "reached through the bastion - check the Tunnel row after clicking RDP"
+folders = ["acme"]
+desc = "reached through the folder's bastion - check the Tunnel row after clicking RDP"
 
 [jack.Testo]
 host = "192.168.1.26"

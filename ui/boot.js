@@ -172,6 +172,15 @@ detailPane.addEventListener("click", async (e) => {
     }
     refreshTunnels();
   }
+  // Nothing answers a magic packet, so the pill is the whole report: it says the
+  // packet went out, not that anything woke up.
+  if (act === "wake") {
+    try {
+      flash(await invoke("wake", { name: j.name }));
+    } catch (err) {
+      alertish(err);
+    }
+  }
   if (act === "edit") openJack(j);
   if (act === "dup") openJack({ ...j, name: "" });
   if (act === "copy") {
@@ -392,6 +401,7 @@ async function load() {
     ({ list: cfgPath, own: ownPath } = paths);
     takeTunnels(tun);
     notes = new Map(noteRows.map((n) => [n.path, n.note]));
+    lends = new Map(noteRows.map((n) => [n.path, n.defaults ?? {}]));
     noteStamps = new Map(noteRows.map((n) => [n.path, n.stamp]));
     loadErr = "";
     // Last session's open folders, on the first load only: a focus would re-open

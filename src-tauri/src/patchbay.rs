@@ -34,6 +34,9 @@ pub struct Jack {
     pub folders: Option<Vec<String>>,
     pub desc: Option<String>,
     pub forward: Option<Vec<String>>,
+    /// Hardware address, for Wake on LAN. Nothing else reads it: patchbay wakes a
+    /// device, it does not address one by it.
+    pub mac: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -48,10 +51,23 @@ struct Raw {
 
 /// What is said *about* a folder. A folder exists because a device names it, so a note
 /// on an empty one does not make the tree grow a row.
+///
+/// The four settings are the ones a whole customer's site shares - their bastion, the
+/// account, the key, a non-standard port - and they inherit like `[defaults]` does, so
+/// `jump` is written once rather than on every device behind it. Nothing else belongs
+/// here: a `host` or a `url` is about one device by definition.
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 pub struct Folder {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jump: Option<String>,
 }
 
 /// `$PATCHBAY_CONFIG` if set; else `%APPDATA%` on Windows, `$XDG_CONFIG_HOME` or
@@ -106,28 +122,91 @@ pub fn expand(p: &str) -> String {
     }
 }
 
-/// The notes hung on folders, by full path. Read separately from `Jacks` because a
-/// folder is not a device and every caller wants one or the other.
-pub fn notes(src: &str) -> IndexMap<String, String> {
-    let raw: Raw = match toml::from_str(src) {
-        Ok(r) => r,
-        Err(_) => return IndexMap::new(),
-    };
-    raw.folder
-        .into_iter()
-        .filter_map(|(k, f)| Some((k, f.note?)))
-        .filter(|(_, n)| !n.trim().is_empty())
-        .collect()
+/// Everything said about folders, by full path: a note, the settings the folder lends
+/// its devices, or both. Read separately from `Jacks` because a folder is not a device
+/// and every caller wants one or the other.
+pub fn folders(src: &str) -> IndexMap<String, Folder> {
+    match toml::from_str::<Raw>(src) {
+        Ok(raw) => raw.folder,
+        Err(_) => IndexMap::new(),
+    }
 }
 
-/// `[defaults]` merges into every jack; the jack's own value wins.
-pub fn parse(src: &str) -> Result<Jacks, String> {
+/// Every folder a device is in, innermost first: `acme/prod/db` is also in `acme/prod`
+/// and in `acme`. The order is what decides a setting, so it is the order a reader
+/// expects - the nearest folder speaks first, and the device's own list breaks a tie
+/// between two branches it sits in.
+fn folder_chain(folders: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for f in folders {
+        let parts: Vec<&str> = f.split('/').filter(|p| !p.is_empty()).collect();
+        for depth in (1..=parts.len()).rev() {
+            let path = parts[..depth].join("/");
+            if !out.contains(&path) {
+                out.push(path);
+            }
+        }
+    }
+    // A list naming a folder before one inside it (`["prod", "prod/eu"]`) would otherwise
+    // let the outer one answer first. Stable, so two branches of the same depth keep the
+    // order the device wrote them in.
+    out.sort_by_key(|p| std::cmp::Reverse(p.matches('/').count()));
+    out
+}
+
+/// What a folder lends its devices. Only a setting the jack hasn't got itself.
+fn under_folder(j: Jack, f: &Folder) -> Jack {
+    Jack {
+        user: j.user.or_else(|| f.user.clone()),
+        port: j.port.or(f.port),
+        key: j.key.or_else(|| f.key.clone()),
+        jump: j.jump.or_else(|| f.jump.clone()),
+        ..j
+    }
+}
+
+/// Where a setting a device didn't set itself came from: a folder's path, or
+/// `[defaults]`. Only the four a folder can lend, by jack name then key. The window
+/// shows it, because a `user` nobody can trace to a line of the file is magic.
+pub type Sources = IndexMap<String, IndexMap<String, String>>;
+
+/// `[defaults]` merges into every jack; the jack's own value wins. A `[folder]` it is in
+/// is asked in between: nearer than `[defaults]`, never louder than the device itself.
+/// The second half is who answered, for everything the device left unsaid.
+pub fn parse_all(src: &str) -> Result<(Jacks, Sources), String> {
     let raw: Raw = toml::from_str(src).map_err(|e| e.message().to_string())?;
     let d = &raw.defaults;
-    Ok(raw
+    let mut sources = Sources::new();
+    let jacks = raw
         .jack
         .into_iter()
         .map(|(name, j)| {
+            // Before the merge: a folder list that only `[defaults]` gives still says
+            // which folders this device is in.
+            let folders = j.folders.clone().or_else(|| d.folders.clone());
+            let mut from = IndexMap::new();
+            let mut note = |key: &str, mine: bool, theirs: bool, who: &str| {
+                if !mine && theirs && !from.contains_key(key) {
+                    from.insert(key.to_string(), who.to_string());
+                }
+            };
+            let mut j = j;
+            for path in folder_chain(folders.as_deref().unwrap_or_default()) {
+                let Some(f) = raw.folder.get(&path) else {
+                    continue;
+                };
+                note("user", j.user.is_some(), f.user.is_some(), &path);
+                note("port", j.port.is_some(), f.port.is_some(), &path);
+                note("key", j.key.is_some(), f.key.is_some(), &path);
+                note("jump", j.jump.is_some(), f.jump.is_some(), &path);
+                j = under_folder(j, f);
+            }
+            note("user", j.user.is_some(), d.user.is_some(), "defaults");
+            note("port", j.port.is_some(), d.port.is_some(), "defaults");
+            note("key", j.key.is_some(), d.key.is_some(), "defaults");
+            note("jump", j.jump.is_some(), d.jump.is_some(), "defaults");
+            sources.insert(name.clone(), from);
+
             let merged = Jack {
                 host: if j.host.is_empty() {
                     d.host.clone()
@@ -147,21 +226,27 @@ pub fn parse(src: &str) -> Result<Jacks, String> {
                 folders: j.folders.or_else(|| d.folders.clone()),
                 desc: j.desc.or_else(|| d.desc.clone()),
                 forward: j.forward.or_else(|| d.forward.clone()),
+                mac: j.mac.or_else(|| d.mac.clone()),
             };
             (name, merged)
         })
-        .collect())
+        .collect();
+    Ok((jacks, sources))
 }
 
 /// A missing file is an empty list (a first run), not an error. A file that won't parse
 /// still is one.
 pub fn load(path: &Path) -> Result<Jacks, String> {
+    load_all(path).map(|(jacks, _)| jacks)
+}
+
+pub fn load_all(path: &Path) -> Result<(Jacks, Sources), String> {
     let src = match std::fs::read_to_string(path) {
         Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Jacks::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Default::default()),
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
-    parse(&src).map_err(|e| format!("{}: {e}", path.display()))
+    parse_all(&src).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 pub fn spec(j: &Jack) -> String {
@@ -312,6 +397,31 @@ pub fn ssh_args(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
     }
     args.push(dest_of(j)?);
     Ok(args)
+}
+
+/// The Wake on LAN packet for a hardware address: six `0xff`, then the address sixteen
+/// times. Separators are `:`, `-` or `.`, or nothing, the ways a device's own label
+/// prints it.
+pub fn magic_packet(mac: &str) -> Result<Vec<u8>, String> {
+    let hex: String = mac
+        .chars()
+        .filter(|c| !matches!(c, ':' | '-' | '.'))
+        .collect();
+    // Byte indices below, so anything but ascii would slice through a character.
+    let bytes: Option<Vec<u8>> = (hex.len() == 12 && hex.is_ascii())
+        .then(|| {
+            (0..12)
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
+                .collect()
+        })
+        .flatten();
+    let mac = bytes.ok_or_else(|| format!("\"{mac}\" isn't a hardware address"))?;
+    let mut packet = vec![0xff; 6];
+    for _ in 0..16 {
+        packet.extend_from_slice(&mac);
+    }
+    Ok(packet)
 }
 
 /// Every flag `forward_arg` can hand back. Anything that strips forwards goes through
@@ -502,6 +612,11 @@ pub fn primary(j: &Jack) -> String {
 mod tests {
     use super::*;
 
+    /// The merge, for a test that doesn't care who lent what.
+    fn jacks_of(src: &str) -> Result<Jacks, String> {
+        parse_all(src).map(|(jacks, _)| jacks)
+    }
+
     #[test]
     fn the_list_setting_names_the_shared_file_and_expands_home() {
         let own = std::env::temp_dir().join(format!("patchbay-list-{}.toml", std::process::id()));
@@ -514,8 +629,115 @@ mod tests {
         std::fs::remove_file(&own).unwrap();
     }
 
+    #[test]
+    fn a_folder_lends_its_settings_and_the_nearest_one_wins() {
+        let (jacks, from) = parse_all(
+            r#"
+            [defaults]
+            user = "root"
+
+            [folder.acme]
+            jump = "acme-gw"
+            user = "admin"
+
+            [folder."acme/prod"]
+            key = "~/.ssh/acme-prod"
+            user = "ops"
+
+            [jack.db]
+            host = "10.0.0.5"
+            folders = ["acme/prod"]
+
+            [jack.pdc]
+            host = "10.0.0.6"
+            user = "own"
+            folders = ["acme"]
+
+            [jack.elsewhere]
+            host = "10.0.0.7"
+
+            # Filed in a folder and in its parent, parent first: the inner one still wins.
+            [jack.both]
+            host = "10.0.0.8"
+            folders = ["acme", "acme/prod"]
+            "#,
+        )
+        .unwrap();
+
+        let db = &jacks["db"];
+        assert_eq!(db.user.as_deref(), Some("ops"), "the nearest folder speaks");
+        assert_eq!(db.key.as_deref(), Some("~/.ssh/acme-prod"));
+        assert_eq!(db.jump.as_deref(), Some("acme-gw"), "and the one above it");
+        assert_eq!(jacks["pdc"].user.as_deref(), Some("own"), "the device wins");
+        assert_eq!(jacks["pdc"].jump.as_deref(), Some("acme-gw"));
+        assert_eq!(
+            jacks["elsewhere"].user.as_deref(),
+            Some("root"),
+            "a device in no folder is left to [defaults]"
+        );
+        assert_eq!(jacks["elsewhere"].jump, None);
+        assert_eq!(
+            jacks["both"].user.as_deref(),
+            Some("ops"),
+            "the outer folder answered over the one inside it"
+        );
+
+        // And the pane can say where each of those came from. A device's own value is
+        // nobody else's, so it is named by nobody.
+        assert_eq!(from["db"]["user"], "acme/prod");
+        assert_eq!(from["db"]["jump"], "acme");
+        assert_eq!(
+            from["pdc"].get("user"),
+            None,
+            "its own user, not the folder's"
+        );
+        assert_eq!(from["pdc"]["jump"], "acme");
+        assert_eq!(from["elsewhere"]["user"], "defaults");
+        assert_eq!(from["elsewhere"].get("jump"), None, "nobody set one");
+    }
+
+    /// A folder is written in the same file a colleague writes, so what it lends is as
+    /// untrusted as a device's own - and it reaches argv by the same road.
+    #[test]
+    fn a_folder_cannot_lend_an_ssh_option_either() {
+        let j = jacks_of(
+            r#"
+            [folder.acme]
+            jump = "-oProxyCommand=touch /tmp/pwned"
+
+            [jack.db]
+            host = "10.0.0.5"
+            folders = ["acme"]
+            "#,
+        )
+        .unwrap();
+        assert!(ssh_args("db", &j).is_err(), "a lent jump reached argv");
+    }
+
+    #[test]
+    fn a_hardware_address_becomes_a_magic_packet_however_it_is_written() {
+        let want = magic_packet("001b:2192.0A1f").unwrap();
+        assert_eq!(want.len(), 102);
+        assert_eq!(&want[..6], &[0xff; 6]);
+        assert_eq!(&want[6..12], &[0x00, 0x1b, 0x21, 0x92, 0x0a, 0x1f]);
+        assert_eq!(&want[96..], &want[6..12]);
+        for same in ["00:1b:21:92:0a:1f", "00-1B-21-92-0A-1F", "001B21920A1F"] {
+            assert_eq!(magic_packet(same).unwrap(), want, "{same}");
+        }
+        for bad in [
+            "",
+            "00:1b:21:92:0a",
+            "zz:1b:21:92:0a:1f",
+            "00:1b:21:92:0a:1f:2c",
+            // Twelve bytes, but not twelve characters: the hex is sliced by byte.
+            "0é0123456789",
+        ] {
+            assert!(magic_packet(bad).is_err(), "{bad} was accepted");
+        }
+    }
+
     fn fixture() -> Jacks {
-        parse(
+        jacks_of(
             r#"
             [jack.bastion]
             host = "bastion.example"
@@ -572,7 +794,7 @@ mod tests {
     /// panel; the two must be updated together.
     #[test]
     fn the_config_on_the_website_still_resolves_to_the_argv_it_shows() {
-        let j = parse(
+        let j = jacks_of(
             r#"
 [defaults]
 user = "root"
@@ -641,7 +863,7 @@ forward = ["5432:localhost:5432"]
 
     #[test]
     fn a_device_without_ssh_is_probed_where_it_actually_listens() {
-        let j = parse(
+        let j = jacks_of(
             r#"
             [jack.dc]
             host = "192.168.1.26"
@@ -719,7 +941,7 @@ forward = ["5432:localhost:5432"]
 
     #[test]
     fn defaults_merge_into_jacks_jack_wins() {
-        let j = parse(
+        let j = jacks_of(
             r#"
             [defaults]
             user = "root"
@@ -783,7 +1005,7 @@ forward = ["5432:localhost:5432"]
     /// an option, and `task_argv` would supply the operand it needs to run.
     #[test]
     fn a_host_can_never_become_an_ssh_option() {
-        let j = parse(
+        let j = jacks_of(
             r#"
             [jack.evil]
             host = "-oProxyCommand=touch /tmp/pwned"
@@ -808,9 +1030,10 @@ forward = ["5432:localhost:5432"]
         assert!(hops("behind", &j).is_err());
         assert!(hops("raw", &j).is_err());
         // A `user@` in front must not make it safe, or safety would depend on `[defaults]`.
-        let dressed = parse("[jack.x]\nhost = \"-oProxyCommand=id\"\nuser = \"root\"\n").unwrap();
+        let dressed =
+            jacks_of("[jack.x]\nhost = \"-oProxyCommand=id\"\nuser = \"root\"\n").unwrap();
         assert!(ssh_args("x", &dressed).is_err());
-        let fine = parse("[jack.x]\nhost = \"10.0.0.4\"\nuser = \"root\"\n").unwrap();
+        let fine = jacks_of("[jack.x]\nhost = \"10.0.0.4\"\nuser = \"root\"\n").unwrap();
         assert_eq!(
             ssh_args("x", &fine).unwrap().last().unwrap(),
             "root@10.0.0.4"
@@ -819,7 +1042,7 @@ forward = ["5432:localhost:5432"]
 
     #[test]
     fn every_kind_of_forward_reaches_argv_behind_its_own_flag() {
-        let j = parse(
+        let j = jacks_of(
             "[jack.x]\nhost = \"h\"\nforward = [\"8080:localhost:80\", \"-R 9000:localhost:9000\", \"-D 1080\"]\n",
         )
         .unwrap();
@@ -835,7 +1058,7 @@ forward = ["5432:localhost:5432"]
         assert!(a.windows(2).any(|w| w == ["-D", "1080"]), "got {a:?}");
 
         // A broken one fails the connection rather than passing through.
-        let bad = parse("[jack.x]\nhost = \"h\"\nforward = [\"-o ProxyCommand=id\"]\n").unwrap();
+        let bad = jacks_of("[jack.x]\nhost = \"h\"\nforward = [\"-o ProxyCommand=id\"]\n").unwrap();
         assert!(ssh_args("x", &bad).is_err());
     }
 
@@ -863,7 +1086,7 @@ host = "x; id"
 
     #[test]
     fn a_check_runs_here_when_it_can_and_on_the_hop_when_it_cannot() {
-        let j = parse(CHAIN).unwrap();
+        let j = jacks_of(CHAIN).unwrap();
 
         let (p, a) = task_argv("ping", "plain", &j).unwrap();
         assert_eq!(p, "ping");
@@ -896,7 +1119,7 @@ host = "x; id"
 
     #[test]
     fn a_host_that_could_be_a_command_on_the_hop_is_refused() {
-        let j = parse(CHAIN).unwrap();
+        let j = jacks_of(CHAIN).unwrap();
         assert!(
             task_argv("ping", "sneaky", &j).is_err(),
             "a space reaches the hop's shell"

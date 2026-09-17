@@ -20,8 +20,12 @@ pub struct JackView {
     ssh: bool,
     primary: String,
     desc: Option<String>,
+    mac: Option<String>,
     folders: Vec<String>,
     forward: Vec<String>,
+    /// Where a setting the device didn't set itself came from: the folder's path, or
+    /// "defaults". The pane prints it beside the value.
+    from: indexmap::IndexMap<String, String>,
     /// Ordered hops, nearest first: what the detail pane draws as the route.
     hops: Vec<String>,
     /// The ssh command line, shown so you always see what is about to run.
@@ -39,10 +43,14 @@ pub struct Probe {
     ms: Option<u64>,
 }
 
+/// One folder's own row: what is written about it, and what it lends its devices.
 #[derive(Serialize)]
 pub struct Note {
     path: String,
     note: String,
+    /// What the folder lends every device in it. Its own `note` is never in here; the
+    /// window edits the two in different places.
+    defaults: patchbay::Folder,
     stamp: String,
 }
 
@@ -81,7 +89,7 @@ fn sync_ssh_config(jacks: &patchbay::Jacks) {
 pub async fn jacks() -> Result<Vec<JackView>, String> {
     blocking(|| {
         let path = list_file()?;
-        let jacks = patchbay::load(&path)?;
+        let (jacks, mut sources) = patchbay::load_all(&path)?;
         sync_ssh_config(&jacks);
         let mut stamps = config::stamps_at(&path, "jack");
         Ok(jacks
@@ -100,7 +108,9 @@ pub async fn jacks() -> Result<Vec<JackView>, String> {
                 ssh: j.ssh.unwrap_or(true),
                 primary: patchbay::primary(j),
                 desc: j.desc.clone(),
+                mac: j.mac.clone(),
                 key: j.key.clone(),
+                from: sources.swap_remove(name).unwrap_or_default(),
                 folders: j.folders.clone().unwrap_or_default(),
                 forward: j.forward.clone().unwrap_or_default(),
                 hops: patchbay::hops(name, &jacks).unwrap_or_default(),
@@ -240,18 +250,20 @@ pub async fn set_folders(name: String, folders: Vec<String>) -> Result<(), Strin
     blocking(move || config::set_folders_at(&writable_list()?, &name, &folders)).await
 }
 
-/// The notes hung on folders, by folder path.
+/// What is written about folders, by folder path: the note, and the settings the folder
+/// lends its devices.
 #[tauri::command]
 pub async fn notes() -> Result<Vec<Note>, String> {
     blocking(|| {
         let src = std::fs::read_to_string(list_file()?).unwrap_or_default();
         let mut stamps = config::stamps(&src, "folder");
-        Ok(patchbay::notes(&src)
+        Ok(patchbay::folders(&src)
             .into_iter()
-            .map(|(path, note)| Note {
+            .map(|(path, mut f)| Note {
                 stamp: stamps.remove(&path).unwrap_or_default(),
+                note: f.note.take().unwrap_or_default().trim().to_string(),
+                defaults: f,
                 path,
-                note,
             })
             .collect())
     })
@@ -261,6 +273,19 @@ pub async fn notes() -> Result<Vec<Note>, String> {
 #[tauri::command]
 pub async fn save_note(path: String, note: String, stamp: Option<String>) -> Result<(), String> {
     blocking(move || config::set_note_at(&writable_list()?, &path, &note, stamp.as_deref())).await
+}
+
+/// What a folder lends its devices - their bastion, account, key or port, written once.
+#[tauri::command]
+pub async fn save_folder_defaults(
+    path: String,
+    defaults: patchbay::Folder,
+    stamp: Option<String>,
+) -> Result<(), String> {
+    blocking(move || {
+        config::set_folder_defaults_at(&writable_list()?, &path, &defaults, stamp.as_deref())
+    })
+    .await
 }
 
 #[tauri::command]

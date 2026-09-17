@@ -1091,6 +1091,55 @@ button,
   color: var(--fg-faint);
 }
 
+/* Where an inherited value came from, and the folders a device is in: the same faint
+   chip, because both are the list saying something about this device from outside it. */
+.d-from,
+.d-in {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--fg-faint);
+  font-size: 10.5px;
+  line-height: 15px;
+  vertical-align: 1px;
+}
+.d-in {
+  margin: 0 5px 2px 0;
+}
+
+/* What a folder lends its devices: two columns of short fields, the note's own look. */
+.lends {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 2px;
+}
+.lends label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+.lends input {
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--row);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+.lends input:focus {
+  border-color: var(--accent);
+}
+.lends input::placeholder {
+  color: var(--fg-faint);
+}
+
 .d-row {
   display: flex;
   gap: 10px;
