@@ -492,6 +492,7 @@ function openJack(j, prefillGroup) {
   f.rdp.value = j?.rdp ?? "";
   f.vnc.value = j?.vnc ?? "";
   f.desc.value = j?.desc ?? "";
+  f.mac.value = j?.mac ?? "";
   f.folders.value = (j?.folders ?? (prefillGroup?.path ? [prefillGroup.path] : [])).join(", ");
   f.forward.value = (j?.forward ?? []).join(", ");
   $("oschoices").innerHTML = OS_CHOICES.map((o) => `<option value="${esc(o)}">`).join("");
@@ -551,6 +552,7 @@ jackForm.addEventListener("submit", async (e) => {
         // Only "sftp" needs saying: a shell and files over ssh look identical otherwise.
         primary: reach === "sftp" ? "sftp" : null,
         desc: f.desc.value.trim() || null,
+        mac: f.mac.value.trim() || null,
         folders: commaList(f.folders.value),
         stamp: editStamp,
       },

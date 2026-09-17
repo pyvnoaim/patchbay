@@ -313,6 +313,40 @@ pub fn close_tunnel(state: tauri::State<'_, rdp::SharedTunnels>, id: u32) {
     state.close(id);
 }
 
+/// Wake on LAN: the magic packet, broadcast on this network. There is nothing to
+/// connect to yet, so nothing comes back and the window only learns that it was sent.
+///
+/// ponytail: the broadcast address, port 9, from whatever interface the route picks.
+/// A device on another VLAN needs its subnet's directed broadcast and a router that
+/// forwards it, which is a `wake_via` setting the day somebody has one - and a device
+/// behind a jump chain wants the packet sent from the bastion, which is another day
+/// again.
+#[tauri::command]
+pub async fn wake(name: String) -> Result<String, String> {
+    blocking(move || {
+        let jacks = load_jacks()?;
+        let resolved = patchbay::resolve(&name, &jacks)?;
+        let mac = jacks
+            .get(&resolved)
+            .and_then(|j| j.mac.as_deref())
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .ok_or_else(|| format!("\"{resolved}\" has no mac address to wake"))?;
+        let packet = patchbay::magic_packet(mac)?;
+
+        let socket = std::net::UdpSocket::bind("0.0.0.0:0")
+            .map_err(|e| format!("no socket to send from: {e}"))?;
+        socket
+            .set_broadcast(true)
+            .map_err(|e| format!("this machine won't broadcast: {e}"))?;
+        socket
+            .send_to(&packet, "255.255.255.255:9")
+            .map_err(|e| format!("\"{resolved}\": {e}"))?;
+        Ok(format!("woke {resolved} at {mac}"))
+    })
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::{split_domain, vnc_url};

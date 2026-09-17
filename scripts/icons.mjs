@@ -52,6 +52,7 @@ const USED = [
   "folder-input", // move to folder
   "keyboard", // the shortcuts page
   "key-round", // the Bitwarden key on a web tab, and its settings page
+  "power", // wake on lan
 ];
 
 const inner = (name) =>
