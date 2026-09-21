@@ -85,8 +85,24 @@ pub async fn open_web_view(
     let loaded = app.clone();
     let at = tauri::LogicalPosition::new(x, y);
     let size = tauri::LogicalSize::new(width.max(1.0), height.max(1.0));
+    let home = parsed.host_str().map(str::to_owned);
     let build = move || {
         tauri::webview::WebviewBuilder::new(web_label(id), tauri::WebviewUrl::External(parsed))
+            // Without a handler WebKit drops `window.open` on the floor, and that is
+            // how Proxmox opens its upgrade shell and a VM's console. The device's own
+            // popups get a window sharing the tab's session; a link off the device
+            // goes to the browser, like terminal links do.
+            .on_new_window(move |to, _| {
+                use tauri::webview::NewWindowResponse;
+                if !is_web_url(to.as_str()) {
+                    return NewWindowResponse::Deny;
+                }
+                if to.host_str() == home.as_deref() {
+                    return NewWindowResponse::Allow;
+                }
+                let _ = os_open(to.as_str().as_ref());
+                NewWindowResponse::Deny
+            })
             .on_navigation(move |to| {
                 use tauri::Emitter;
                 // Only a page worth re-checking. A login flow navigates to

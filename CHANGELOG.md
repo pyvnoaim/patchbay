@@ -8,6 +8,10 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- A web tab's popups open. Proxmox's Upgrade shell and a VM's console used to do nothing when clicked.
+
 ## 0.1.10 - 2026-09-18
 
 - Trusting a device's certificate now survives its firmware update: the appliance's own signing certificate is trusted, not the one it replaces on every update. The sheet says when that is what you are trusting.
