@@ -451,16 +451,8 @@
     </div>
 
     <!-- News, not questions: they float over the list, take no keyboard, and are not in OVERLAYS().
-       Two pills, so an error arriving mid-download doesn't take the update's button off screen. -->
+       Messages are flash()'s own pills, stacked above these, so one never takes another's button. -->
     <div id="notices">
-      <div id="msg" class="pill" role="alert" hidden>
-        <div class="pill-row">
-          <span id="msg-text"></span>
-          <!-- Undo, for the few seconds a delete can still be taken back. -->
-          <button type="button" id="msg-act" class="primary" hidden></button>
-          <button type="button" id="msg-close" class="x" aria-label="Dismiss"></button>
-        </div>
-      </div>
       <!-- Shown once per launch when a previous install left `~/.ssh/patchbay.conf` or the Include line. -->
       <div id="ssh-leftover" class="pill" role="status" hidden>
         <div class="pill-row">

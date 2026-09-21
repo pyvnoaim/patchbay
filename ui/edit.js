@@ -589,24 +589,30 @@ function showErr(el, msg) {
 // A delete is offered back for a few seconds: Rust hands over the removed table and
 // Undo writes it back where it was. Held here, not in the config - a wrong "yes" is
 // the case, not a history.
+let undoable = [];
+let undoPill = null;
 function offerUndo(removed, failed = []) {
-  const what = removed.length === 1 ? `"${removed[0].name}"` : `${removed.length} devices`;
+  // A delete while the pill is still up joins it, so one Undo takes back both.
+  if (undoPill?.isConnected) undoPill.remove();
+  else undoable = [];
+  undoable.push(...removed);
+  const all = undoable;
+  const what = all.length === 1 ? `"${all[0].name}"` : `${all.length} devices`;
   const but = failed.length ? ` Could not delete ${failed.join(", ")}.` : "";
-  flash(`Deleted ${what}.${but}`, failed.length > 0, {
-    label: "Undo",
-    run: async () => {
-      const stuck = [];
-      for (const r of removed) {
-        try {
-          await invoke("restore_jack", { removed: r });
-        } catch {
-          stuck.push(r.name);
-        }
+  const run = async () => {
+    const stuck = [];
+    // Newest first: each position was read from the file with the earlier ones gone.
+    for (const r of [...all].reverse()) {
+      try {
+        await invoke("restore_jack", { removed: r });
+      } catch {
+        stuck.push(r.name);
       }
-      if (stuck.length) alertish(`could not restore ${stuck.join(", ")}`);
-      await load();
-    },
-  });
+    }
+    if (stuck.length) alertish(`could not restore ${stuck.join(", ")}`);
+    await load();
+  };
+  undoPill = flash(`Deleted ${what}.${but}`, failed.length > 0, { label: "Undo", run });
 }
 
 // The stamp is the row as it was drawn: a device a colleague has changed since the last

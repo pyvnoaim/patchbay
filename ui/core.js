@@ -46,10 +46,6 @@ const checkedNow = () =>
   (lastChecked = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
 const upMore = $("up-more"),
   upNotes = $("up-notes");
-const msgWrap = $("msg"),
-  msgText = $("msg-text"),
-  msgAct = $("msg-act"),
-  msgClose = $("msg-close");
 
 const isMac = navigator.userAgent.includes("Mac");
 if (isMac) document.body.dataset.os = "macos";
@@ -156,41 +152,42 @@ const esc = (s) =>
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
   );
 
-let msgFade = null;
-let msgRun = null; // what the pill's button does, while it has one
-// A self-dismissing line at the foot of the window for anything outside a form. Its own
-// pill, so an error mid-download can't take the update's Restart button off the screen.
-// `action` is `{ label, run }`: a button on the pill, gone with it.
+// A self-dismissing line at the foot of the window for anything outside a form. Each is its
+// own pill, stacked, so a second message can't take the first one's Undo off the screen.
+// `action` is `{ label, run }`: a button on the pill, gone with it. Returns the pill.
+// ponytail: four at once, the oldest goes; a count badge if something ever fires dozens.
 function flash(text, bad = false, action = null) {
-  msgText.textContent = text;
-  msgClose.innerHTML = icon("x");
-  msgAct.hidden = !action;
-  msgAct.textContent = action?.label ?? "";
-  msgRun = action?.run ?? null;
-  msgWrap.classList.toggle("bad", bad);
-  msgWrap.classList.remove("leaving");
-  msgWrap.hidden = false;
-  clearTimeout(msgFade);
-  msgFade = setTimeout(
+  const el = document.createElement("div");
+  el.className = bad ? "pill msg bad" : "pill msg";
+  el.setAttribute("role", "alert");
+  el.innerHTML =
+    `<div class="pill-row"><span class="msg-text"></span>` +
+    (action ? `<button type="button" class="primary">${esc(action.label)}</button>` : "") +
+    `<button type="button" class="x" aria-label="Dismiss">${icon("x")}</button></div>`;
+  el.querySelector(".msg-text").textContent = text;
+  let fade;
+  const gone = () => {
+    clearTimeout(fade);
+    el.remove();
+  };
+  el.querySelector(".x").addEventListener("click", gone);
+  el.querySelector(".primary")?.addEventListener("click", () => {
+    gone();
+    action.run();
+  });
+  fade = setTimeout(
     () => {
-      msgWrap.classList.add("leaving");
-      msgFade = setTimeout(() => {
-        msgWrap.hidden = true;
-        msgWrap.classList.remove("leaving");
-      }, 280);
+      el.classList.add("leaving");
+      fade = setTimeout(gone, 280);
     },
     bad || action ? 8000 : 4000,
   );
+  // Past four, the oldest plain line goes before any pill still holding an Undo.
+  const shown = [...document.querySelectorAll("#notices .msg")];
+  if (shown.length >= 4) (shown.find((p) => !p.querySelector(".primary")) ?? shown[0]).remove();
+  $("notices").insertBefore(el, $("ssh-leftover"));
+  return el;
 }
-msgClose.addEventListener("click", () => {
-  clearTimeout(msgFade);
-  msgWrap.hidden = true;
-});
-msgAct.addEventListener("click", () => {
-  clearTimeout(msgFade);
-  msgWrap.hidden = true;
-  msgRun?.();
-});
 
 // Every failure the window can't put in a form. A pill, because the detail pane's
 // command box is absent when a folder is selected and gone under 960px.

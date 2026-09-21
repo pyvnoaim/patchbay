@@ -8,6 +8,11 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Messages at the foot of the window stack instead of replacing each other, so an error no longer takes a delete's Undo away.
+- Deleting a second device while the Undo pill is still up adds it to the same Undo, so both come back.
+
 ## 0.1.11 - 2026-09-21
 
 - A web tab's popups open. Proxmox's Upgrade shell and a VM's console used to do nothing when clicked.

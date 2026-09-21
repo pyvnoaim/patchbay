@@ -2670,14 +2670,14 @@ body.intro #uptoast {
   animation-delay: 0.4s;
 }
 /* What went wrong is not the same news as a new version. */
-#msg.bad #msg-text {
+.msg.bad .msg-text {
   color: var(--down);
 }
 /* A message wraps, and a 999px radius around two lines clips them. */
-#msg {
+.msg {
   border-radius: 16px;
 }
-#msg-text {
+.msg-text {
   white-space: normal;
 }
 .pill-row {
@@ -2688,7 +2688,7 @@ body.intro #uptoast {
 /* The text takes the slack so the buttons sit at the right edge. Basis auto, not 0%: a 0% basis
    offers the longest word as the width to shrink to. */
 #up-text,
-#msg-text {
+.msg-text {
   flex: 1 1 auto;
 }
 /* Open, a 999px radius around a paragraph clips the first and last line. */
@@ -2786,7 +2786,7 @@ body.intro #uptoast {
   flex: none;
 }
 #uptoast .primary,
-#msg .primary {
+.msg .primary {
   padding: 5px 12px;
   border-radius: 999px;
   font-size: 12px;
