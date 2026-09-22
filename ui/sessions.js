@@ -460,9 +460,9 @@ function webLoaded(s) {
 }
 
 // How much longer a page gets when the check found nothing to explain. Its own
-// certificate was waived here once, so `web_check` answers instantly and says fine
-// about a page the webview is refusing - which is what a device updated since looks
-// like, because the certificate trusted then is not the one it serves now.
+// certificate was waived here once, so `web_check` only asks whether the device answers
+// and says fine about a page the webview is refusing - which is what a device updated
+// since looks like, because the certificate trusted then is not the one it serves now.
 const WEB_SILENCE = 10000;
 
 function checkWeb(s, url) {

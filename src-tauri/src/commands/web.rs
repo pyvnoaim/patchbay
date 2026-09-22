@@ -220,17 +220,19 @@ pub async fn web_check(url: String) -> Result<(), String> {
     if !is_web_url(&url) {
         return Err(NOT_WEB.into());
     }
-    if web_trusted(&url) {
-        return Ok(());
-    }
-    blocking(move || web_reachable(&url)).await
+    // A waived device is still asked whether it is there. Answered "fine" unasked, a NAS
+    // mid-reboot fell through to the window's silence timer, which can only guess
+    // "new certificate" - and offered Trust it again for a device that was just down.
+    let trusted = web_trusted(&url);
+    blocking(move || web_reachable(&url, trusted)).await
 }
 
 /// One request of our own, to turn a silent blank page into a reason.
-fn web_reachable(url: &str) -> Result<(), String> {
+fn web_reachable(url: &str, trusted: bool) -> Result<(), String> {
     // 15s, not less: a NAS waking from hibernation drops the first SYN and takes its
     // time, and "not answering" arriving late beats it arriving wrong.
     let client = reqwest::blocking::Client::builder()
+        .danger_accept_invalid_certs(trusted)
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| format!("no http client: {e}"))?;
@@ -755,11 +757,14 @@ mod tests {
     /// reqwest's Display stops at the url; the reason lives in the source chain.
     #[test]
     fn a_web_ui_that_wont_load_says_why_not_just_which() {
-        let err = web_reachable("https://127.0.0.1:1").unwrap_err();
-        assert!(err.contains("127.0.0.1:1"), "{err}");
-        assert!(
-            err.to_lowercase().contains("refused"),
-            "the cause chain wasn't walked, so the message names no cause: {err}"
-        );
+        // Trusted too: a waived device that is down says so rather than passing.
+        for trusted in [false, true] {
+            let err = web_reachable("https://127.0.0.1:1", trusted).unwrap_err();
+            assert!(err.contains("127.0.0.1:1"), "{err}");
+            assert!(
+                err.to_lowercase().contains("refused"),
+                "the cause chain wasn't walked, so the message names no cause: {err}"
+            );
+        }
     }
 }
