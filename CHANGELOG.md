@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.16 - 2026-09-23
 
 - Once a ping finishes, press `c` in its tab to keep pinging until you press ^C.
 
