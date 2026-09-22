@@ -434,11 +434,9 @@ function armWebCheck(s, url) {
   s.checkTimer = setTimeout(() => checkWeb(s, url), WEB_PATIENCE);
 }
 
-function sameDocument(a, b) {
+function sameOrigin(a, b) {
   try {
-    const [x, y] = [new URL(a), new URL(b)];
-    x.hash = y.hash = "";
-    return x.href === y.href;
+    return new URL(a).origin === new URL(b).origin;
   } catch {
     return false;
   }
@@ -918,10 +916,12 @@ async function openWebSession(name) {
     s.unlisten.push(
       await listen(`web-nav:${id}`, (e) => {
         // Each navigation is a fresh page to be patient with; the one that paints
-        // cancels the check for all of them. Except a fragment change on a page that
-        // painted: Proxmox navigates by `#v1:...`, WebKit reports it, but it is the
-        // same document and no `web-load` follows, so it re-armed into the panel.
-        if (s.painted && sameDocument(e.payload, s.checkUrl)) return;
+        // cancels the check for all of them. Except one on the origin that just
+        // painted: wry reports every frame's navigation but only the main frame's
+        // `web-load`, so a Proxmox console or a DSM widget iframe (or a `#v1:...`
+        // fragment) re-armed into Trust it again with nothing to cancel it. A
+        // certificate belongs to the origin, and that one was just accepted.
+        if (s.painted && sameOrigin(e.payload, s.checkUrl)) return;
         armWebCheck(s, e.payload);
       }),
     );

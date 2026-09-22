@@ -8,6 +8,10 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Proxmox and Synology tabs no longer ask you to trust them again after you switch away and come back.
+
 ## 0.1.14 - 2026-09-22
 
 - A device you trusted that is restarting now says it isn't answering, instead of asking you to trust it again.
