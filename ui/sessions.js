@@ -434,6 +434,16 @@ function armWebCheck(s, url) {
   s.checkTimer = setTimeout(() => checkWeb(s, url), WEB_PATIENCE);
 }
 
+function sameDocument(a, b) {
+  try {
+    const [x, y] = [new URL(a), new URL(b)];
+    x.hash = y.hash = "";
+    return x.href === y.href;
+  } catch {
+    return false;
+  }
+}
+
 // The page painted, so whatever we were about to explain isn't true. Also clears a
 // panel already up: a slow device that beat the timer must not keep the apology.
 function webLoaded(s) {
@@ -908,7 +918,10 @@ async function openWebSession(name) {
     s.unlisten.push(
       await listen(`web-nav:${id}`, (e) => {
         // Each navigation is a fresh page to be patient with; the one that paints
-        // cancels the check for all of them.
+        // cancels the check for all of them. Except a fragment change on a page that
+        // painted: Proxmox navigates by `#v1:...`, WebKit reports it, but it is the
+        // same document and no `web-load` follows, so it re-armed into the panel.
+        if (s.painted && sameDocument(e.payload, s.checkUrl)) return;
         armWebCheck(s, e.payload);
       }),
     );

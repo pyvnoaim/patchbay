@@ -8,6 +8,10 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Proxmox no longer shows "opened nothing" over a working page after you click around in it.
+
 ## 0.1.12 - 2026-09-21
 
 - Messages at the foot of the window stack instead of replacing each other, so an error no longer takes a delete's Undo away.
