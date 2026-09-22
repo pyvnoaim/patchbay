@@ -481,8 +481,9 @@ pub fn without_forwards(args: Vec<String>) -> Vec<String> {
 
 /// Ping or traceroute toward a device, as `(program, args)`. A device behind a jump
 /// is not reachable from here, so the check runs *on the hop*, over the same chain.
+/// `ping-on` is ping until ^C.
 pub fn task_argv(task: &str, name: &str, jacks: &Jacks) -> Result<(String, Vec<String>), String> {
-    if task != "ping" && task != "trace" {
+    if !["ping", "ping-on", "trace"].contains(&task) {
         return Err(format!("no task named \"{task}\""));
     }
     let j = jacks
@@ -499,6 +500,10 @@ pub fn task_argv(task: &str, name: &str, jacks: &Jacks) -> Result<(String, Vec<S
         // A jump that isn't a jack is a raw ssh spec with no chain of its own.
         false => vec![hop.clone()],
     };
+    // Without a remote tty, ^C kills the local ssh and the far ping never prints its tally.
+    if task == "ping-on" {
+        args.insert(0, "-t".into());
+    }
     args.extend(posix_task(task, host));
     Ok(("ssh".into(), args))
 }
@@ -520,6 +525,7 @@ fn plain_host(host: &str) -> Result<&str, String> {
 fn posix_task(task: &str, host: &str) -> Vec<String> {
     match task {
         "trace" => vec!["traceroute".into(), host.into()],
+        "ping-on" => vec!["ping".into(), host.into()],
         _ => vec!["ping".into(), "-c".into(), "5".into(), host.into()],
     }
 }
@@ -534,6 +540,7 @@ fn local_task(task: &str, host: &str) -> (String, Vec<String>) {
 fn local_task(task: &str, host: &str) -> (String, Vec<String>) {
     match task {
         "trace" => ("tracert".into(), vec![host.into()]),
+        "ping-on" => ("ping".into(), vec!["-t".into(), host.into()]),
         _ => ("ping".into(), vec!["-n".into(), "5".into(), host.into()]),
     }
 }
@@ -1115,6 +1122,10 @@ host = "x; id"
 
         let (_, a) = task_argv("ping", "raw", &j).unwrap();
         assert_eq!(a[0], "ops@edge.example");
+
+        let (_, a) = task_argv("ping-on", "db", &j).unwrap();
+        assert_eq!(a[0], "-t", "^C has to reach the far ping");
+        assert_eq!(a[a.len() - 2..], ["ping", "db.internal"]);
     }
 
     #[test]
@@ -1126,7 +1137,7 @@ host = "x; id"
         );
         assert!(
             task_argv("nope", "plain", &j).is_err(),
-            "only the two tasks exist"
+            "only the three tasks exist"
         );
     }
 

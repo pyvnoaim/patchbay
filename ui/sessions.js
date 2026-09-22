@@ -190,7 +190,10 @@ async function openBroadcast(marks) {
   }
 }
 
-// A terminal tab. `task` ("ping" or "trace") runs a one-shot check instead of a shell,
+// "ping-on" is ping until ^C: offered once a ping has finished, never as a first click.
+const taskLabel = (task) => (task === "ping-on" ? "ping ∞" : task);
+
+// A terminal tab. `task` ("ping", "ping-on" or "trace") runs a check instead of a shell,
 // on the jump host when there is one. `bcast` joins the session to a broadcast group.
 async function openSession(name, task = null, bcast = null) {
   // A broadcast pane never counts as "already open": two grids are two grids.
@@ -243,9 +246,10 @@ async function openSession(name, task = null, bcast = null) {
   term.onData((d) => {
     // A dead tab keeps the keyboard: Enter dials the same device again.
     if (s.dead) {
-      if (d === "\r") {
+      const again = d === "\r" ? task : d === "c" && task === "ping" ? "ping-on" : undefined;
+      if (again !== undefined) {
         dropTab(id);
-        openSession(name, task, s.bcast);
+        openSession(name, again, s.bcast);
       }
       return;
     }
@@ -263,7 +267,7 @@ async function openSession(name, task = null, bcast = null) {
   // Our banner is cleared by the first byte from the far end, so a login that draws
   // with cursor moves gets a clean screen. An error we wrote on the way in stays.
   let ours = true;
-  term.write(`\x1b[2m── ${task ? `${task} ` : ""}${name}… ──\x1b[0m\r\n`);
+  term.write(`\x1b[2m── ${task ? `${taskLabel(task)} ` : ""}${name}… ──\x1b[0m\r\n`);
 
   try {
     s.unlisten.push(
@@ -280,7 +284,7 @@ async function openSession(name, task = null, bcast = null) {
         s.dead = true;
         s.bcast?.live.delete(id);
         term.write(
-          `\r\n\x1b[2m── ${task ?? "ssh"} exited (${e.payload}) · ⏎ to ${task ? "run it again" : "reconnect"} · ${chord("w")} to close ──\x1b[0m\r\n`,
+          `\r\n\x1b[2m── ${task ? taskLabel(task) : "ssh"} exited (${e.payload}) · ⏎ to ${task ? "run it again" : "reconnect"}${task === "ping" ? " · c to ping until ^C" : ""} · ${chord("w")} to close ──\x1b[0m\r\n`,
         );
         renderTabs();
         renderTree();
@@ -968,7 +972,7 @@ function renderTabs() {
       ${s.kind === "web" ? `<span class="tabkind">${icon("globe")}</span>` : ""}
       ${s.kind === "sftp" ? `<span class="tabkind">${icon("folder")}</span>` : ""}
       ${s.task ? `<span class="tabkind">${icon(s.task === "trace" ? "waypoints" : "plug")}</span>` : ""}
-      <span class="lbl">${esc(s.task ? `${s.task} ${s.name}` : s.name)}</span>
+      <span class="lbl">${esc(s.task ? `${taskLabel(s.task)} ${s.name}` : s.name)}</span>
       ${
         s.kind === "web" && webextRunning && !s.dead
           ? `<span class="x" data-bw="${s.id}" data-tip="Fill · right-click for Bitwarden">${icon("key-round")}</span>`
