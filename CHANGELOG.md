@@ -11,6 +11,8 @@ it back. Nothing is retyped anywhere.
 ## Unreleased
 
 - A device you trusted that is restarting now says it isn't answering, instead of asking you to trust it again.
+- Remote desktops behind a bastion no longer refuse each other's certificates, and two machines on one address with different ports are told apart.
+- When a remote desktop's certificate changes, patchbay shows the new one and offers to trust it, instead of sending you to edit a file.
 
 ## 0.1.13 - 2026-09-22
 

@@ -177,6 +177,7 @@ type Upgraded = rustls::StreamOwned<rustls::ClientConnection, TcpStream>;
 pub fn open(
     host: &str,
     port: u16,
+    pin: &str,
     username: String,
     password: String,
     domain: Option<String>,
@@ -190,6 +191,7 @@ pub fn open(
     let (result, framed) = connect(
         host,
         port,
+        pin,
         config(username, password, domain, width, height, scale),
         crate::clipboard::Backend::new(to_session, std::sync::Arc::clone(&last_seen)),
     )?;
@@ -586,6 +588,7 @@ fn drain(
 fn connect(
     host: &str,
     port: u16,
+    pin: &str,
     config: connector::Config,
     clipboard: crate::clipboard::Backend,
 ) -> Result<(ConnectionResult, ironrdp_blocking::Framed<Upgraded>), String> {
@@ -616,7 +619,7 @@ fn connect(
     let should_upgrade = ironrdp_blocking::connect_begin(&mut framed, &mut connector)
         .map_err(|e| format!("{host}: {e}"))?;
 
-    let (upgraded_stream, server_public_key) = tls(framed.into_inner_no_leftover(), host)?;
+    let (upgraded_stream, server_public_key) = tls(framed.into_inner_no_leftover(), host, pin)?;
     let upgraded = ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut connector);
     let mut upgraded_framed = ironrdp_blocking::Framed::new(upgraded_stream);
 
@@ -637,7 +640,9 @@ fn connect(
     Ok((result, upgraded_framed))
 }
 
-fn tls(stream: TcpStream, host: &str) -> Result<(Upgraded, Vec<u8>), String> {
+/// `pin` is the device's own `host:port`, which the certificate is remembered under:
+/// `host` is `127.0.0.1` for every device behind a bastion.
+fn tls(stream: TcpStream, host: &str, pin: &str) -> Result<(Upgraded, Vec<u8>), String> {
     let mut config = rustls::client::ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(std::sync::Arc::new(verifier::AcceptAny))
@@ -661,15 +666,19 @@ fn tls(stream: TcpStream, host: &str) -> Result<(Upgraded, Vec<u8>), String> {
         .and_then(|c| c.first())
         .ok_or_else(|| format!("\"{host}\" sent no certificate"))?;
     // Before `connect_finalize`, where the password goes over the wire.
-    trust::check(host, cert)?;
+    trust::check(pin, cert)?;
     let key = public_key(cert)?;
     Ok((tls_stream, key))
 }
 
 /// Trust on first use, as ssh does it: nearly every RDP host is self-signed, but a
 /// swapped certificate must not go unnoticed. Remember the first, refuse a change.
-mod trust {
-    use std::path::PathBuf;
+///
+/// Keyed by the device's `host:port`. A line with a bare host is from before the port
+/// was part of it, and still answers for that host so an upgrade doesn't re-trust
+/// everything unseen.
+pub mod trust {
+    use std::path::{Path, PathBuf};
 
     /// Beside the config: this machine's answer, not part of the list.
     fn store() -> PathBuf {
@@ -686,22 +695,47 @@ mod trust {
             .collect()
     }
 
-    pub(super) fn check(host: &str, cert: &[u8]) -> Result<(), String> {
-        let path = store();
-        let seen = std::fs::read_to_string(&path).unwrap_or_default();
-        let now = fingerprint(cert);
+    fn is_mine(line_key: &str, pin: &str) -> bool {
+        line_key == pin
+            || pin
+                .rsplit_once(':')
+                .is_some_and(|(host, _)| line_key == host)
+    }
 
-        match seen
+    pub(super) fn check(pin: &str, cert: &[u8]) -> Result<(), String> {
+        check_at(&store(), pin, cert)
+    }
+
+    /// The store is one `pin fingerprint` per line, and a pin comes from a host in a
+    /// file someone else may have written: a space or a newline in it writes a line
+    /// of its own, trusting a certificate for some other device.
+    fn usable(pin: &str) -> Result<(), String> {
+        match pin.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            true => Err(format!("\"{}\" isn't a usable host", pin.escape_debug())),
+            false => Ok(()),
+        }
+    }
+
+    pub(super) fn check_at(path: &Path, pin: &str, cert: &[u8]) -> Result<(), String> {
+        usable(pin)?;
+        let seen = std::fs::read_to_string(path).unwrap_or_default();
+        let now = fingerprint(cert);
+        // The exact key first: a legacy bare-host line must not outrank a newer answer.
+        let known = seen
             .lines()
-            .find_map(|l| l.split_once(' ').filter(|(h, _)| *h == host))
-        {
-            Some((_, known)) if known == now => Ok(()),
-            Some((_, known)) => Err(format!(
-                "\"{host}\" presented a different certificate than last time \
-                 ({} instead of {}) - if the host was rebuilt, remove its line from {}",
-                &now[..16.min(now.len())],
+            .filter_map(|l| l.split_once(' '))
+            .filter(|(k, _)| is_mine(k, pin))
+            .max_by_key(|(k, _)| *k == pin)
+            .map(|(_, fp)| fp);
+
+        match known {
+            Some(known) if known == now => Ok(()),
+            // The full new fingerprint is what the window offers to trust, and the text
+            // it is read back out of.
+            Some(known) => Err(format!(
+                "\"{pin}\" presented a different certificate than last time - \
+                 SHA-256 {now}, where it was {}",
                 &known[..16.min(known.len())],
-                path.display()
             )),
             // First sight: remember it. A failed write only means asking again next time.
             None => {
@@ -712,11 +746,39 @@ mod trust {
                 let _ = std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(&path)
-                    .and_then(|mut f| writeln!(f, "{host} {now}"));
+                    .open(path)
+                    .and_then(|mut f| writeln!(f, "{pin} {now}"));
                 Ok(())
             }
         }
+    }
+
+    /// "Trust the new one": the fingerprint the refusal named, and no other, replaces
+    /// what was remembered. Taken from the refusal rather than fetched again, so what is
+    /// trusted is exactly what the user was shown.
+    pub fn accept(pin: &str, fingerprint: &str) -> Result<(), String> {
+        accept_at(&store(), pin, fingerprint)
+    }
+
+    pub(super) fn accept_at(path: &Path, pin: &str, fingerprint: &str) -> Result<(), String> {
+        if fingerprint.len() != 64 || !fingerprint.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(format!("\"{fingerprint}\" isn't a SHA-256 fingerprint"));
+        }
+        usable(pin)?;
+        let seen = std::fs::read_to_string(path).unwrap_or_default();
+        // Only this pin's own line: a bare-host line may be another port's answer, and
+        // the exact line outranks it on the way back in anyway.
+        let mut out: String = seen
+            .lines()
+            .filter(|l| !l.split_once(' ').is_some_and(|(k, _)| k == pin))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        out.push_str(&format!("{pin} {}\n", fingerprint.to_ascii_lowercase()));
+        // Temp and rename: a truncated store re-trusts every host on first sight.
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, out)
+            .and_then(|_| std::fs::rename(&tmp, path))
+            .map_err(|e| format!("{}: {e}", path.display()))
     }
 }
 
@@ -813,6 +875,7 @@ impl Sessions {
         id: u32,
         host: &str,
         port: u16,
+        pin: &str,
         username: String,
         password: String,
         domain: Option<String>,
@@ -822,7 +885,9 @@ impl Sessions {
         on_tile: tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>,
         app: tauri::AppHandle,
     ) -> Result<Screen, String> {
-        let session = open(host, port, username, password, domain, width, height, scale)?;
+        let session = open(
+            host, port, pin, username, password, domain, width, height, scale,
+        )?;
         let screen = Screen {
             width: session.width,
             height: session.height,
@@ -899,7 +964,8 @@ mod tests {
         let canvas = std::sync::Mutex::new((Vec::<u8>::new(), 0u16, 0u16));
         let tiles = std::sync::atomic::AtomicUsize::new(0);
 
-        let session = open(&host, port, user, pass, None, 1280, 1024, 100).expect("connect");
+        let pin = format!("{host}:{port}");
+        let session = open(&host, port, &pin, user, pass, None, 1280, 1024, 100).expect("connect");
         {
             let mut c = canvas.lock().unwrap();
             *c = (
@@ -957,36 +1023,96 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("rdp_known_hosts");
-        // `check` reads the store beside $PATCHBAY_CONFIG.
-        std::env::set_var("PATCHBAY_CONFIG", dir.join("patchbay.toml"));
+        let check = |pin: &str, cert: &[u8]| trust::check_at(&store, pin, cert);
 
         assert!(
-            trust::check("box", b"first cert").is_ok(),
+            check("box:3389", b"first cert").is_ok(),
             "first sight is trusted"
         );
         assert!(
-            std::fs::read_to_string(&store).unwrap().contains("box "),
+            std::fs::read_to_string(&store)
+                .unwrap()
+                .contains("box:3389 "),
             "and recorded"
         );
         assert!(
-            trust::check("box", b"first cert").is_ok(),
+            check("box:3389", b"first cert").is_ok(),
             "the same one still is"
         );
 
-        let err = trust::check("box", b"a different cert").unwrap_err();
+        let err = check("box:3389", b"a different cert").unwrap_err();
         assert!(err.contains("different certificate"), "got {err}");
-        // Another host's entry does not affect a new one.
-        assert!(trust::check("other", b"whatever").is_ok());
+        // Another host's entry does not affect a new one, and neither does another port
+        // on the same address - two machines behind one forwarded IP.
+        assert!(check("other:3389", b"whatever").is_ok());
+        assert!(check("box:3390", b"a different cert").is_ok());
 
-        std::env::remove_var("PATCHBAY_CONFIG");
+        // The refusal carries the whole fingerprint, and trusting it is what lets the
+        // new certificate in - that one, for that device, and nothing else.
+        let fp = err.split("SHA-256 ").nth(1).unwrap()[..64].to_string();
+        assert!(trust::accept_at(&store, "box:3389", "not hex").is_err());
+        trust::accept_at(&store, "box:3389", &fp).unwrap();
+        assert!(check("box:3389", b"a different cert").is_ok());
+        assert!(check("box:3389", b"first cert").is_err());
+        assert!(check("box:3390", b"a different cert").is_ok());
+        assert!(check("other:3389", b"whatever").is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_line_from_before_ports_still_answers_for_its_host() {
+        let dir = std::env::temp_dir().join(format!("patchbay-legacy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("rdp_known_hosts");
+        trust::check_at(&store, "box:3389", b"old").unwrap();
+        // Rewrite as an old store would have it: the bare host.
+        let line = std::fs::read_to_string(&store)
+            .unwrap()
+            .replace("box:3389", "box");
+        std::fs::write(&store, &line).unwrap();
+
+        assert!(trust::check_at(&store, "box:3389", b"old").is_ok());
+        assert!(trust::check_at(&store, "box:3389", b"swapped").is_err());
+        // Accepting outranks the legacy line without deleting it: that line may be the
+        // answer for another port on the same address.
+        let err = trust::check_at(&store, "box:3389", b"swapped").unwrap_err();
+        let fp = err.split("SHA-256 ").nth(1).unwrap()[..64].to_string();
+        trust::accept_at(&store, "box:3389", &fp).unwrap();
+        assert!(trust::check_at(&store, "box:3389", b"swapped").is_ok());
+        assert!(trust::check_at(&store, "box:3390", b"old").is_ok());
+        assert!(trust::check_at(&store, "box:3390", b"swapped").is_err());
+
+        // A host from someone else's file can't write a line of its own.
+        for smuggled in ["evil\nbox:3389", "evil box:3389", "evil\r"] {
+            assert!(
+                trust::check_at(&store, smuggled, b"x").is_err(),
+                "{smuggled:?}"
+            );
+            assert!(
+                trust::accept_at(&store, smuggled, &fp).is_err(),
+                "{smuggled:?}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_refused_connection_names_the_host_and_port() {
         // Nothing listens on port 1, so this fails at TCP connect.
-        let err = open("127.0.0.1", 1, "u".into(), "p".into(), None, 1024, 768, 100)
-            .err()
-            .expect("nothing listens on port 1");
+        let err = open(
+            "127.0.0.1",
+            1,
+            "127.0.0.1:1",
+            "u".into(),
+            "p".into(),
+            None,
+            1024,
+            768,
+            100,
+        )
+        .err()
+        .expect("nothing listens on port 1");
         assert!(err.contains("127.0.0.1:1"), "got {err}");
     }
 }

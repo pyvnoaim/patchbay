@@ -52,21 +52,33 @@ fn dial_address(
     })
 }
 
-/// Address, resolved name and configured user for a device's RDP port.
+/// Address, resolved name, configured user and certificate pin for a device's RDP port.
 fn rdp_address(
     shared: &rdp::SharedTunnels,
     name: &str,
-) -> Result<(String, String, Option<String>), String> {
+) -> Result<(String, String, Option<String>, String), String> {
     let jacks = load_jacks()?;
-    let resolved = patchbay::resolve(name, &jacks)?;
-    let j = jacks
+    let (resolved, port) = rdp_port(&jacks, name)?;
+    let pin = rdp_pin(&jacks, name)?;
+    let addr = dial_address(shared, &jacks, &resolved, port)?;
+    Ok((addr, resolved.clone(), jacks[&resolved].user.clone(), pin))
+}
+
+fn rdp_port(jacks: &patchbay::Jacks, name: &str) -> Result<(String, u16), String> {
+    let resolved = patchbay::resolve(name, jacks)?;
+    let port = jacks
         .get(&resolved)
-        .ok_or_else(|| format!("no jack named \"{resolved}\""))?;
-    let port = j
+        .ok_or_else(|| format!("no jack named \"{resolved}\""))?
         .rdp
         .ok_or_else(|| format!("\"{resolved}\" has no rdp port"))?;
-    let addr = dial_address(shared, &jacks, &resolved, port)?;
-    Ok((addr, resolved, j.user.clone()))
+    Ok((resolved, port))
+}
+
+/// What a device's RDP certificate is remembered under: its own address, never the
+/// dialled one, which is `127.0.0.1` for everything behind a bastion.
+fn rdp_pin(jacks: &patchbay::Jacks, name: &str) -> Result<String, String> {
+    let (resolved, port) = rdp_port(jacks, name)?;
+    Ok(format!("{}:{port}", jacks[&resolved].host))
 }
 
 /// Remote desktop in the system client, via a `.rdp` file.
@@ -77,7 +89,7 @@ pub async fn open_rdp(
 ) -> Result<String, String> {
     let shared = tunnels.inner().clone();
     blocking(move || {
-        let (addr, resolved, user) = rdp_address(&shared, &name)?;
+        let (addr, resolved, user, _) = rdp_address(&shared, &name)?;
         let body = rdp::rdp_file(&addr, user.as_deref())?;
         let path = rdp::write_file(&resolved, &body)?;
         rdp::hand_off(&path)?;
@@ -117,7 +129,7 @@ pub async fn open_rdp_session(
     let shared = tunnels.inner().clone();
     let rdp_sessions = sessions.inner().clone();
     blocking(move || {
-        let (addr, resolved, cfg_user) = rdp_address(&shared, &name)?;
+        let (addr, resolved, cfg_user, pin) = rdp_address(&shared, &name)?;
         let (host, port) = addr
             .rsplit_once(':')
             .ok_or_else(|| format!("\"{addr}\" isn't a host and port"))?;
@@ -131,10 +143,19 @@ pub async fn open_rdp_session(
             .ok_or_else(|| format!("\"{resolved}\" needs a user to sign in with"))?;
         let (domain, user) = split_domain(&user);
         rdp_sessions.open(
-            id, host, port, user, password, domain, width, height, scale, on_tile, app,
+            id, host, port, &pin, user, password, domain, width, height, scale, on_tile, app,
         )
     })
     .await
+}
+
+/// A device's changed RDP certificate, trusted from here rather than by editing
+/// `rdp_known_hosts`. Takes the fingerprint the refusal showed, so a certificate that
+/// changed again in between is refused again rather than trusted unseen.
+#[tauri::command]
+pub async fn rdp_trust(name: String, fingerprint: String) -> Result<(), String> {
+    blocking(move || rdp_session::trust::accept(&rdp_pin(&load_jacks()?, &name)?, &fingerprint))
+        .await
 }
 
 #[tauri::command]

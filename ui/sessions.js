@@ -1434,7 +1434,28 @@ async function openRdpSession(name) {
     // Rejected credentials must not be remembered, or the next attempt reuses them.
     rdpCreds.delete(name);
     renderTabs();
-    return alertish(err);
+    // A changed certificate is refused before the password is sent, so the sign-in
+    // is kept for the retry. The fingerprint is the one the refusal named: trusting it
+    // lets in that certificate and not whatever the host serves by the time we ask.
+    const changed = String(err).match(/SHA-256 ([0-9a-f]{64})/);
+    if (!changed) return alertish(err);
+    const ok = await ask(
+      `${j.name} is serving a different certificate than last time.\n\n` +
+        `That is expected after Windows renews its own, or the machine was rebuilt - ` +
+        `and it is also what someone in between would look like.\n\n` +
+        `SHA-256 ${changed[1]}`,
+      null,
+      "Trust it",
+    );
+    if (!ok) return;
+    try {
+      await invoke("rdp_trust", { name, fingerprint: changed[1] });
+    } catch (e) {
+      return alertish(e);
+    }
+    dropTab(id);
+    rdpCreds.set(name, creds);
+    return openRdpSession(name);
   }
 
   // Without this a hang-up freezes the picture while the tab keeps a live dot.

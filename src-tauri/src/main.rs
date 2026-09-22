@@ -148,6 +148,7 @@ fn main() {
             web::webext_key,
             remote::open_rdp,
             remote::open_rdp_session,
+            remote::rdp_trust,
             remote::close_rdp_session,
             remote::rdp_input,
             remote::open_vnc,
