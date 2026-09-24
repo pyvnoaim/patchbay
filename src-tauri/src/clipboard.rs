@@ -55,7 +55,8 @@ pub fn stamp() -> Option<u64> {
 }
 
 /// A fresh handle per call: holding one across a session blocks other applications
-/// on some platforms.
+/// on some platforms. Only the Bitwarden popup's Paste reads text alone.
+#[cfg(target_os = "macos")]
 pub fn local_text() -> Option<String> {
     arboard::Clipboard::new().ok()?.get_text().ok()
 }
