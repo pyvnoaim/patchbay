@@ -1763,6 +1763,12 @@ button.flat:hover {
   flex: none;
   padding: 7px 14px;
 }
+/* The only footer button with an icon, and `.i` is a block. */
+#ask-vault {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 button.danger {
   background: transparent;
   color: var(--down);

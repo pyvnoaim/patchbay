@@ -264,6 +264,8 @@ function ask(title, value = "", okLabel = "OK", type = "text", user = null) {
   askUser.value = user ?? "";
   askLabel.hidden = user === null;
   askLabel.textContent = "Password";
+  $("ask-vault").hidden = user === null || !webextRunning;
+  $("ask-vault").innerHTML = `${icon("key-round")}Vault`;
   askErr.hidden = true;
   $("ask-ok").textContent = okLabel;
   askWrap.hidden = false;
@@ -290,6 +292,7 @@ askForm.addEventListener("submit", (e) => {
   closeAsk(askInput.value ? { user, password: askInput.value } : null);
 });
 $("ask-cancel").addEventListener("click", () => closeAsk(null));
+$("ask-vault").addEventListener("click", (e) => bitwardenKey(e.currentTarget, true));
 askWrap.addEventListener("mousedown", (e) => {
   if (e.target === askWrap) closeAsk(null);
 });
