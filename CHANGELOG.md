@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## 0.1.17 - 2026-09-24
+## 0.1.18 - 2026-09-24
 
 - Copy and paste files between this machine and a remote desktop, both ways, as you would text. In the remote desktop paste with Ctrl+V.
 - Remote desktops can take files: drop them on the tab and they appear as `\\tsclient\transfer` on the far end. Whatever it saves there lands in `Downloads/patchbay`. macOS and Linux.
