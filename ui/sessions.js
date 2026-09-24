@@ -1354,22 +1354,25 @@ async function openRdpSession(name) {
   // canvas, so they are held until the server has said how big the desktop is.
   let queued = [];
   const paint = (buf) => {
-    const head = new DataView(buf, 0, 8);
-    // 8-byte header (x, y, w, h as little-endian u16), then raw RGBA.
-    const w = head.getUint16(4, true),
-      h = head.getUint16(6, true);
-    // A header with no pixels behind it is the desktop's new size, in line with the
-    // tiles so nothing painted before the change is dropped on the floor.
-    if (buf.byteLength === 8) {
-      canvas.width = w;
-      canvas.height = h;
-      return scale();
+    const view = new DataView(buf);
+    // Records of an 8-byte header (x, y, w, h as little-endian u16), then raw RGBA.
+    for (let at = 0; at < buf.byteLength;) {
+      const x = view.getUint16(at, true),
+        y = view.getUint16(at + 2, true),
+        w = view.getUint16(at + 4, true),
+        h = view.getUint16(at + 6, true);
+      at += 8;
+      // x at 0xffff has no pixels behind it: it is the desktop's new size, in line with
+      // the tiles so nothing painted before the change is dropped on the floor.
+      if (x === 0xffff) {
+        canvas.width = w;
+        canvas.height = h;
+        scale();
+        continue;
+      }
+      ctx.putImageData(new ImageData(new Uint8ClampedArray(buf, at, w * h * 4), w, h), x, y);
+      at += w * h * 4;
     }
-    ctx.putImageData(
-      new ImageData(new Uint8ClampedArray(buf, 8), w, h),
-      head.getUint16(0, true),
-      head.getUint16(2, true),
-    );
   };
   const chan = new window.__TAURI__.core.Channel();
   chan.onmessage = (msg) => {

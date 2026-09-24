@@ -133,3 +133,14 @@ opt-level = "s"
 lto = "thin"
 strip = true
 panic = "abort"
+
+# Every RDP pixel goes through these, and "s" roughly halves the decode rate. Debug
+# too, or `npm run dev` judges the session by an unoptimized codec.
+[profile.release.package.ironrdp-graphics]
+opt-level = 3
+[profile.release.package.ironrdp-session]
+opt-level = 3
+[profile.dev.package.ironrdp-graphics]
+opt-level = 3
+[profile.dev.package.ironrdp-session]
+opt-level = 3

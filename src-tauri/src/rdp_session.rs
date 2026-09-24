@@ -880,6 +880,13 @@ pub(crate) mod verifier {
     }
 }
 
+/// How long tiles are gathered before they cross to the window: one frame at 60 Hz.
+const FRAME: Duration = Duration::from_millis(16);
+
+/// `x` and `y` of a record that carries the desktop's new size rather than pixels. No
+/// tile starts there: the desktop is capped at 8192.
+const RESIZED: u16 = u16::MAX;
+
 /// Live sessions, keyed the same way `pty::Sessions` keys terminal tabs.
 #[derive(Default)]
 pub struct Sessions(
@@ -890,8 +897,8 @@ impl Sessions {
     /// Connect synchronously, then pump tiles into `on_tile` from a thread until
     /// closed; `rdp-exit:<id>` carries why it ended. Tiles go over an ipc channel, not
     /// an event, because `emit` would serialize the bytes as a JSON array. Each
-    /// message is an 8-byte header (x, y, w, h as little-endian u16) then raw RGBA;
-    /// a header with no pixels behind it is the desktop's new size.
+    /// message is a run of records, an 8-byte header (x, y, w, h as little-endian u16)
+    /// then raw RGBA; one at `RESIZED` has no pixels and is the desktop's new size.
     #[allow(clippy::too_many_arguments)]
     pub fn open(
         &self,
@@ -919,6 +926,22 @@ impl Sessions {
         let (tx, rx) = std::sync::mpsc::channel();
         self.0.lock().unwrap().insert(id, tx);
 
+        // Tiles are batched into one message per frame: each send is an eval and, past
+        // 1 KB, a fetch round trip on top, and a busy desktop is hundreds of small tiles.
+        let (batch, batched) = std::sync::mpsc::channel::<Vec<u8>>();
+        let sender = std::thread::spawn(move || {
+            while let Ok(mut msg) = batched.recv() {
+                let until = std::time::Instant::now() + FRAME;
+                while let Some(left) = until.checked_duration_since(std::time::Instant::now()) {
+                    match batched.recv_timeout(left) {
+                        Ok(more) => msg.extend_from_slice(&more),
+                        Err(_) => break,
+                    }
+                }
+                let _ = on_tile.send(tauri::ipc::InvokeResponseBody::Raw(msg));
+            }
+        });
+
         std::thread::spawn(move || {
             let send = |head: [u16; 4], rgba: &[u8]| {
                 let mut msg = Vec::with_capacity(8 + rgba.len());
@@ -926,7 +949,7 @@ impl Sessions {
                     msg.extend_from_slice(&v.to_le_bytes());
                 }
                 msg.extend_from_slice(rgba);
-                let _ = on_tile.send(tauri::ipc::InvokeResponseBody::Raw(msg));
+                let _ = batch.send(msg);
             };
             let ended = pump(
                 session,
@@ -934,8 +957,11 @@ impl Sessions {
                 |t| send([t.x, t.y, t.width, t.height], &t.rgba),
                 // Down the same channel as the tiles, so it can't overtake the ones
                 // painted before the desktop changed size.
-                |width, height| send([0, 0, width, height], &[]),
+                |width, height| send([RESIZED, RESIZED, width, height], &[]),
             );
+            // The last batch lands before the exit does, or the final frame is lost.
+            drop(batch);
+            let _ = sender.join();
             let _ = app.emit(&format!("rdp-exit:{id}"), ended.err());
         });
 
