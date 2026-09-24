@@ -35,6 +35,10 @@ sspi = { version = "0.21.3", features = ["network_client"] }
 x509-cert = "0.2"
 ironrdp-input = "0.7.0"
 ironrdp-cliprdr = "0.7.0"
+# A folder shared into the remote desktop as a drive. RDPDR is only answered when
+# RDPSND is advertised beside it, so that comes along muted.
+ironrdp-rdpdr = "0.7"
+ironrdp-rdpsnd = "0.9"
 arboard = "3.6.1"
 # "Edit here" learns of a save from the OS (FSEvents, inotify, ReadDirectoryChangesW)
 # rather than a thread per open file stat-ing it every two seconds.
@@ -74,6 +78,10 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 # window needs no capability for it - and an OS panel is the one way to name a path
 # that is certainly there, on a share whose spelling nobody remembers.
 tauri-plugin-dialog = "2"
+
+# The file side of RDPDR is written against unix calls only.
+[target.'cfg(unix)'.dependencies]
+ironrdp-rdpdr-native = "0.7"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.5"

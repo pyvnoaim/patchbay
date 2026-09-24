@@ -7,6 +7,7 @@
 mod clipboard;
 mod commands;
 mod config;
+mod drive;
 mod import;
 mod patchbay;
 mod pty;
@@ -151,6 +152,7 @@ fn main() {
             remote::rdp_trust,
             remote::close_rdp_session,
             remote::rdp_input,
+            remote::rdp_drop,
             remote::open_vnc,
             remote::open_forwards,
             remote::tunnels,

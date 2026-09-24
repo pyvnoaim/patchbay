@@ -858,9 +858,12 @@ async function watchDrops() {
   try {
     await listen("tauri://drag-drop", async (e) => {
       const s = sessions.get(activeId);
-      if (!s || s.kind !== "sftp") return;
       const paths = e.payload?.paths ?? [];
       if (!paths.length) return;
+      // A remote desktop sees one folder of ours as a drive; a drop lands there.
+      if (s?.kind === "rdp")
+        return invoke("rdp_drop", { paths }).then((said) => flash(said), alertish);
+      if (s?.kind !== "sftp") return;
       fileNote(s, `Uploading ${paths.length} file${paths.length === 1 ? "" : "s"}…`);
       let failed = null;
       for (const local of paths) {
@@ -1326,6 +1329,7 @@ async function openRdpSession(name) {
   host.append(canvas);
   termsEl.append(host);
   const ctx = canvas.getContext("2d");
+  watchDrops();
 
   const s = { id, name, kind: "rdp", key, canvas, host, dead: false, unlisten: [] };
   sessions.set(id, s);

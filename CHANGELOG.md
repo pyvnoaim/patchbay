@@ -8,6 +8,11 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Copy and paste files between this machine and a remote desktop, both ways, as you would text. In the remote desktop paste with Ctrl+V.
+- Remote desktops can take files: drop them on the tab and they appear as `\\tsclient\transfer` on the far end. Whatever it saves there lands in `Downloads/patchbay`. macOS and Linux.
+
 ## 0.1.16 - 2026-09-23
 
 - Once a ping finishes, press `c` in its tab to keep pinging until you press ^C.

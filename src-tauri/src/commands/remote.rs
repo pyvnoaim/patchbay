@@ -203,6 +203,20 @@ pub fn rdp_input(
     sessions.send(id, input);
 }
 
+/// Files dropped on a remote desktop tab, put where the far end sees them as a drive.
+#[tauri::command]
+pub async fn rdp_drop(paths: Vec<String>) -> Result<String, String> {
+    if cfg!(windows) {
+        return Err("sharing files into a remote desktop needs macOS or Linux".into());
+    }
+    let n = blocking(move || crate::drive::copy_in(&paths)).await?;
+    let files = if n == 1 { "file" } else { "files" };
+    Ok(format!(
+        "{n} {files} in \\\\tsclient\\{}",
+        crate::drive::DRIVE
+    ))
+}
+
 /// Screen sharing, handed to whatever viewer owns `vnc://` on this machine.
 #[tauri::command]
 pub async fn open_vnc(

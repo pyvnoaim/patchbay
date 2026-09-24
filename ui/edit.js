@@ -1043,6 +1043,14 @@ function keysHtml() {
         ["Run it again, or reconnect, once it has ended", ["⏎"]],
       ],
     ],
+    [
+      "In a remote desktop",
+      [
+        // ⌘ is the Windows key there, so the far end's own paste is Ctrl.
+        ["Paste what this machine copied, files too", ["Ctrl+V"]],
+        ["Hand it files, found there as \\\\tsclient\\transfer", ["Drop on the tab"]],
+      ],
+    ],
   ];
   return groups
     .map(

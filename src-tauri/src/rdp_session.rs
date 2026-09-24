@@ -186,8 +186,7 @@ pub fn open(
     scale: u32,
 ) -> Result<Session, String> {
     let (to_session, clipboard) = std::sync::mpsc::channel();
-    let last_seen: crate::clipboard::LastSeen =
-        std::sync::Arc::new(std::sync::Mutex::new(crate::clipboard::local_text()));
+    let last_seen = crate::clipboard::last_seen();
     let (result, framed) = connect(
         host,
         port,
@@ -472,15 +471,13 @@ fn clipboard_frames(
         let moved = stamp.is_none() || stamp != poll.stamp;
         poll.stamp = stamp;
         if moved {
-            let now = crate::clipboard::local_text();
-            let mut seen = last_seen.lock().unwrap();
-            if now != *seen {
-                *seen = now;
-                if seen.is_some() {
-                    pending.push(ClipboardMessage::SendInitiateCopy(
-                        crate::clipboard::Backend::text_formats(),
-                    ));
+            let now = crate::clipboard::local();
+            let mut state = last_seen.lock().unwrap();
+            if now != state.seen {
+                if let Some(now) = &now {
+                    pending.push(crate::clipboard::offer(now, &mut state));
                 }
+                state.seen = now;
             }
         }
     }
@@ -498,10 +495,16 @@ fn clipboard_frames(
             ClipboardMessage::SendInitiateCopy(formats) => cliprdr.initiate_copy(&formats),
             ClipboardMessage::SendInitiatePaste(format) => cliprdr.initiate_paste(format),
             ClipboardMessage::SendFormatData(response) => cliprdr.submit_format_data(response),
-            // Files are never offered.
-            _ => continue,
-        }
-        .map_err(|e| e.to_string())?;
+            ClipboardMessage::SendInitiateFileCopy(files) => cliprdr.initiate_file_copy(files),
+            ClipboardMessage::SendFileContentsRequest(r) => cliprdr.request_file_contents(r),
+            ClipboardMessage::SendFileContentsResponse(r) => cliprdr.submit_file_contents(r),
+            ClipboardMessage::Error(_) => continue,
+        };
+        // A clipboard the server won't take (files where it negotiated no streams) is
+        // a paste that doesn't happen, not a reason to drop the desktop.
+        let Ok(messages) = messages else {
+            continue;
+        };
 
         let frame = stage
             .process_svc_processor_messages(messages)
@@ -585,6 +588,25 @@ fn drain(
     Ok(false)
 }
 
+#[cfg(unix)]
+fn with_drive(connector: connector::ClientConnector) -> connector::ClientConnector {
+    connector
+        .with_static_channel(ironrdp_rdpsnd::client::Rdpsnd::new(Box::new(
+            ironrdp_rdpsnd::client::NoopRdpsndBackend,
+        )))
+        .with_static_channel(
+            ironrdp_rdpdr::Rdpdr::new(Box::new(crate::drive::Folder::new()), "patchbay".into())
+                .with_drives(Some(vec![(1, crate::drive::DRIVE.into())])),
+        )
+}
+
+// ponytail: the backend is unix-only, so a Windows copy shares no folder; its own
+// mstsc handoff does.
+#[cfg(not(unix))]
+fn with_drive(connector: connector::ClientConnector) -> connector::ClientConnector {
+    connector
+}
+
 fn connect(
     host: &str,
     port: u16,
@@ -608,7 +630,7 @@ fn connect(
     let socket = stream.try_clone().map_err(|e| e.to_string())?;
 
     let mut framed = ironrdp_blocking::Framed::new(stream);
-    let mut connector = connector::ClientConnector::new(config, client_addr)
+    let connector = connector::ClientConnector::new(config, client_addr)
         .with_static_channel(CliprdrClient::new(Box::new(clipboard)))
         // The Display Control channel is the only way the desktop follows the window;
         // nothing is sent when the capabilities arrive, the first resize does that.
@@ -616,6 +638,7 @@ fn connect(
             DrdynvcClient::new()
                 .with_dynamic_channel(DisplayControlClient::new(|_| Ok(Vec::new()))),
         );
+    let mut connector = with_drive(connector);
     let should_upgrade = ironrdp_blocking::connect_begin(&mut framed, &mut connector)
         .map_err(|e| format!("{host}: {e}"))?;
 
