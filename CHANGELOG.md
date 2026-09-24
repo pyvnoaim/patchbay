@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.19 - 2026-09-24
 
 - Remote desktops draw faster, most of all when much of the screen changes at once.
 - The remote desktop sign-in has a Vault button when Bitwarden is on: copy the password there and paste it in.
