@@ -8,6 +8,12 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## 0.1.22 - 2026-09-25
+
+- The key on a web tab opens Bitwarden's sign-in when the vault is signed out or locked, instead of doing nothing.
+- patchbay opens centered at its default size every time, rather than wherever it was last left.
+- In a narrow window the detail pane no longer drops under the sidebar and squeezes a session into a strip.
+
 ## 0.1.21 - 2026-09-25
 
 - Fixes 0.1.20 failing to start with an error when the list has more than one folder.
