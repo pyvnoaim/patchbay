@@ -21,7 +21,6 @@ use commands::{app, files, jacks, remote, sessions, settings, web};
 use tauri::Manager;
 
 fn main() {
-    use tauri_plugin_window_state::StateFlags;
     tauri::Builder::default()
         // First, as its docs insist. The link a second launch carried arrives through
         // `on_open_url`; all that is left here is coming to the front.
@@ -34,18 +33,6 @@ fn main() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        // Not DECORATIONS: the title bar is `Overlay` from tauri.conf.json, and a
-        // restored decoration state would fight it.
-        .plugin(
-            tauri_plugin_window_state::Builder::default()
-                .with_state_flags(
-                    StateFlags::SIZE
-                        | StateFlags::POSITION
-                        | StateFlags::MAXIMIZED
-                        | StateFlags::FULLSCREEN,
-                )
-                .build(),
-        )
         .manage(pty::Shared::default())
         .manage(rdp::SharedTunnels::default())
         .manage(files::Edits::default())

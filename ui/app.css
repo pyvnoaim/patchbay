@@ -159,7 +159,8 @@ body[data-os="macos"] {
   #app {
     grid-template-columns: 176px minmax(0, 1fr);
   }
-  #detail {
+  /* Outranks the plain #detail below, which would otherwise wrap it into a second row. */
+  #app > #detail {
     display: none;
   }
   /* The width is fixed here, so the grip would drag a setting nothing shows. */
