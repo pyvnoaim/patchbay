@@ -398,6 +398,31 @@ mod shim {
                 reply.call((ptr, std::ptr::null_mut()));
             }
 
+            // A locked Bitwarden asked to fill opens its unlock screen as a window of its
+            // own. There is one window here, so it opens as the popup on the key instead:
+            // declined, the key did nothing at all and said nothing about why. Anything
+            // else it would open as a window lands on the popup too.
+            #[unsafe(method(webExtensionController:openNewWindowUsingConfiguration:forExtensionContext:completionHandler:))]
+            fn open_new_window(
+                &self,
+                _controller: &WKWebExtensionController,
+                _configuration: &objc2::runtime::AnyObject,
+                context: &WKWebExtensionContext,
+                done: &block2::DynBlock<
+                    dyn Fn(*mut ProtocolObject<dyn WKWebExtensionWindow>, *mut NSError),
+                >,
+            ) {
+                let tab = super::live::read(|h| {
+                    let id = h.active?;
+                    h.tabs.iter().find(|t| t.ivars().id == id).cloned()
+                })
+                .flatten();
+                unsafe {
+                    context.performActionForTab(tab.as_deref().map(ProtocolObject::from_ref))
+                };
+                done.call((std::ptr::null_mut(), std::ptr::null_mut()));
+            }
+
             #[unsafe(method(webExtensionController:presentPopupForAction:forExtensionContext:completionHandler:))]
             fn present_popup(
                 &self,
