@@ -199,6 +199,11 @@ nests in the sidebar. It's a **list**, and that's the load-bearing part: a jack 
 in several branches at once. Don't collapse it to a single `group` field - one home
 per host is what makes Royal TS's tree annoying to navigate.
 
+**A name is unique per folder, a key per list.** The `[jack.<key>]` is what jumps,
+links and every command go by; a second `web` in another folder is saved as
+`[jack.web-2]` with `name = "web"`, and the window shows `label`. `clash()` in
+`config.rs` is the check, on save and on a move.
+
 There is no separate tag concept, and adding one was considered and rejected: a
 folder was the only thing anyone used it for, and two overlapping ways to group the
 same hosts is the confusion this app exists to avoid. `tags` was once read as an alias

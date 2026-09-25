@@ -301,11 +301,15 @@ function osColor(os) {
   return brand ? readable(BRAND_COLORS[brand]) : null;
 }
 
+// `name` is the key everything goes by; `label` is what the window says, and two
+// devices in different folders can share one.
+const labelOf = (name) => all.find((j) => j.name === name)?.label ?? name;
+
 // The url as well as the host: a device that is only a web UI has no host to find it
 // by, and an address pasted from a ticket is as likely to be one as the other.
 const hit = (j, f) =>
   !f ||
-  j.name.toLowerCase().includes(f) ||
+  j.label.toLowerCase().includes(f) ||
   j.host.toLowerCase().includes(f) ||
   (j.url ?? "").toLowerCase().includes(f) ||
   (j.desc ?? "").toLowerCase().includes(f) ||

@@ -88,7 +88,7 @@ document.addEventListener("contextmenu", (e) => {
     return showCtx(
       e.clientX,
       e.clientY,
-      j.name,
+      j.label,
       [
         ...(j.ssh
           ? [
@@ -473,7 +473,7 @@ function jackFields() {
 function openJack(j, prefillGroup) {
   editing = j?.name || null;
   editStamp = j?.stamp ?? null;
-  $("sheet-title").textContent = editing ? `Edit ${editing}` : "New device";
+  $("sheet-title").textContent = editing ? `Edit ${j.label}` : "New device";
   jfDelete.hidden = !editing;
   jfDelete.innerHTML = `${icon("trash-2")}Delete`;
   jfErr.hidden = true;
@@ -481,7 +481,7 @@ function openJack(j, prefillGroup) {
   // `primary` is already resolved in Rust, so it is the answer even for a device that
   // still carries two ways in.
   f.reach.value = j?.primary ?? "ssh";
-  f.name.value = j?.name ?? "";
+  f.name.value = j?.label ?? "";
   f.host.value = j?.host ?? "";
   f.user.value = j?.user ?? "";
   f.port.value = j?.port ?? "";
@@ -621,7 +621,7 @@ function offerUndo(removed, failed = []) {
 // The stamp is the row as it was drawn: a device a colleague has changed since the last
 // poll is refused, and the list reloads so a second Delete is a decision, not a loop.
 async function removeJack(j) {
-  if (!(await ask(`Delete "${j.name}"? This edits your config file.`, null, "Delete"))) return;
+  if (!(await ask(`Delete "${j.label}"? This edits your config file.`, null, "Delete"))) return;
   try {
     const removed = await invoke("delete_jack", { name: j.name, stamp: j.stamp ?? null });
     sel = 0;
@@ -638,7 +638,7 @@ async function removeMarked(js) {
   // Named, and capped so the sheet stays readable.
   const names = js
     .slice(0, 8)
-    .map((j) => j.name)
+    .map((j) => j.label)
     .join(", ");
   const msg =
     `Delete ${js.length} devices? This edits your config file.` +
@@ -651,7 +651,7 @@ async function removeMarked(js) {
     try {
       removed.push(await invoke("delete_jack", { name: j.name, stamp: j.stamp ?? null }));
     } catch {
-      failed.push(j.name);
+      failed.push(j.label);
     }
   }
   marked.clear();
@@ -772,7 +772,7 @@ async function moveJacks(js, to) {
 
 // "Move to folder…": the same move, typed. The list of folders is offered as you type.
 async function moveAsked(js) {
-  const what = js.length === 1 ? `"${js[0].name}"` : `${js.length} devices`;
+  const what = js.length === 1 ? `"${js[0].label}"` : `${js.length} devices`;
   askInput.setAttribute("list", "folderlist");
   let to;
   try {

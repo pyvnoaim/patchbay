@@ -13,6 +13,10 @@ pub type Jacks = IndexMap<String, Jack>;
 /// `host` is checked when a jack is used, not when it is parsed.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Jack {
+    /// What the window calls it, when that isn't the key: names are unique per folder,
+    /// keys per list, so a second `web` in another folder is `[jack.web-2]` with this.
+    /// Jumps and links go by the key. Never inherited.
+    pub name: Option<String>,
     #[serde(default)]
     pub host: String,
     pub user: Option<String>,
@@ -208,6 +212,7 @@ pub fn parse_all(src: &str) -> Result<(Jacks, Sources), String> {
             sources.insert(name.clone(), from);
 
             let merged = Jack {
+                name: j.name,
                 host: if j.host.is_empty() {
                     d.host.clone()
                 } else {

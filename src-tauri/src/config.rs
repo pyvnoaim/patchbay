@@ -377,7 +377,41 @@ fn set_arr(t: &mut Table, k: &str, items: &[String]) {
     t[k] = value(a);
 }
 
-/// `original` is None when adding and the old name when editing; a different name renames.
+/// What the window calls a table: its `name`, else its key.
+fn label_of<'a>(key: &'a str, t: &'a Item) -> &'a str {
+    t.get("name").and_then(Item::as_str).unwrap_or(key)
+}
+
+/// Names are unique per folder, not per list. Unfiled devices share the top level, so
+/// two of those clash too. Only the device's own `folders` count, not `[defaults]`'.
+fn clash(jacks: &Table, skip: Option<&str>, name: &str, folders: &[String]) -> Result<(), String> {
+    let folders: Vec<&str> = folders
+        .iter()
+        .map(String::as_str)
+        .filter(|f| !f.is_empty())
+        .collect();
+    for (k, t) in jacks.iter().filter(|(k, _)| Some(*k) != skip) {
+        if label_of(k, t) != name {
+            continue;
+        }
+        let theirs: Vec<&str> = t
+            .get("folders")
+            .and_then(Item::as_array)
+            .map(|a| a.iter().filter_map(|v| v.as_str()).map(str::trim).collect())
+            .unwrap_or_default();
+        if folders.is_empty() && theirs.is_empty() {
+            return Err(format!("there's already a jack named \"{name}\""));
+        }
+        if let Some(f) = folders.iter().find(|f| theirs.contains(f)) {
+            return Err(format!(
+                "there's already a jack named \"{name}\" in \"{f}\""
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// `original` is None when adding and the old key when editing; a different free name renames.
 pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Result<(), String> {
     let name = j.name.trim().to_string();
     if name.is_empty() {
@@ -405,22 +439,34 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
         stale(o, j.stamp.as_deref(), jacks.get(o))?;
     }
 
-    let renaming = original.as_deref().is_some_and(|o| o != name);
-    if (original.is_none() || renaming) && jacks.contains_key(&name) {
-        return Err(format!("there's already a jack named \"{name}\""));
-    }
+    let mine: Vec<String> = j.folders.iter().map(|f| f.trim().to_string()).collect();
+    clash(jacks, original.as_deref(), &name, &mine)?;
+    let key = match original.as_deref() {
+        // An edit that keeps the name keeps the key, whatever the key is.
+        Some(o) if jacks.get(o).map(|t| label_of(o, t)) == Some(name.as_str()) => o.to_string(),
+        _ if !jacks.contains_key(&name) => name.clone(),
+        // Taken by a device in another folder: the name moves, the key stays.
+        Some(o) => o.to_string(),
+        None => (2..)
+            .map(|n| format!("{name}-{n}"))
+            .find(|k| !jacks.contains_key(k))
+            .unwrap_or_default(),
+    };
+
+    let renaming = original.as_deref().is_some_and(|o| o != key);
     // A rename keeps the jack's comments, position and any key the sheet can't edit.
     let previous = renaming
         .then(|| jacks.remove(original.as_deref().unwrap_or_default()))
         .flatten();
 
     let entry = jacks
-        .entry(&name)
+        .entry(&key)
         .or_insert_with(|| previous.unwrap_or_else(|| Item::Table(Table::new())));
     let t = entry
         .as_table_mut()
-        .ok_or_else(|| format!("[jack.{name}] isn't a table"))?;
+        .ok_or_else(|| format!("[jack.{key}] isn't a table"))?;
 
+    set_str(t, "name", (key != name).then_some(name.as_str()));
     set_str(t, "host", Some(&j.host));
     set_str(t, "user", j.user.as_deref());
     set_str(t, "key", j.key.as_deref());
@@ -630,6 +676,10 @@ fn make_room(item: &mut Item, at: usize) {
 pub fn set_folders_at(path: &Path, name: &str, folders: &[String]) -> Result<(), String> {
     let (mut doc, was) = read_doc(path)?;
     let jacks = jack_table(&mut doc)?;
+    if let Some(t) = jacks.get(name) {
+        let mine: Vec<String> = folders.iter().map(|f| f.trim().to_string()).collect();
+        clash(jacks, Some(name), label_of(name, t), &mine)?;
+    }
     let t = jacks
         .get_mut(name)
         .and_then(Item::as_table_mut)
@@ -899,6 +949,8 @@ fn move_note(doc: &mut DocumentMut, from: &str, to: Option<&str>) {
     }
 }
 
+// ponytail: a rename onto an existing folder can merge two devices of the same name into
+// one folder unchecked; `clash` here too if that turns out to be more than rare.
 fn map_folders(file: &Path, path: &str, to: Option<&str>) -> Result<usize, String> {
     let (mut doc, was) = read_doc(file)?;
     move_note(&mut doc, path, to);
@@ -1300,8 +1352,44 @@ folders = ["prod/eu/web"]
         assert!(out.contains("[jack.web2]"));
         assert!(!out.contains("[jack.web]\n"));
 
-        let err = save_jack_at(&p, None, input("bastion", "x")).unwrap_err();
+        let mut clash = input("bastion", "x");
+        clash.folders = vec!["entrypoint".into()];
+        let err = save_jack_at(&p, None, clash).unwrap_err();
         assert!(err.contains("already a jack named"), "got {err}");
+    }
+
+    #[test]
+    fn a_name_is_unique_per_folder_not_per_list() {
+        let p = scratch("per-folder");
+        std::fs::write(&p, "[jack.web]\nhost = \"a\"\nfolders = [\"prod\"]\n").unwrap();
+        let mut lab = input("web", "b");
+        lab.folders = vec!["lab".into()];
+        save_jack_at(&p, None, lab).unwrap();
+        let out = read(&p);
+        assert!(out.contains("[jack.web-2]\nname = \"web\""), "got {out}");
+
+        let mut again = input("web", "c");
+        again.folders = vec!["lab".into()];
+        let err = save_jack_at(&p, None, again).unwrap_err();
+        assert_eq!(err, "there's already a jack named \"web\" in \"lab\"");
+
+        // Editing it keeps its key; moving it in beside the other one is refused.
+        let mut same = input("web", "d");
+        same.folders = vec!["lab".into()];
+        save_jack_at(&p, Some("web-2".into()), same).unwrap();
+        assert!(read(&p).contains("[jack.web-2]"));
+        let err = set_folders_at(&p, "web-2", &["prod".into()]).unwrap_err();
+        assert!(err.contains("in \"prod\""), "got {err}");
+
+        // Renamed to something free, the key follows and the name goes.
+        let mut api = input("api", "d");
+        api.folders = vec!["lab".into()];
+        save_jack_at(&p, Some("web-2".into()), api).unwrap();
+        let out = read(&p);
+        assert!(
+            out.contains("[jack.api]") && !out.contains("name ="),
+            "got {out}"
+        );
     }
 
     #[test]

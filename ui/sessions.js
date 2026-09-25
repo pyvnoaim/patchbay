@@ -975,7 +975,7 @@ function renderTabs() {
       ${s.kind === "web" ? `<span class="tabkind">${icon("globe")}</span>` : ""}
       ${s.kind === "sftp" ? `<span class="tabkind">${icon("folder")}</span>` : ""}
       ${s.task ? `<span class="tabkind">${icon(s.task === "trace" ? "waypoints" : "plug")}</span>` : ""}
-      <span class="lbl">${esc(s.task ? `${taskLabel(s.task)} ${s.name}` : s.name)}</span>
+      <span class="lbl">${esc(s.task ? `${taskLabel(s.task)} ${labelOf(s.name)}` : labelOf(s.name))}</span>
       ${
         s.kind === "web" && webextRunning && !s.dead
           ? `<span class="x" data-bw="${s.id}" data-tip="Fill · right-click for Bitwarden">${icon("key-round")}</span>`

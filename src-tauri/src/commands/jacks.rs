@@ -7,7 +7,10 @@ use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct JackView {
+    /// The key: what jumps, links and every command go by.
     name: String,
+    /// What the window shows.
+    label: String,
     host: String,
     user: Option<String>,
     port: Option<u16>,
@@ -97,6 +100,7 @@ pub async fn jacks() -> Result<Vec<JackView>, String> {
             .map(|(name, j)| JackView {
                 stamp: stamps.remove(name),
                 name: name.clone(),
+                label: j.name.clone().unwrap_or_else(|| name.clone()),
                 host: j.host.clone(),
                 user: j.user.clone(),
                 port: j.port,

@@ -105,7 +105,12 @@ function render() {
   shown = sortJacks(all.filter(inGroup));
   renderDock(); // an empty list never reaches paintRows, and folder marks still need theirs
   // Both the device sheet and the settings sheet suggest jump targets.
-  $("jacknames").innerHTML = all.map((x) => `<option value="${esc(x.name)}">`).join("");
+  $("jacknames").innerHTML = all
+    .map(
+      (x) =>
+        `<option value="${esc(x.name)}">${x.label === x.name ? "" : esc(`${x.label} · ${x.folders.join(", ")}`)}</option>`,
+    )
+    .join("");
   $("sshkeys").innerHTML = sshKeys.map((k) => `<option value="${esc(k)}">`).join("");
   $("folderlist").innerHTML = [...folderPaths()]
     .sort()
@@ -172,7 +177,7 @@ const SORT_KEY = {
 // `listSort` came back from localStorage, so it is checked before it is used.
 const sorted = () => listSort !== "file" && Object.hasOwn(SORTS, listSort);
 const collate = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
-const byName = (a, b) => collate(a.name, b.name);
+const byName = (a, b) => collate(a.label, b.label);
 function sortJacks(js) {
   if (!sorted()) return js;
   const key = SORT_KEY[listSort] ?? (() => 0);
@@ -196,7 +201,7 @@ function jackRow(j, i, { nested = false, indent = nested, hub = false, behind = 
     <span class="os"${j.os ? ` data-tip="${esc(j.os)}"` : ""}${
       tint ? ` style="color:${esc(tint)}"` : ""
     }>${osIcon(j.os)}</span>
-    <span class="name">${esc(j.name)}</span>
+    <span class="name">${esc(j.label)}</span>
     <span class="host">${esc(j.user ? j.user + "@" + j.host : j.host)}${j.port ? esc(":" + j.port) : ""}</span>
     <span class="kind" data-tip="${esc((KIND[j.primary] ?? KIND.ssh)[1])}">${icon(
       (KIND[j.primary] ?? KIND.ssh)[0],
@@ -239,7 +244,7 @@ function mapHtml() {
     // A hop that is itself a device heads its branch rather than repeating under it.
     const rows = node.leaves
       .filter((j) => !node.kids.has(j.name))
-      .sort((a, b) => a.name.localeCompare(b.name))
+      .sort(byName)
       .map((j) => jackRow(j, at(j), { nested: depth > 0 }));
 
     for (const kid of [...node.kids.values()].sort((a, b) => a.name.localeCompare(b.name))) {
@@ -325,7 +330,7 @@ function renderGroup() {
     ${
       open.length
         ? `<div class="d-sec">${icon("square-terminal")}Sessions</div>
-      <div class="route">${open.map((s) => `<span class="last"><i class="pip"></i>${esc(s.name)}</span>`).join("")}</div>`
+      <div class="route">${open.map((s) => `<span class="last"><i class="pip"></i>${esc(labelOf(s.name))}</span>`).join("")}</div>`
         : ""
     }
 
@@ -452,7 +457,7 @@ function renderJack(j, live) {
   detailEl.innerHTML = `
     <div class="d-name"><span class="d-os"${
       osColor(j.os) ? ` style="color:${esc(osColor(j.os))}"` : ""
-    }>${osIcon(j.os)}</span>${esc(j.name)}</div>
+    }>${osIcon(j.os)}</span>${esc(j.label)}</div>
     ${j.desc ? `<div class="d-desc">${esc(j.desc)}</div>` : `<div class="d-desc"></div>`}
 
     <div class="d-sec">${icon("server")}Target</div>
@@ -817,7 +822,7 @@ function palMatches() {
     return i < 0 ? recent.length : i;
   };
   const jacks = all.filter((j) => hit(j, f)).sort((a, b) => rank(a) - rank(b));
-  const named = jacks.filter((j) => j.name.toLowerCase().includes(f));
+  const named = jacks.filter((j) => j.label.toLowerCase().includes(f));
   const folders = f
     ? [...folderPaths()]
         .filter((p) => p.toLowerCase().includes(f))
@@ -869,7 +874,7 @@ function renderPalette() {
             const tint = i === palSel ? null : osColor(j.os);
             return `<div class="jack${cut}" data-pi="${i}" aria-selected="${i === palSel}">
         <span class="os"${tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(j.os)}</span>
-        <span class="name">${esc(j.name)}</span>
+        <span class="name">${esc(j.label)}</span>
         <span class="host">${esc(j.host)}</span></div>`;
           })
           .join("")

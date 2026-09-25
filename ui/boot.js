@@ -98,7 +98,7 @@ listEl.addEventListener("pointerdown", (e) => {
       document.body.classList.add("dragging");
       ghost = document.createElement("div");
       ghost.className = "drag-ghost";
-      ghost.textContent = js.length === 1 ? js[0].name : `${js.length} devices`;
+      ghost.textContent = js.length === 1 ? js[0].label : `${js.length} devices`;
       document.body.append(ghost);
     }
     ghost.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 12}px)`;
