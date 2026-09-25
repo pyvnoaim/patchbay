@@ -21,6 +21,13 @@ on:
 permissions:
   contents: read
 
+# GitHub sometimes delivers one push twice. Two release runs make two drafts under the
+# same tag, and every upload by tag then lands on the wrong one. Queued, the second run
+# stops at "already released" instead.
+concurrency:
+  group: ci-${{ github.sha }}
+  cancel-in-progress: false
+
 jobs:
   # The app, cargo test. Node is here for scripts/dev.mjs, which is what puts cargo
   # on PATH and points the tests at a scratch config.
