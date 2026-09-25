@@ -46,7 +46,7 @@ function renderTree() {
   ];
 
   const walk = (level, depth) => {
-    for (const node of [...level.values()].sort(byName)) {
+    for (const node of [...level.values()].sort((a, b) => collate(a.name, b.name))) {
       rows.push(row(node, depth, undefined, live, { path: node.path }));
       if (expanded.has(gkey({ path: node.path }))) walk(node.children, depth + 1);
     }
