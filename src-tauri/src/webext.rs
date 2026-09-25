@@ -336,6 +336,20 @@ mod shim {
                 .flatten()
                 .map(ProtocolObject::from_retained)
             }
+
+            // Bitwarden places its unlock window from this one's `left` and `width`.
+            // Left at WebKit's null rect those are missing, the sum is NaN, and
+            // `windows.create` throws before the delegate below is ever asked: a fill
+            // while signed out or locked did nothing at all.
+            #[unsafe(method(frameForWebExtensionContext:))]
+            fn frame_for(&self, _context: &WKWebExtensionContext) -> objc2_foundation::NSRect {
+                super::live::read(|h| {
+                    let view = h.tabs.first()?.ivars().view.clone();
+                    Some(view.window()?.frame())
+                })
+                .flatten()
+                .unwrap_or(objc2_foundation::NSRect::ZERO)
+            }
         }
     );
 

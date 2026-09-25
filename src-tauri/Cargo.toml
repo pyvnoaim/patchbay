@@ -82,7 +82,7 @@ ironrdp-rdpdr-native = "0.7"
 window-vibrancy = "0.5"
 # The change counter behind `clipboard::stamp()`: one integer per poll tick instead of
 # reading the clipboard's text. Already in the tree through arboard; only the feature is new.
-objc2-app-kit = { version = "0.3", features = ["NSPasteboard", "NSPopover", "NSResponder", "NSView"] }
+objc2-app-kit = { version = "0.3", features = ["NSPasteboard", "NSPopover", "NSResponder", "NSView", "NSWindow"] }
 # WKWebExtension, for hosting Bitwarden's own extension over the web tabs. Both objc2
 # generations are already here - 0.5 under arboard, 0.6 under wry - so this pulls in
 # no version that wasn't being built anyway.
