@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.24 - 2026-09-30
 
 - A remote desktop can remember its password: tick Remember on the sign-in and it goes in your system keychain, never in the list. Forget one from the right-click menu, or all of them in Settings.
 
