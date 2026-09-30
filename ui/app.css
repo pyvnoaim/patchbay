@@ -362,7 +362,12 @@ body:not([data-os="macos"]) .tabs {
    then hangs below the window and is cut in half. */
 .termhost {
   position: absolute;
-  inset: 8px 4px 4px 10px;
+  inset: 6px;
+}
+/* A desktop and a web page are their own margins; the gutter is only for text. */
+.termhost.rdphost,
+.termhost.webhost {
+  inset: 0;
 }
 .termhost[hidden] {
   display: none !important;
