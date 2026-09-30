@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.25 - 2026-09-30
 
 - On a Mac, ⌘C, ⌘X, ⌘V, ⌘A and ⌘Z in a remote desktop do what Ctrl does in Windows, so copy and paste work.
 - A remote desktop's sign-in, asked again after a failed attempt, keeps the cursor in the password field.
