@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.23 - 2026-09-30
 
 - A remote desktop no longer falls further and further behind on a busy screen: it skips to the latest picture, and typing on a quiet one answers sooner.
 - A remote desktop fills its tab at the right sharpness, even when the server first answers with another size.
