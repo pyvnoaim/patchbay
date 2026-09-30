@@ -8,6 +8,14 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- A remote desktop no longer falls further and further behind on a busy screen: it skips to the latest picture, and typing on a quiet one answers sooner.
+- A remote desktop fills its tab at the right sharpness, even when the server first answers with another size.
+- Trackpad scrolling in a remote desktop follows your fingers instead of jumping a page per flick.
+- Remote desktops show a plain background instead of the wallpaper, so closing a big window no longer dissolves into pixels.
+- Remote desktops and web pages sit flush in their tab, without a gap along the edges.
+
 ## 0.1.22 - 2026-09-25
 
 - The key on a web tab opens Bitwarden's sign-in when the vault is signed out or locked, instead of doing nothing.

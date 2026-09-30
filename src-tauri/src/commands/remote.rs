@@ -184,13 +184,16 @@ pub fn rdp_input(
             button: a.clamp(0, 255) as u8,
             down,
         },
+        // The wire field is nine bits; past it the value wraps into the other direction.
         "wheel" => rdp_session::Input::Wheel {
-            delta: a.clamp(-32768, 32767) as i16,
+            delta: a.clamp(-255, 255) as i16,
         },
         "key" => rdp_session::Input::Key {
             scancode: a.clamp(0, 65535) as u16,
             down,
         },
+        // Not input either: the session thread holds the next frame until this arrives.
+        "painted" => rdp_session::Input::Painted,
         // Not input, but it rides the same queue: the session thread is the only place
         // that may touch the socket.
         "resize" => rdp_session::Input::Resize {

@@ -1374,10 +1374,19 @@ async function openRdpSession(name) {
       at += w * h * 4;
     }
   };
+  // The session holds the next frame until this one is painted, so a window that
+  // paints slower than the desktop changes skips pictures rather than falling behind.
+  const painted = () =>
+    invoke("rdp_input", { id, kind: "painted", a: 0, b: 0, down: false }).catch(() => {});
   const chan = new window.__TAURI__.core.Channel();
   chan.onmessage = (msg) => {
     const buf = msg instanceof ArrayBuffer ? msg : new Uint8Array(msg).buffer;
-    queued ? queued.push(buf) : paint(buf);
+    if (queued) return queued.push(buf);
+    try {
+      paint(buf);
+    } finally {
+      painted();
+    }
   };
 
   // The pane's own size in device pixels, so the desktop fits without being scaled:
@@ -1400,9 +1409,12 @@ async function openRdpSession(name) {
       scale: asked[2],
       onTile: chan,
     });
-    // The server picks the size; asking for one is only a suggestion.
+    // The server picks the size; asking for one is only a suggestion. What it gave is
+    // what the pane is compared against, or a desktop that came back smaller than the
+    // pane is never asked again and sits letterboxed at the wrong scale.
     canvas.width = screen.width;
     canvas.height = screen.height;
+    asked = [screen.width, screen.height, asked[2]];
     // Every resize tears the session down and rebuilds it, so the pointer is only
     // believed once it has stopped moving. A server without the Display Control
     // channel ignores it and the letterboxing above is all there is.
@@ -1438,7 +1450,11 @@ async function openRdpSession(name) {
     });
     const held = queued;
     queued = null;
-    held.forEach(paint);
+    try {
+      held.forEach(paint);
+    } finally {
+      if (held.length) painted();
+    }
     rdpCreds.set(name, creds);
   } catch (err) {
     s.dead = true;
@@ -1524,13 +1540,30 @@ async function openRdpSession(name) {
     e.preventDefault();
     e.stopPropagation();
   });
+  // A trackpad fires a wheel event per frame with a few pixels in each, and sending
+  // each as a whole notch scrolled a page per flick and had the far end repaint sixty
+  // times a second. The distance is summed and sent once a frame instead, in Windows'
+  // units: 120 is a notch, three lines, which is about 60 of our pixels.
+  // ponytail: a fixed pixels-to-units ratio; per-app tuning if a program scrolls oddly.
+  let wheel = 0,
+    wheelFrame = 0;
+  const scroll = () => {
+    // Two notches a frame at most, which is all the wire's nine bits hold; the rest
+    // stays in `wheel` for the next frame rather than wrapping into the other way.
+    const units = Math.max(-240, Math.min(240, Math.round(wheel * -2)));
+    wheel += units / 2;
+    wheelFrame = Math.abs(wheel) >= 0.5 ? requestAnimationFrame(scroll) : 0;
+    if (!units) return;
+    // A wheel carries no coordinates either: it lands wherever the last move left it.
+    flush();
+    send("wheel", units);
+  };
   canvas.addEventListener(
     "wheel",
     (e) => {
       e.preventDefault();
-      // A wheel carries no coordinates either: it lands wherever the last move left it.
-      flush();
-      send("wheel", e.deltaY > 0 ? -120 : 120);
+      wheel += e.deltaY * [1, 20, 400][e.deltaMode];
+      wheelFrame ||= requestAnimationFrame(scroll);
     },
     { passive: false },
   );

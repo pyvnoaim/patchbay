@@ -11,6 +11,7 @@ use ironrdp::displaycontrol::client::DisplayControlClient;
 use ironrdp::displaycontrol::pdu::MonitorLayoutEntry;
 use ironrdp::dvc::DrdynvcClient;
 use ironrdp::pdu::gcc::KeyboardType;
+use ironrdp::pdu::geometry::InclusiveRectangle;
 use ironrdp::pdu::rdp::capability_sets::MajorPlatformType;
 use ironrdp::pdu::rdp::client_info::PerformanceFlags;
 use ironrdp::session::image::DecodedImage;
@@ -23,15 +24,6 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 use tauri::Emitter as _;
 use tokio_rustls::rustls;
-
-/// A decoded rectangle. RGBA so the webview can hand it straight to `putImageData`.
-pub struct Tile {
-    pub x: u16,
-    pub y: u16,
-    pub width: u16,
-    pub height: u16,
-    pub rgba: Vec<u8>,
-}
 
 /// What the window can send into a running session. There is no Close: dropping the
 /// sender ends the session, so a socket can't be left open by forgetting to send one.
@@ -52,6 +44,8 @@ pub enum Input {
         scancode: u16,
         down: bool,
     },
+    /// The window painted the last frame, so the next may go.
+    Painted,
     /// The pane is a different size; ask the desktop to follow.
     Resize {
         width: u16,
@@ -62,8 +56,8 @@ pub enum Input {
 }
 
 impl Input {
-    /// [`Input::Resize`] is not an input event and is taken out of the queue before
-    /// this is called; `None` here would silently drop it.
+    /// [`Input::Resize`] and [`Input::Painted`] are not input events and are taken out
+    /// of the queue before this is called; `None` here would silently drop them.
     fn operation(self) -> Option<ironrdp_input::Operation> {
         use ironrdp_input::{MouseButton, MousePosition, Operation, Scancode, WheelRotations};
         Some(match self {
@@ -88,13 +82,15 @@ impl Input {
                     Operation::KeyReleased(c)
                 }
             }
-            Input::Resize { .. } => return None,
+            Input::Resize { .. } | Input::Painted => return None,
         })
     }
 }
 
-/// How long a read blocks before the input queue is checked.
-const POLL: Duration = Duration::from_millis(50);
+/// How long a read blocks before the input queue is checked, and a frame the window is
+/// ready for goes out. Half a frame: a quiet desktop otherwise holds a keystroke, or
+/// the last paint of a burst, for the whole wait.
+const POLL: Duration = Duration::from_millis(8);
 
 /// The handshake is several round trips (TLS, CredSSP, capabilities); `POLL` applied
 /// to any of them aborts it mid-negotiation.
@@ -157,7 +153,10 @@ fn config(
         compression_type: None,
         pointer_software_rendering: true,
         multitransport_flags: None,
-        performance_flags: PerformanceFlags::default(),
+        // A wallpaper is a photo, and the bitmap updates a Windows host sends outside
+        // the graphics pipeline compress one badly: closing a maximised window revealed
+        // it as hundreds of pieces over a second. What mstsc drops below a LAN link.
+        performance_flags: PerformanceFlags::default() | PerformanceFlags::DISABLE_WALLPAPER,
         // The desktop is sized in device pixels, so without this a 2x screen gets
         // everything at half size.
         desktop_scale_factor: percent(scale),
@@ -226,13 +225,14 @@ pub fn open(
     })
 }
 
-/// Pump decoded rectangles to `on_tile` until the server hangs up or the input sender
-/// is dropped. Owns its thread, like `pty.rs`, and is free of Tauri for testing.
+/// Pump frames to `on_frame` until the server hangs up or the input sender is dropped.
+/// Owns its thread, like `pty.rs`, and is free of Tauri for testing. A frame is a run
+/// of records, an 8-byte header (x, y, w, h as little-endian u16) then raw RGBA; one at
+/// `RESIZED` has no pixels and is the desktop's new size.
 pub fn pump(
     session: Session,
     input: Receiver<Input>,
-    on_tile: impl Fn(Tile),
-    on_resize: impl Fn(u16, u16),
+    on_frame: impl Fn(Vec<u8>),
 ) -> Result<(), String> {
     let Session {
         mut framed,
@@ -248,6 +248,10 @@ pub fn pump(
     // Polled: no desktop delivers a clipboard change event to a process that isn't
     // focused. The OS change counter makes each tick one integer where it has one.
     let mut poll = ClipboardPoll::default();
+    let mut pending = Pending::default();
+    // Kept across passes until it is sent: the Display Control channel opens a moment
+    // after the desktop appears, and a size asked for before then was lost for good.
+    let mut resize = None;
 
     loop {
         for frame in clipboard_frames(&mut stage, &clipboard, &last_seen, &mut poll)? {
@@ -258,7 +262,6 @@ pub fn pump(
 
         // Drain the queue: a mouse drag is a burst, and one event per timeout crawls.
         let mut ops = Vec::new();
-        let mut resize = None;
         loop {
             match input.try_recv() {
                 // Only the last size matters: dragging a window edge is a burst of them.
@@ -267,16 +270,26 @@ pub fn pump(
                     height,
                     scale,
                 }) => resize = Some((width, height, scale)),
+                Ok(Input::Painted) => pending.painted = true,
                 Ok(i) => ops.extend(i.operation()),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return Ok(()),
             }
         }
         if let Some((width, height, scale)) = resize {
-            if let Some(frame) = ask_resize(&mut stage, &image, width, height, scale) {
+            let (width, height) =
+                MonitorLayoutEntry::adjust_display_size(width.into(), height.into());
+            if (width, height) == (u32::from(image.width()), u32::from(image.height())) {
+                resize = None;
+            // `None` until the channel is open, and forever on a host without one, where
+            // the canvas letterboxes instead.
+            } else if let Some(frame) =
+                stage.encode_resize(width, height, Some(percent(scale)), None)
+            {
                 framed
-                    .write_all(&frame?)
+                    .write_all(&frame.map_err(|e| e.to_string())?)
                     .map_err(|e| format!("{host}: {e}"))?;
+                resize = None;
             }
         }
         if !ops.is_empty() {
@@ -291,35 +304,156 @@ pub fn pump(
                 &mut image,
                 &activation,
                 &host,
-                &on_tile,
-                &on_resize,
+                &mut pending,
             )? {
                 return Ok(());
             }
         }
 
-        let (action, payload) = match framed.read_pdu() {
-            Ok(pdu) => pdu,
+        let quiet = match framed.read_pdu() {
+            Ok((action, payload)) => {
+                let outputs = stage
+                    .process(&mut image, action, &payload)
+                    .map_err(|e| e.to_string())?;
+                if drain(
+                    outputs,
+                    &mut framed,
+                    &mut stage,
+                    &mut image,
+                    &activation,
+                    &host,
+                    &mut pending,
+                )? {
+                    return Ok(());
+                }
+                false
+            }
             // The read timeout is how the input queue gets checked on an idle desktop.
-            Err(e) if waiting(&e) => continue,
+            Err(e) if waiting(&e) => true,
             Err(e) => return Err(format!("{host}: {e}")),
         };
 
-        let outputs = stage
-            .process(&mut image, action, &payload)
-            .map_err(|e| e.to_string())?;
-        if drain(
-            outputs,
-            &mut framed,
-            &mut stage,
-            &mut image,
-            &activation,
-            &host,
-            &on_tile,
-            &on_resize,
-        )? {
-            return Ok(());
+        if let Some(frame) = pending.take(&image, quiet) {
+            on_frame(frame);
         }
+    }
+}
+
+/// How long a frame is gathered before it crosses to the window: one at 60 Hz.
+const FRAME: Duration = Duration::from_millis(16);
+
+/// The server sends one screen's change as a burst of updates and then goes quiet, so
+/// a frame goes when the socket does - sent mid-burst, a page loading paints in bands
+/// from the top down. This is the longest a steady stream holds one back.
+const LATE: Duration = Duration::from_millis(50);
+
+/// A frame the window never said it painted (a reload, a thrown paint) is given up on
+/// after this, so a lost acknowledgement slows the picture rather than freezing it.
+const STALL: Duration = Duration::from_secs(1);
+
+/// `x` and `y` of a record that carries the desktop's new size rather than pixels. No
+/// tile starts there: the desktop is capped at 8192.
+const RESIZED: u16 = u16::MAX;
+
+/// What changed since the last frame went to the window. Regions, not pixels: they are
+/// cut from the framebuffer when the frame goes, so a region drawn ten times while the
+/// window was busy crosses once, as it is now. Queueing the pixels instead made a
+/// window that paints slower than the server draws fall further behind every second.
+struct Pending {
+    dirty: Vec<InclusiveRectangle>,
+    resized: Option<(u16, u16)>,
+    /// When the oldest change still waiting was made.
+    since: Option<std::time::Instant>,
+    /// The window acknowledged the last frame; at most one is ever in flight.
+    painted: bool,
+    sent: std::time::Instant,
+}
+
+impl Default for Pending {
+    fn default() -> Self {
+        Self {
+            dirty: Vec::new(),
+            resized: None,
+            since: None,
+            painted: true,
+            sent: std::time::Instant::now(),
+        }
+    }
+}
+
+fn area(r: &InclusiveRectangle) -> u32 {
+    (u32::from(r.right.saturating_sub(r.left)) + 1)
+        * (u32::from(r.bottom.saturating_sub(r.top)) + 1)
+}
+
+fn contains(a: &InclusiveRectangle, b: &InclusiveRectangle) -> bool {
+    a.left <= b.left && a.top <= b.top && a.right >= b.right && a.bottom >= b.bottom
+}
+
+impl Pending {
+    /// Kept as a short list rather than one bounding box, which a clock in one corner
+    /// and a cursor in the other would turn into the whole screen. Two regions become
+    /// one when that costs no more pixels than sending both.
+    fn mark(&mut self, mut r: InclusiveRectangle) {
+        self.since.get_or_insert_with(std::time::Instant::now);
+        // ponytail: a pass per region over a list of a few dozen; a real region set if a
+        // desktop ever dirties hundreds of disjoint spots per frame.
+        let mut i = 0;
+        while i < self.dirty.len() {
+            let d = &self.dirty[i];
+            if contains(d, &r) {
+                return;
+            }
+            let joined = InclusiveRectangle {
+                left: d.left.min(r.left),
+                top: d.top.min(r.top),
+                right: d.right.max(r.right),
+                bottom: d.bottom.max(r.bottom),
+            };
+            if area(&joined) <= area(d) + area(&r) {
+                // The union may now swallow regions already passed, so start over.
+                self.dirty.swap_remove(i);
+                r = joined;
+                i = 0;
+            } else {
+                i += 1;
+            }
+        }
+        self.dirty.push(r);
+    }
+
+    /// A new desktop: whatever was dirty belonged to the old framebuffer.
+    fn resize(&mut self, width: u16, height: u16) {
+        self.dirty.clear();
+        self.resized = Some((width, height));
+        self.since.get_or_insert_with(std::time::Instant::now);
+    }
+
+    /// The next frame, once the server has finished drawing it (`quiet`) or it has
+    /// waited long enough, and the window has painted the last.
+    fn take(&mut self, image: &DecodedImage, quiet: bool) -> Option<Vec<u8>> {
+        let waited = self.since?.elapsed();
+        let sent = self.sent.elapsed();
+        if !(quiet || waited >= LATE) || sent < FRAME || !(self.painted || sent >= STALL) {
+            return None;
+        }
+        self.since = None;
+        let mut frame = Vec::new();
+        if let Some((width, height)) = self.resized.take() {
+            head(&mut frame, [RESIZED, RESIZED, width, height]);
+        }
+        for region in self.dirty.drain(..) {
+            crop(image, region, &mut frame);
+        }
+        self.painted = false;
+        self.sent = std::time::Instant::now();
+        Some(frame)
+    }
+}
+
+fn head(frame: &mut Vec<u8>, head: [u16; 4]) {
+    for v in head {
+        frame.extend_from_slice(&v.to_le_bytes());
     }
 }
 
@@ -328,27 +462,6 @@ fn waiting(e: &std::io::Error) -> bool {
     matches!(
         e.kind(),
         std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-    )
-}
-
-/// Ask the desktop to match the pane, over the Display Control channel (MS-RDPEDISP).
-/// `None` when it is already that size, or when the server never opened the channel -
-/// an older host keeps the size it was opened at and the canvas scales instead.
-fn ask_resize(
-    stage: &mut ActiveStage,
-    image: &DecodedImage,
-    width: u16,
-    height: u16,
-    scale: u32,
-) -> Option<Result<Vec<u8>, String>> {
-    let (width, height) = MonitorLayoutEntry::adjust_display_size(width.into(), height.into());
-    if (width, height) == (u32::from(image.width()), u32::from(image.height())) {
-        return None;
-    }
-    Some(
-        stage
-            .encode_resize(width, height, Some(percent(scale)), None)?
-            .map_err(|e| e.to_string()),
     )
 }
 
@@ -516,17 +629,18 @@ fn clipboard_frames(
     Ok(frames)
 }
 
-/// Copy one dirty rectangle out of the framebuffer, so only the changed region
-/// crosses into the webview. The rectangle comes off the wire, so it is clamped
-/// rather than trusted: a reversed or oversized one would panic the session thread.
-fn crop(image: &DecodedImage, region: ironrdp::pdu::geometry::InclusiveRectangle) -> Option<Tile> {
+/// Append one dirty rectangle of the framebuffer to `frame` as a record, so only the
+/// changed region crosses into the webview. The rectangle comes off the wire, so it is
+/// clamped rather than trusted: a reversed or oversized one would panic the session
+/// thread.
+fn crop(image: &DecodedImage, region: InclusiveRectangle, frame: &mut Vec<u8>) {
     let (iw, ih) = (image.width(), image.height());
     let left = region.left.min(iw.saturating_sub(1));
     let top = region.top.min(ih.saturating_sub(1));
     let right = region.right.min(iw.saturating_sub(1));
     let bottom = region.bottom.min(ih.saturating_sub(1));
     if iw == 0 || ih == 0 || right < left || bottom < top {
-        return None;
+        return;
     }
 
     let stride = usize::from(iw) * 4;
@@ -535,19 +649,14 @@ fn crop(image: &DecodedImage, region: ironrdp::pdu::geometry::InclusiveRectangle
     let w = usize::from(right - left) + 1;
     let h = usize::from(bottom - top) + 1;
 
+    // Clamped above, so every row is inside the framebuffer.
     let data = image.data();
-    let mut rgba = Vec::with_capacity(w * h * 4);
+    head(frame, [left, top, w as u16, h as u16]);
+    frame.reserve(w * h * 4);
     for row in 0..h {
         let start = (y + row) * stride + x * 4;
-        rgba.extend_from_slice(data.get(start..start + w * 4)?);
+        frame.extend_from_slice(&data[start..start + w * 4]);
     }
-    Some(Tile {
-        x: left,
-        y: top,
-        width: w as u16,
-        height: h as u16,
-        rgba,
-    })
 }
 
 /// Handle every output of the active stage in one place; input and PDU processing
@@ -560,8 +669,7 @@ fn drain(
     image: &mut DecodedImage,
     activation: &ConnectionActivationFactory,
     host: &str,
-    on_tile: &impl Fn(Tile),
-    on_resize: &impl Fn(u16, u16),
+    pending: &mut Pending,
 ) -> Result<bool, String> {
     for out in outputs {
         match out {
@@ -570,17 +678,13 @@ fn drain(
                     .write_all(&frame)
                     .map_err(|e| format!("{host}: {e}"))?;
             }
-            ActiveStageOutput::GraphicsUpdate(region) => {
-                if let Some(tile) = crop(image, region) {
-                    on_tile(tile);
-                }
-            }
+            ActiveStageOutput::GraphicsUpdate(region) => pending.mark(region),
             ActiveStageOutput::Terminate(_) => return Ok(true),
             // The server rebuilt the session: a resize taking effect, or the logon
             // desktop handing over. Follow it, and tell the window the new size.
             ActiveStageOutput::DeactivateAll => {
                 let (width, height) = reactivate(framed, stage, image, activation, host)?;
-                on_resize(width, height);
+                pending.resize(width, height);
             }
             _ => {}
         }
@@ -880,13 +984,6 @@ pub(crate) mod verifier {
     }
 }
 
-/// How long tiles are gathered before they cross to the window: one frame at 60 Hz.
-const FRAME: Duration = Duration::from_millis(16);
-
-/// `x` and `y` of a record that carries the desktop's new size rather than pixels. No
-/// tile starts there: the desktop is capped at 8192.
-const RESIZED: u16 = u16::MAX;
-
 /// Live sessions, keyed the same way `pty::Sessions` keys terminal tabs.
 #[derive(Default)]
 pub struct Sessions(
@@ -894,11 +991,10 @@ pub struct Sessions(
 );
 
 impl Sessions {
-    /// Connect synchronously, then pump tiles into `on_tile` from a thread until
-    /// closed; `rdp-exit:<id>` carries why it ended. Tiles go over an ipc channel, not
-    /// an event, because `emit` would serialize the bytes as a JSON array. Each
-    /// message is a run of records, an 8-byte header (x, y, w, h as little-endian u16)
-    /// then raw RGBA; one at `RESIZED` has no pixels and is the desktop's new size.
+    /// Connect synchronously, then pump frames into `on_tile` from a thread until
+    /// closed; `rdp-exit:<id>` carries why it ended. Frames go over an ipc channel, not
+    /// an event, because `emit` would serialize the bytes as a JSON array; [`pump`] has
+    /// their layout.
     #[allow(clippy::too_many_arguments)]
     pub fn open(
         &self,
@@ -926,42 +1022,10 @@ impl Sessions {
         let (tx, rx) = std::sync::mpsc::channel();
         self.0.lock().unwrap().insert(id, tx);
 
-        // Tiles are batched into one message per frame: each send is an eval and, past
-        // 1 KB, a fetch round trip on top, and a busy desktop is hundreds of small tiles.
-        let (batch, batched) = std::sync::mpsc::channel::<Vec<u8>>();
-        let sender = std::thread::spawn(move || {
-            while let Ok(mut msg) = batched.recv() {
-                let until = std::time::Instant::now() + FRAME;
-                while let Some(left) = until.checked_duration_since(std::time::Instant::now()) {
-                    match batched.recv_timeout(left) {
-                        Ok(more) => msg.extend_from_slice(&more),
-                        Err(_) => break,
-                    }
-                }
-                let _ = on_tile.send(tauri::ipc::InvokeResponseBody::Raw(msg));
-            }
-        });
-
         std::thread::spawn(move || {
-            let send = |head: [u16; 4], rgba: &[u8]| {
-                let mut msg = Vec::with_capacity(8 + rgba.len());
-                for v in head {
-                    msg.extend_from_slice(&v.to_le_bytes());
-                }
-                msg.extend_from_slice(rgba);
-                let _ = batch.send(msg);
-            };
-            let ended = pump(
-                session,
-                rx,
-                |t| send([t.x, t.y, t.width, t.height], &t.rgba),
-                // Down the same channel as the tiles, so it can't overtake the ones
-                // painted before the desktop changed size.
-                |width, height| send([RESIZED, RESIZED, width, height], &[]),
-            );
-            // The last batch lands before the exit does, or the final frame is lost.
-            drop(batch);
-            let _ = sender.join();
+            let ended = pump(session, rx, |frame| {
+                let _ = on_tile.send(tauri::ipc::InvokeResponseBody::Raw(frame));
+            });
             let _ = app.emit(&format!("rdp-exit:{id}"), ended.err());
         });
 
@@ -1025,26 +1089,27 @@ mod tests {
             println!("desktop {}x{}", session.width, session.height);
         }
 
-        let out = pump(
-            session,
-            rx,
-            |t| {
-                let mut c = canvas.lock().unwrap();
-                let (buf, w, _) = &mut *c;
-                let stride = usize::from(*w) * 4;
-                for row in 0..usize::from(t.height) {
-                    let dst = (usize::from(t.y) + row) * stride + usize::from(t.x) * 4;
-                    let src = row * usize::from(t.width) * 4;
-                    buf[dst..dst + usize::from(t.width) * 4]
-                        .copy_from_slice(&t.rgba[src..src + usize::from(t.width) * 4]);
+        let out = pump(session, rx, |frame| {
+            let mut c = canvas.lock().unwrap();
+            let (buf, w, _) = &mut *c;
+            let stride = usize::from(*w) * 4;
+            let mut at = 0;
+            while at < frame.len() {
+                let [x, y, tw, th] = [0, 2, 4, 6]
+                    .map(|o| usize::from(u16::from_le_bytes([frame[at + o], frame[at + o + 1]])));
+                at += 8;
+                assert_ne!(x, usize::from(RESIZED), "no resize was asked for");
+                for row in 0..th {
+                    let dst = (y + row) * stride + x * 4;
+                    buf[dst..dst + tw * 4].copy_from_slice(&frame[at..at + tw * 4]);
+                    at += tw * 4;
                 }
-                // Enough of the desktop to judge.
-                if tiles.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 40 {
-                    tx.lock().unwrap().take();
-                }
-            },
-            |_, _| {},
-        );
+            }
+            // Nothing acknowledges here, so frames come a `STALL` apart. Enough to judge.
+            if tiles.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 3 {
+                tx.lock().unwrap().take();
+            }
+        });
 
         let (buf, w, h) = &*canvas.lock().unwrap();
         assert!(out.is_ok(), "session failed: {out:?}");
@@ -1057,13 +1122,43 @@ mod tests {
 
         let lit = pixels.iter().filter(|p| p[0] | p[1] | p[2] != 0).count();
         println!(
-            "{} tiles, {lit} non-black pixels -> rdp-frame.ppm",
+            "{} frames, {lit} non-black pixels -> rdp-frame.ppm",
             tiles.load(std::sync::atomic::Ordering::SeqCst)
         );
         assert!(
             lit > buf.len() / 40,
             "framebuffer came out essentially black - crop is wrong"
         );
+    }
+
+    #[test]
+    fn dirty_regions_merge_only_when_that_sends_no_more_pixels() {
+        let r = |left, top, right, bottom| InclusiveRectangle {
+            left,
+            top,
+            right,
+            bottom,
+        };
+        let mut p = Pending::default();
+        // A clock in one corner and a cursor in the other stay two.
+        p.mark(r(0, 0, 9, 9));
+        p.mark(r(1000, 700, 1009, 709));
+        assert_eq!(p.dirty.len(), 2);
+        // Inside one already there: nothing to add.
+        p.mark(r(2, 2, 5, 5));
+        assert_eq!(p.dirty.len(), 2);
+        // Adjacent halves of a strip are one strip.
+        p.mark(r(10, 0, 19, 9));
+        assert_eq!(p.dirty.len(), 2);
+        assert!(p.dirty.iter().any(|d| (d.left, d.right) == (0, 19)));
+        // A region covering everything swallows the lot, including ones already passed.
+        p.mark(r(0, 0, 1023, 767));
+        assert_eq!(p.dirty.len(), 1);
+
+        // A resize drops what belonged to the old framebuffer.
+        p.resize(800, 600);
+        assert!(p.dirty.is_empty());
+        assert_eq!(p.resized, Some((800, 600)));
     }
 
     #[test]
