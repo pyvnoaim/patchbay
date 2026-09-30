@@ -3,7 +3,7 @@
 //! in-app by `rdp_session.rs`; VNC is always a handoff to `vnc://`.
 
 use super::{blocking, load_jacks, os_open};
-use crate::{patchbay, rdp, rdp_session};
+use crate::{keychain, patchbay, rdp, rdp_session};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -76,7 +76,7 @@ fn rdp_port(jacks: &patchbay::Jacks, name: &str) -> Result<(String, u16), String
 
 /// What a device's RDP certificate is remembered under: its own address, never the
 /// dialled one, which is `127.0.0.1` for everything behind a bastion.
-fn rdp_pin(jacks: &patchbay::Jacks, name: &str) -> Result<String, String> {
+pub(super) fn rdp_pin(jacks: &patchbay::Jacks, name: &str) -> Result<String, String> {
     let (resolved, port) = rdp_port(jacks, name)?;
     Ok(format!("{}:{port}", jacks[&resolved].host))
 }
@@ -111,7 +111,9 @@ fn split_domain(user: &str) -> (Option<String>, String) {
 }
 
 /// Remote desktop in a tab. Connects synchronously so a wrong password is an error the
-/// sheet can show, then streams tiles through `on_tile`.
+/// sheet can show, then streams tiles through `on_tile`. No `password` means the one
+/// this machine remembered; a typed one is remembered or forgotten by `remember`, and
+/// only once it got in. No `remember` leaves the keychain as it is.
 #[tauri::command]
 pub async fn open_rdp_session(
     app: tauri::AppHandle,
@@ -120,7 +122,8 @@ pub async fn open_rdp_session(
     id: u32,
     name: String,
     user: String,
-    password: String,
+    password: Option<String>,
+    remember: Option<bool>,
     width: u16,
     height: u16,
     scale: u32,
@@ -136,15 +139,83 @@ pub async fn open_rdp_session(
         let port: u16 = port
             .parse()
             .map_err(|_| format!("\"{addr}\" has no usable port"))?;
+        let remember = remember.filter(|_| password.is_some());
+        let (user, password) = match password {
+            Some(p) => (user, p),
+            None => keychain::get(&pin)?
+                .ok_or_else(|| format!("no saved password for \"{resolved}\""))?,
+        };
         // The config's user only prefills the sign-in field.
         let user = Some(user)
             .filter(|u| !u.is_empty())
             .or(cfg_user)
             .ok_or_else(|| format!("\"{resolved}\" needs a user to sign in with"))?;
-        let (domain, user) = split_domain(&user);
-        rdp_sessions.open(
-            id, host, port, &pin, user, password, domain, width, height, scale, on_tile, app,
-        )
+        let (domain, login) = split_domain(&user);
+        let screen = rdp_sessions.open(
+            id,
+            host,
+            port,
+            &pin,
+            login,
+            password.clone(),
+            domain,
+            width,
+            height,
+            scale,
+            on_tile,
+            app,
+        )?;
+        // After the session is up, so a keychain that says no costs the save, not the desktop.
+        if let Some(remember) = remember {
+            let kept = if remember {
+                keychain::set(&pin, &user, &password)
+            } else {
+                keychain::forget(&pin)
+            };
+            if let Err(e) = kept {
+                eprintln!("patchbay: {e}");
+            }
+        }
+        Ok(screen)
+    })
+    .await
+}
+
+#[derive(Serialize)]
+pub struct Saved {
+    /// The remembered username, when a password is remembered at all.
+    user: Option<String>,
+    /// Whether there is a keychain here to remember one in.
+    can: bool,
+}
+
+/// What the sign-in prompt needs before it is shown, or whether it is needed at all.
+#[tauri::command]
+pub async fn rdp_saved(name: String) -> Result<Saved, String> {
+    blocking(move || {
+        let can = keychain::available();
+        let user = if can {
+            keychain::get(&rdp_pin(&load_jacks()?, &name)?)?.map(|(u, _)| u)
+        } else {
+            None
+        };
+        Ok(Saved { user, can })
+    })
+    .await
+}
+
+/// One device's remembered password, or every device's in the list when `name` is none.
+#[tauri::command]
+pub async fn rdp_forget(name: Option<String>) -> Result<(), String> {
+    blocking(move || {
+        let jacks = load_jacks()?;
+        match name {
+            Some(n) => keychain::forget(&rdp_pin(&jacks, &n)?),
+            None => jacks
+                .keys()
+                .filter_map(|n| rdp_pin(&jacks, n).ok())
+                .try_for_each(|pin| keychain::forget(&pin)),
+        }
     })
     .await
 }

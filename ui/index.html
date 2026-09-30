@@ -239,6 +239,15 @@
                   record you may not want kept.</span
                 ></label
               >
+              <div class="space-row">
+                <div class="space-name">
+                  <span>Saved passwords</span>
+                  <button type="button" class="ghost" id="page-forget"></button>
+                </div>
+                <p class="space-note">
+                  Remote desktop sign-ins you ticked Remember on, in this machine's keychain.
+                </p>
+              </div>
             </section>
 
             <section class="pane" data-pane="defaults" hidden>
@@ -405,6 +414,12 @@
           <label class="f wide"
             ><span id="ask-label" hidden></span><input name="v" id="ask-input" spellcheck="false"
           /></label>
+          <label class="opt" id="ask-remember-field" hidden
+            ><input type="checkbox" id="ask-remember" />
+            <span
+              ><b>Remember on this machine</b> Kept in the system keychain, never in the list.</span
+            ></label
+          >
         </div>
         <p class="sheet-err" id="ask-err" hidden></p>
         <div class="sheet-foot">

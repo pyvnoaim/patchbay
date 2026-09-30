@@ -78,7 +78,13 @@ tauri-plugin-dialog = "2"
 [target.'cfg(unix)'.dependencies]
 ironrdp-rdpdr-native = "0.7"
 
+# A ticked "Remember" on the RDP sign-in: the OS keychain holds it, never a file of ours.
+# Each OS its own store; Linux's Secret Service over zbus, which is pure Rust.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6", features = ["async-secret-service", "async-io", "crypto-rust"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6", features = ["apple-native"] }
 window-vibrancy = "0.5"
 # The change counter behind `clipboard::stamp()`: one integer per poll tick instead of
 # reading the clipboard's text. Already in the tree through arboard; only the feature is new.
@@ -108,6 +114,7 @@ objc2-web-kit = { version = "0.3.2", features = [
 ] }
 
 [target.'cfg(windows)'.dependencies]
+keyring = { version = "3.6", features = ["windows-native"] }
 # Same counter, Windows' one. Already in the tree through tauri.
 windows-sys = { version = "0.60", features = [
   "Win32_Foundation",

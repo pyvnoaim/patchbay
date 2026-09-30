@@ -129,6 +129,13 @@ document.addEventListener("contextmenu", (e) => {
                 label: "Remote desktop in system client",
                 run: () => handOffRdp(j.name),
               },
+              // Always offered: asking the keychain whether there is one is itself a
+              // prompt on macOS, and a right-click must not raise one.
+              {
+                icon: "key-round",
+                label: "Forget password",
+                run: () => forgetRdp(j.name),
+              },
             ]
           : []),
         // A handoff: patchbay speaks no VNC.
@@ -253,8 +260,9 @@ window.addEventListener("resize", hideCtx);
 let askResolve = null;
 // A prompt with something to type, or a plain confirmation when `value` is null. A
 // `user` of null is the one-input prompt; a string (empty included) adds the username
-// field and resolves to `{ user, password }` instead.
-function ask(title, value = "", okLabel = "OK", type = "text", user = null) {
+// field and resolves to `{ user, password, remember }` instead; `remember` of null hides
+// that tick box (and resolves null), a boolean is how it starts.
+function ask(title, value = "", okLabel = "OK", type = "text", user = null, remember = null) {
   const confirming = value === null;
   $("ask-title").textContent = title;
   askBody.hidden = confirming;
@@ -264,6 +272,8 @@ function ask(title, value = "", okLabel = "OK", type = "text", user = null) {
   askUser.value = user ?? "";
   askLabel.hidden = user === null;
   askLabel.textContent = "Password";
+  $("ask-remember-field").hidden = user === null || remember === null;
+  $("ask-remember").checked = !!remember;
   $("ask-vault").hidden = user === null || !webextRunning;
   $("ask-vault").innerHTML = `${icon("key-round")}Vault`;
   askErr.hidden = true;
@@ -289,7 +299,8 @@ askForm.addEventListener("submit", (e) => {
   const user = askUser.value.trim();
   if (!user) return showErr(askErr, "a username, or the desktop won't let you in");
   // Not trimmed: a space in a password is a character.
-  closeAsk(askInput.value ? { user, password: askInput.value } : null);
+  const remember = $("ask-remember-field").hidden ? null : $("ask-remember").checked;
+  closeAsk(askInput.value ? { user, password: askInput.value, remember } : null);
 });
 $("ask-cancel").addEventListener("click", () => closeAsk(null));
 $("ask-vault").addEventListener("click", (e) => bitwardenKey(e.currentTarget, true));
@@ -1103,6 +1114,7 @@ async function openSettings(pane) {
   sayWebext();
   $("page-openconfig").innerHTML = `${icon("file-pen-line")}Open config file`;
   $("page-checkupdate").innerHTML = `${icon("rotate-cw")}Check for updates`;
+  $("page-forget").innerHTML = `${icon("trash-2")}Forget all`;
   // When the last check happened is still true; its answer is not.
   $("update-said").textContent = lastChecked ? `Checked at ${lastChecked}` : "Not checked yet.";
   invoke("app_version")
@@ -1228,6 +1240,7 @@ $("new-list").addEventListener("click", () => pickList(true));
 $("pick-list").addEventListener("click", () => pickList(false));
 $("page-openconfig").addEventListener("click", () => invoke("open_config").catch(alertish));
 $("page-checkupdate").addEventListener("click", () => checkUpdates($("update-said")));
+$("page-forget").addEventListener("click", () => forgetRdp());
 setWrap.addEventListener("mousedown", (e) => {
   if (e.target === setWrap) closeSettings();
 });
@@ -1327,3 +1340,15 @@ $("crumbs").addEventListener("click", (e) => {
     .join(", ");
   renderCrumbs();
 });
+
+// No name is every device in the list.
+async function forgetRdp(name = null) {
+  if (name) rdpCreds.delete(name);
+  else rdpCreds.clear();
+  try {
+    await invoke("rdp_forget", { name });
+    flash(name ? `Forgot the password for ${name}` : "Forgot every saved password");
+  } catch (e) {
+    alertish(e);
+  }
+}

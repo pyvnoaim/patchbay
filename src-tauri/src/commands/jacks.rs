@@ -1,8 +1,9 @@
 //! The device list: reading it for the window, editing it, folders and notes, and
 //! importing one from an ssh config or a Royal TS document.
 
+use super::remote::rdp_pin;
 use super::{blocking, list_file, load_jacks, os_open, ssh_dir, writable_list};
-use crate::{config, import, patchbay, terminal};
+use crate::{config, import, keychain, patchbay, terminal};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -240,7 +241,21 @@ pub async fn save_jack(original: Option<String>, jack: config::JackInput) -> Res
 /// showed: a device a colleague has changed since is refused, not deleted.
 #[tauri::command]
 pub async fn delete_jack(name: String, stamp: Option<String>) -> Result<config::Removed, String> {
-    blocking(move || config::delete_jack_at(&writable_list()?, &name, stamp.as_deref())).await
+    blocking(move || {
+        let pin = load_jacks().ok().and_then(|j| rdp_pin(&j, &name).ok());
+        let removed = config::delete_jack_at(&writable_list()?, &name, stamp.as_deref())?;
+        // Its remembered password goes with it, unless another device is the same desktop.
+        // ponytail: an Undo brings the device back without it; it is asked for once more.
+        if let Some(pin) = pin {
+            let shared = load_jacks()
+                .is_ok_and(|j| j.keys().any(|n| rdp_pin(&j, n).is_ok_and(|p| p == pin)));
+            if !shared {
+                let _ = keychain::forget(&pin);
+            }
+        }
+        Ok(removed)
+    })
+    .await
 }
 
 #[tauri::command]

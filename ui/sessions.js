@@ -1303,8 +1303,22 @@ const SCANCODES = {
   MetaRight: 0xe05c,
 };
 
-// Credentials for the window's lifetime only, never written anywhere.
+// Typed sign-ins for the window's lifetime. A remembered one is only ever `password:
+// null` here: the keychain's copy stays in Rust and never crosses into the page.
 const rdpCreds = new Map();
+
+// A sign-in remembered on this machine, or the prompt. The Remember box is only there
+// when there is a keychain to keep it in.
+async function rdpSaved(name, j) {
+  const saved = await invoke("rdp_saved", { name }).catch(() => ({ user: null, can: false }));
+  if (saved.user) return { user: saved.user, password: null };
+  return rdpAsk(j, j.user ?? "", saved.can ? false : null);
+}
+
+// The username is asked for even with one in the config: a Windows box is usually
+// reached as a different account than ssh uses.
+const rdpAsk = (j, user, remember) =>
+  ask(`Sign in to ${j.host}`, "", "Connect", "password", user, remember);
 
 async function openRdpSession(name) {
   const j = all.find((x) => x.name === name);
@@ -1313,13 +1327,8 @@ async function openRdpSession(name) {
   const key = `rdp:${name}`;
   if (showOpen(key)) return;
 
-  let creds = rdpCreds.get(name);
-  if (!creds) {
-    // The username is asked for even with one in the config: a Windows box is usually
-    // reached as a different account than ssh uses.
-    creds = await ask(`Sign in to ${j.host}`, "", "Connect", "password", j.user ?? "");
-    if (!creds) return;
-  }
+  let creds = rdpCreds.get(name) ?? (await rdpSaved(name, j));
+  if (!creds) return;
 
   const id = nextId++;
   const host = document.createElement("div");
@@ -1404,6 +1413,7 @@ async function openRdpSession(name) {
       name,
       user: creds.user,
       password: creds.password,
+      remember: creds.remember ?? null,
       width: asked[0],
       height: asked[1],
       scale: asked[2],
@@ -1455,7 +1465,8 @@ async function openRdpSession(name) {
     } finally {
       if (held.length) painted();
     }
-    rdpCreds.set(name, creds);
+    // Said once: a second connect this run neither saves it again nor forgets it.
+    rdpCreds.set(name, { ...creds, remember: null });
   } catch (err) {
     s.dead = true;
     // Rejected credentials must not be remembered, or the next attempt reuses them.
@@ -1465,6 +1476,16 @@ async function openRdpSession(name) {
     // is kept for the retry. The fingerprint is the one the refusal named: trusting it
     // lets in that certificate and not whatever the host serves by the time we ask.
     const changed = String(err).match(/SHA-256 ([0-9a-f]{64})/);
+    if (!changed && creds.password === null) {
+      // A remembered password that didn't get in: asked for again, still ticked, so the
+      // new one replaces it. Unticking forgets it instead.
+      alertish(err);
+      dropTab(id);
+      const again = await rdpAsk(j, creds.user, true);
+      if (!again) return;
+      rdpCreds.set(name, again);
+      return openRdpSession(name);
+    }
     if (!changed) return alertish(err);
     const ok = await ask(
       `${j.name} is serving a different certificate than last time.\n\n` +

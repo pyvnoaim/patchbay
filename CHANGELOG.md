@@ -8,6 +8,10 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- A remote desktop can remember its password: tick Remember on the sign-in and it goes in your system keychain, never in the list. Forget one from the right-click menu, or all of them in Settings.
+
 ## 0.1.23 - 2026-09-30
 
 - A remote desktop no longer falls further and further behind on a busy screen: it skips to the latest picture, and typing on a quiet one answers sooner.

@@ -9,6 +9,7 @@ mod commands;
 mod config;
 mod drive;
 mod import;
+mod keychain;
 mod patchbay;
 mod pty;
 mod rdp;
@@ -137,6 +138,8 @@ fn main() {
             remote::open_rdp,
             remote::open_rdp_session,
             remote::rdp_trust,
+            remote::rdp_saved,
+            remote::rdp_forget,
             remote::close_rdp_session,
             remote::rdp_input,
             remote::rdp_drop,
