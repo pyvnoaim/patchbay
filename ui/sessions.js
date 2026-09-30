@@ -376,7 +376,8 @@ function showTab() {
       }
       const s = sessions.get(activeId);
       s?.fit?.fit();
-      (s?.term ?? s?.canvas)?.focus();
+      // A prompt opened since (a sign-in asked again after a tab closed) keeps its field.
+      if (!modalOpen()) (s?.term ?? s?.canvas)?.focus();
     });
   }
   placeWebViews();
@@ -1597,6 +1598,31 @@ async function openRdpSession(name) {
     for (const code of down) send("key", code, 0, false);
     down.clear();
   };
+  // ⌘C, ⌘X, ⌘V, ⌘A and ⌘Z are Ctrl on the far end, as in Microsoft's own Mac client.
+  // ⌘ is already down there as Win by then, and Win+V is Windows' clipboard history.
+  const ctrlChord = (code) => {
+    send("key", SCANCODES.ControlLeft, 0, true);
+    // Let go of with Ctrl already down, or Windows reads a lone Win and opens Start.
+    for (const win of [SCANCODES.MetaLeft, SCANCODES.MetaRight])
+      if (down.delete(win)) send("key", win, 0, false);
+    send("key", code, 0, true);
+    send("key", code, 0, false);
+    send("key", SCANCODES.ControlLeft, 0, false);
+  };
+  const MAC_EDIT = ["KeyC", "KeyX", "KeyV", "KeyA", "KeyZ"];
+  // When the Edit menu takes the chord it never arrives as a keydown, only as its
+  // clipboard event; the `before` ones are what enable the menu item over a canvas.
+  const EDIT = { copy: "KeyC", cut: "KeyX", paste: "KeyV" };
+  const onEdit = (e) => {
+    if (document.activeElement !== canvas) return;
+    e.preventDefault();
+    if (EDIT[e.type]) ctrlChord(SCANCODES[EDIT[e.type]]);
+  };
+  if (isMac) {
+    const types = ["beforecopy", "beforecut", "beforepaste", ...Object.keys(EDIT)];
+    for (const t of types) document.addEventListener(t, onEdit, true);
+    s.unlisten.push(() => types.forEach((t) => document.removeEventListener(t, onEdit, true)));
+  }
   for (const [type, pressed] of [
     ["keydown", true],
     ["keyup", false],
@@ -1607,6 +1633,10 @@ async function openRdpSession(name) {
       // Window chords stay ours; everything else belongs to the remote desktop.
       if (chorded(e) && ["w", "k", "n", "[", "]"].includes(chordKey(e))) return;
       e.preventDefault();
+      if (isMac && e.metaKey && !e.ctrlKey && MAC_EDIT.includes(e.code)) {
+        if (pressed) ctrlChord(code);
+        return;
+      }
       if (pressed) down.add(code);
       else down.delete(code);
       send("key", code, 0, pressed);
