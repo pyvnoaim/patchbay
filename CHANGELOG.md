@@ -8,6 +8,11 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Editing a device no longer copies the user, port, key or jump it inherits from its folder onto the device itself.
+- The folder pane's User/Port/Key/Jump fields fit in a narrow window.
+
 ## 0.1.25 - 2026-09-30
 
 - On a Mac, ⌘C, ⌘X, ⌘V, ⌘A and ⌘Z in a remote desktop do what Ctrl does in Windows, so copy and paste work.

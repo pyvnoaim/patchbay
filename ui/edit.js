@@ -494,10 +494,17 @@ function openJack(j, prefillGroup) {
   f.reach.value = j?.primary ?? "ssh";
   f.name.value = j?.label ?? "";
   f.host.value = j?.host ?? "";
-  f.user.value = j?.user ?? "";
-  f.port.value = j?.port ?? "";
-  f.key.value = j?.key ?? "";
-  f.jump.value = j?.jump ?? "";
+  // An inherited value is shown, not filled in: saved back, it would be written onto
+  // the device and the folder or [defaults] it came from would stop applying to it.
+  for (const k of ["user", "port", "key", "jump"]) {
+    const el = f[k];
+    el.dataset.ph ??= el.placeholder;
+    const who = j?.from?.[k];
+    el.value = who ? "" : (j?.[k] ?? "");
+    el.placeholder = who
+      ? `${j[k]} from ${who === "defaults" ? "[defaults]" : who}`
+      : el.dataset.ph;
+  }
   f.os.value = j?.os ?? "";
   // The scheme is a control, so it cannot be typoed.
   const m = /^(https?:\/\/)(.*)$/i.exec(j?.url ?? "");
