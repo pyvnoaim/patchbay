@@ -2616,6 +2616,12 @@ button:disabled {
   gap: 5px;
   margin: -2px 0 2px;
 }
+.crumb[data-saved] {
+  padding-right: 9px;
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
 .crumbs:empty {
   display: none;
 }

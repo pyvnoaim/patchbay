@@ -261,8 +261,36 @@ let askResolve = null;
 // A prompt with something to type, or a plain confirmation when `value` is null. A
 // `user` of null is the one-input prompt; a string (empty included) adds the username
 // field and resolves to `{ user, password, remember }` instead; `remember` of null hides
-// that tick box (and resolves null), a boolean is how it starts.
-function ask(title, value = "", okLabel = "OK", type = "text", user = null, remember = null) {
+// that tick box (and resolves null), a boolean is how it starts. `saved` are accounts
+// this machine has a password for: offered as chips under the username, and one of them
+// with the password left empty resolves `password: null`, the saved one.
+let askSaved = [];
+const askIsSaved = () =>
+  askSaved.some((u) => u.toLowerCase() === askUser.value.trim().toLowerCase());
+function askHint() {
+  const saved = askIsSaved();
+  askInput.placeholder = saved ? "saved on this machine" : "";
+  // Typed over a saved one, the new password replaces it rather than forgetting it.
+  $("ask-remember").checked = saved;
+}
+askUser.addEventListener("input", askHint);
+$("ask-saved").addEventListener("click", (e) => {
+  const u = e.target.closest("[data-saved]")?.dataset.saved;
+  if (u === undefined) return;
+  askUser.value = u;
+  askInput.value = "";
+  askHint();
+  askInput.focus();
+});
+function ask(
+  title,
+  value = "",
+  okLabel = "OK",
+  type = "text",
+  user = null,
+  remember = null,
+  saved = [],
+) {
   const confirming = value === null;
   $("ask-title").textContent = title;
   askBody.hidden = confirming;
@@ -274,6 +302,12 @@ function ask(title, value = "", okLabel = "OK", type = "text", user = null, reme
   askLabel.textContent = "Password";
   $("ask-remember-field").hidden = user === null || remember === null;
   $("ask-remember").checked = !!remember;
+  askSaved = saved;
+  $("ask-saved").innerHTML = saved
+    .map((u) => `<button type="button" class="crumb" data-saved="${esc(u)}">${esc(u)}</button>`)
+    .join("");
+  askInput.placeholder = "";
+  if (saved.length) askHint();
   $("ask-vault").hidden = user === null || !webextRunning;
   $("ask-vault").innerHTML = `${icon("key-round")}Vault`;
   askErr.hidden = true;
@@ -299,6 +333,7 @@ askForm.addEventListener("submit", (e) => {
   const user = askUser.value.trim();
   if (!user) return showErr(askErr, "a username, or the desktop won't let you in");
   // Not trimmed: a space in a password is a character.
+  if (!askInput.value && askIsSaved()) return closeAsk({ user, password: null, remember: null });
   const remember = $("ask-remember-field").hidden ? null : $("ask-remember").checked;
   closeAsk(askInput.value ? { user, password: askInput.value, remember } : null);
 });

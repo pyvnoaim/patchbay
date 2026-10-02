@@ -1308,18 +1308,18 @@ const SCANCODES = {
 // null` here: the keychain's copy stays in Rust and never crosses into the page.
 const rdpCreds = new Map();
 
-// A sign-in remembered on this machine, or the prompt. The Remember box is only there
-// when there is a keychain to keep it in.
+// The prompt, offering every account remembered on this machine and starting on the
+// last one saved, so Enter is all a single saved sign-in costs. The Remember box is only
+// there when there is a keychain to keep it in.
 async function rdpSaved(name, j) {
-  const saved = await invoke("rdp_saved", { name }).catch(() => ({ user: null, can: false }));
-  if (saved.user) return { user: saved.user, password: null };
-  return rdpAsk(j, j.user ?? "", saved.can ? false : null);
+  const saved = await invoke("rdp_saved", { name }).catch(() => ({ users: [], can: false }));
+  return rdpAsk(j, saved.users[0] ?? j.user ?? "", saved.can ? false : null, saved.users);
 }
 
 // The username is asked for even with one in the config: a Windows box is usually
 // reached as a different account than ssh uses.
-const rdpAsk = (j, user, remember) =>
-  ask(`Sign in to ${j.host}`, "", "Connect", "password", user, remember);
+const rdpAsk = (j, user, remember, saved = []) =>
+  ask(`Sign in to ${j.host}`, "", "Connect", "password", user, remember, saved);
 
 async function openRdpSession(name) {
   const j = all.find((x) => x.name === name);

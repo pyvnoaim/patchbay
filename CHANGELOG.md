@@ -10,6 +10,7 @@ it back. Nothing is retyped anywhere.
 
 ## Unreleased
 
+- A remote desktop can remember more than one account. The sign-in offers every saved one; pick it and press Enter.
 - Editing a device no longer copies the user, port, key or jump it inherits from its folder onto the device itself.
 - The folder pane's User/Port/Key/Jump fields fit in a narrow window.
 

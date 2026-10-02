@@ -411,6 +411,9 @@
           <label class="f wide" id="ask-user-field" hidden
             ><span>Username</span><input id="ask-user" spellcheck="false"
           /></label>
+          <!-- Not a datalist: WebKit filters one by what is typed, so the prefilled
+               account would hide every other. -->
+          <div class="crumbs" id="ask-saved"></div>
           <label class="f wide"
             ><span id="ask-label" hidden></span><input name="v" id="ask-input" spellcheck="false"
           /></label>

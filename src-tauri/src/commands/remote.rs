@@ -112,8 +112,8 @@ fn split_domain(user: &str) -> (Option<String>, String) {
 
 /// Remote desktop in a tab. Connects synchronously so a wrong password is an error the
 /// sheet can show, then streams tiles through `on_tile`. No `password` means the one
-/// this machine remembered; a typed one is remembered or forgotten by `remember`, and
-/// only once it got in. No `remember` leaves the keychain as it is.
+/// this machine remembered for `user`; a typed one is remembered or forgotten for that
+/// user by `remember`, and only once it got in. No `remember` leaves the keychain as it is.
 #[tauri::command]
 pub async fn open_rdp_session(
     app: tauri::AppHandle,
@@ -142,8 +142,11 @@ pub async fn open_rdp_session(
         let remember = remember.filter(|_| password.is_some());
         let (user, password) = match password {
             Some(p) => (user, p),
-            None => keychain::get(&pin)?
-                .ok_or_else(|| format!("no saved password for \"{resolved}\""))?,
+            None => {
+                let p = keychain::password(&pin, &user)?
+                    .ok_or_else(|| format!("no saved password for \"{user}\" on \"{resolved}\""))?;
+                (user, p)
+            }
         };
         // The config's user only prefills the sign-in field.
         let user = Some(user)
@@ -170,7 +173,7 @@ pub async fn open_rdp_session(
             let kept = if remember {
                 keychain::set(&pin, &user, &password)
             } else {
-                keychain::forget(&pin)
+                keychain::forget_user(&pin, &user)
             };
             if let Err(e) = kept {
                 eprintln!("patchbay: {e}");
@@ -183,8 +186,8 @@ pub async fn open_rdp_session(
 
 #[derive(Serialize)]
 pub struct Saved {
-    /// The remembered username, when a password is remembered at all.
-    user: Option<String>,
+    /// The accounts a password is remembered for, most recently saved first.
+    users: Vec<String>,
     /// Whether there is a keychain here to remember one in.
     can: bool,
 }
@@ -194,17 +197,20 @@ pub struct Saved {
 pub async fn rdp_saved(name: String) -> Result<Saved, String> {
     blocking(move || {
         let can = keychain::available();
-        let user = if can {
-            keychain::get(&rdp_pin(&load_jacks()?, &name)?)?.map(|(u, _)| u)
+        let users = if can {
+            keychain::get(&rdp_pin(&load_jacks()?, &name)?)?
+                .into_iter()
+                .map(|(u, _)| u)
+                .collect()
         } else {
-            None
+            Vec::new()
         };
-        Ok(Saved { user, can })
+        Ok(Saved { users, can })
     })
     .await
 }
 
-/// One device's remembered password, or every device's in the list when `name` is none.
+/// One device's remembered passwords, or every device's in the list when `name` is none.
 #[tauri::command]
 pub async fn rdp_forget(name: Option<String>) -> Result<(), String> {
     blocking(move || {
