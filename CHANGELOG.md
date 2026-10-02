@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.26 - 2026-10-02
 
 - A remote desktop can remember more than one account. The sign-in offers every saved one; pick it and press Enter.
 - Editing a device no longer copies the user, port, key or jump it inherits from its folder onto the device itself.
