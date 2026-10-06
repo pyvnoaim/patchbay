@@ -529,6 +529,11 @@ function renderJack(j, live) {
       <button class="ghost" data-act="ping" data-tip="${j.hops.length ? `Ping from ${esc(j.hops.at(-1))}` : "Ping this host"}">${icon("plug")}Ping</button>
       <button class="ghost" data-act="trace" data-tip="${j.hops.length ? `Trace from ${esc(j.hops.at(-1))}` : "Trace the route there"}">${icon("waypoints")}Trace</button>
       ${
+        j.ssh
+          ? `<button class="ghost" data-act="key" data-tip="Make your key if you have none, then put it on this device">${icon("key-round")}Install my key</button>`
+          : ""
+      }
+      ${
         j.mac
           ? `<button class="ghost" data-act="wake" data-tip="Wake on LAN, from this network">${icon("power")}Wake</button>`
           : ""

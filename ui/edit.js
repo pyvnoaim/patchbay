@@ -151,6 +151,7 @@ document.addEventListener("contextmenu", (e) => {
                 key: ent("sftp"),
                 run: () => openFilesSession(j.name),
               },
+              { icon: "key-round", label: "Install my key", run: () => openSession(j.name, "key") },
             ]
           : []),
         {

@@ -194,7 +194,8 @@ async function openBroadcast(marks) {
 const taskLabel = (task) => (task === "ping-on" ? "ping ∞" : task);
 
 // A terminal tab. `task` ("ping", "ping-on" or "trace") runs a check instead of a shell,
-// on the jump host when there is one. `bcast` joins the session to a broadcast group.
+// on the jump host when there is one; "key" installs this machine's key over the chain.
+// `bcast` joins the session to a broadcast group.
 async function openSession(name, task = null, bcast = null) {
   // A broadcast pane never counts as "already open": two grids are two grids.
   const key = bcast ? `bcast:${bcast.gid}:${name}` : `term:${task ?? ""}:${name}`;
@@ -975,7 +976,7 @@ function renderTabs() {
       ${s.kind === "rdp" ? `<span class="tabkind">${icon("monitor")}</span>` : ""}
       ${s.kind === "web" ? `<span class="tabkind">${icon("globe")}</span>` : ""}
       ${s.kind === "sftp" ? `<span class="tabkind">${icon("folder")}</span>` : ""}
-      ${s.task ? `<span class="tabkind">${icon(s.task === "trace" ? "waypoints" : "plug")}</span>` : ""}
+      ${s.task ? `<span class="tabkind">${icon({ trace: "waypoints", key: "key-round" }[s.task] ?? "plug")}</span>` : ""}
       <span class="lbl">${esc(s.task ? `${taskLabel(s.task)} ${labelOf(s.name)}` : labelOf(s.name))}</span>
       ${
         s.kind === "web" && webextRunning && !s.dead

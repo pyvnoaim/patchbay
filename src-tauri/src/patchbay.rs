@@ -488,6 +488,9 @@ pub fn without_forwards(args: Vec<String>) -> Vec<String> {
 /// is not reachable from here, so the check runs *on the hop*, over the same chain.
 /// `ping-on` is ping until ^C.
 pub fn task_argv(task: &str, name: &str, jacks: &Jacks) -> Result<(String, Vec<String>), String> {
+    if task == "key" {
+        return key_argv(name, jacks);
+    }
     if !["ping", "ping-on", "trace"].contains(&task) {
         return Err(format!("no task named \"{task}\""));
     }
@@ -511,6 +514,38 @@ pub fn task_argv(task: &str, name: &str, jacks: &Jacks) -> Result<(String, Vec<S
     }
     args.extend(posix_task(task, host));
     Ok(("ssh".into(), args))
+}
+
+/// Make the device's key if this machine has none, then append its public half to the
+/// device's `authorized_keys`. Both are the system's own tools on the pty, so the
+/// passphrase and the device's password are asked in the tab and never reach patchbay.
+/// The key is the device's `key`, so a shared list naming `~/.ssh/acme` gets everyone
+/// their own `acme`. Every value is a positional parameter, never part of the script.
+#[cfg(not(target_os = "windows"))]
+fn key_argv(name: &str, jacks: &Jacks) -> Result<(String, Vec<String>), String> {
+    let j = jacks
+        .get(name)
+        .ok_or_else(|| format!("no jack named \"{name}\""))?;
+    let key = expand(j.key.as_deref().unwrap_or("~/.ssh/id_ed25519"));
+    let script = r#"k=$1; shift
+[ -f "$k" ] || { mkdir -p -m 700 "$(dirname "$k")" && ssh-keygen -t ed25519 -f "$k"; } || exit
+exec ssh-copy-id -i "$k" "$@""#;
+    let mut args = vec!["-c".into(), script.into(), "sh".into(), key];
+    if let Some(p) = j.port {
+        args.extend(["-p".into(), p.to_string()]);
+    }
+    // ssh-copy-id has no -J of its own.
+    let hop_list = hops(name, jacks)?;
+    if !hop_list.is_empty() {
+        args.extend(["-o".into(), format!("ProxyJump={}", hop_list.join(","))]);
+    }
+    args.push(dest_of(j)?);
+    Ok(("sh".into(), args))
+}
+
+#[cfg(target_os = "windows")]
+fn key_argv(_: &str, _: &Jacks) -> Result<(String, Vec<String>), String> {
+    Err("installing a key needs ssh-copy-id, which Windows doesn't have".into())
 }
 
 /// The far-side form hands the host to the hop's shell, so a space or a `;` would run
@@ -1131,6 +1166,24 @@ host = "x; id"
         let (_, a) = task_argv("ping-on", "db", &j).unwrap();
         assert_eq!(a[0], "-t", "^C has to reach the far ping");
         assert_eq!(a[a.len() - 2..], ["ping", "db.internal"]);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn a_key_goes_over_the_same_chain_and_never_into_the_script() {
+        let j = jacks_of(CHAIN).unwrap();
+        let (p, a) = task_argv("key", "db", &j).unwrap();
+        assert_eq!(p, "sh");
+        assert_eq!(a[2], "sh", "$0, so the key is $1");
+        assert!(a[3].ends_with("/.ssh/id_ed25519"), "got {a:?}");
+        assert!(
+            !a[1].contains("db.internal"),
+            "values stay out of the script"
+        );
+        assert_eq!(
+            a[4..],
+            ["-o", "ProxyJump=ops@bastion.example:2222", "db.internal"]
+        );
     }
 
     #[test]

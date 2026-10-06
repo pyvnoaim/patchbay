@@ -8,6 +8,10 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- **Install my key** on an ssh device makes you a key if you have none and puts it on the device, asking the password once in a tab. It uses the device's `key` path, so a shared list can name one for everyone.
+
 ## 0.1.26 - 2026-10-02
 
 - A remote desktop can remember more than one account. The sign-in offers every saved one; pick it and press Enter.
