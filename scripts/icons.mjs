@@ -4,8 +4,11 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const USED = [
-  "layers", // All jacks
-  "users", // Settings > Team
+  "layers", // All devices
+  "users", // Settings > Team, and the team's vault
+  "user", // your own vault
+  "panel-right", // the detail pane beside a session
+  "text-cursor-input", // a snippet: text typed at a prompt
   "folder",
   "folder-open",
   "chevron-right", // tree disclosure
@@ -44,8 +47,6 @@ const USED = [
   "arrow-up", // up a folder
   "chevron-up", // find in session
   "chevron-down",
-  "list", // the two ways the middle column lists
-  "arrow-up-down", // sort the list
   "share-2", // the map: a route, branching
   "radio-tower", // broadcast: input fanning out to every pane
   "square", // the broadcast tab chip's mute state

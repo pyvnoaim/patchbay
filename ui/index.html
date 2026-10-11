@@ -30,14 +30,20 @@
           <div class="tabactions">
             <!-- Bitwarden, with no device in it: shown only while the extension is running. -->
             <button class="chip" id="vault" hidden></button>
-            <button class="chip" id="sortby" data-tip="Sort the list"></button>
             <button class="chip" id="viewmode"></button>
+            <button class="chip" id="details" hidden></button>
             <button class="chip" id="searchbtn"></button>
             <button class="chip" id="newjack"></button>
           </div>
         </div>
         <div class="pane" id="browse">
           <main id="list"></main>
+          <!-- The detail of whatever the tree has selected. The same markup the side pane
+             beside a session takes, drawn wide. -->
+          <section id="wide" hidden>
+            <div class="dactions" id="w-actions"></div>
+            <div class="d-body" id="w-body"></div>
+          </section>
           <!-- The dock for bulk actions on marked rows, rendered by renderDock() in browse.js. Every action
              the context menu offers is here too, so the gesture is discoverable. -->
           <div id="dock" hidden></div>
@@ -77,6 +83,22 @@
       <form class="sheet" id="jackform" autocomplete="off">
         <div class="sheet-head" id="sheet-title"></div>
         <div class="sheet-body">
+          <!-- Only with a shared list set: with one vault there is nothing to choose. -->
+          <div class="how" id="jf-vault" hidden>
+            <span class="how-q">Who can see it?</span>
+            <div class="how-row">
+              <label class="how-opt"
+                ><input type="radio" name="vault" value="mine" /><span
+                  >Mine · only this machine</span
+                ></label
+              >
+              <label class="how-opt"
+                ><input type="radio" name="vault" value="team" checked /><span
+                  >Team · everyone on the list</span
+                ></label
+              >
+            </div>
+          </div>
           <div class="how">
             <span class="how-q">How do you reach it?</span>
             <div class="how-row">
@@ -196,6 +218,9 @@
           <nav class="setnav" id="setnav">
             <button type="button" data-pane="devices" data-icon="server">Devices</button>
             <button type="button" data-pane="defaults" data-icon="layers">Defaults</button>
+            <button type="button" data-pane="snippets" data-icon="text-cursor-input">
+              Snippets
+            </button>
             <button type="button" data-pane="team" data-icon="users">Team</button>
             <button type="button" data-pane="appearance" data-icon="monitor">Appearance</button>
             <button type="button" data-pane="import" data-icon="download">Import</button>
@@ -275,6 +300,16 @@
               </div>
             </section>
 
+            <section class="pane" data-pane="snippets" hidden>
+              <div class="d-sec">Snippets</div>
+              <div id="snip-rows"></div>
+              <button type="button" class="ghost" id="snip-add"></button>
+              <p class="page-note">
+                A line of text, typed at the prompt of the shell in front when you pick it in
+                Search. It never presses Enter: you do.
+              </p>
+            </section>
+
             <section class="pane" data-pane="team" hidden>
               <div class="d-sec">One shared list</div>
               <div class="f-pick">
@@ -289,6 +324,7 @@
                 New… starts a list in a shared folder, Open… joins one. Holds no passwords.
               </p>
               <p class="page-note" id="team-own" hidden></p>
+              <button type="button" class="ghost" id="team-copies" hidden></button>
             </section>
 
             <section class="pane" data-pane="appearance" hidden>
@@ -350,6 +386,16 @@
                 ></label
               >
               <p class="space-note" id="webext-said"></p>
+              <label class="f"
+                ><span>Your own server</span
+                ><input
+                  name="bitwarden_server"
+                  spellcheck="false"
+                  placeholder="https://vault.example.com"
+              /></label>
+              <p class="page-note">
+                Only for a self-hosted Bitwarden or Vaultwarden. Leave empty for bitwarden.com.
+              </p>
             </section>
 
             <section class="pane" data-pane="updates" hidden>

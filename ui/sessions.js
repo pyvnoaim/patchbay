@@ -349,7 +349,8 @@ function dropTab(id) {
   renderTree();
 }
 
-// activeId === null is the "All jacks" tab; anything else is a session.
+// activeId === null is the tree's own view, the detail of what it has selected;
+// anything else is a session.
 function showTab() {
   // The find bar searches one session's scrollback, so it does not follow you.
   if (!findEl.hidden) closeFind();
@@ -395,11 +396,51 @@ function webViewRect() {
 
 // A child webview is an OS view above the page and ignores CSS, so it is either sized
 // exactly over its host div or sized to nothing.
+// A live shell is the tab in front: the only place a snippet has a prompt to go to.
+function shellInFront() {
+  const s = sessions.get(activeId);
+  return !!s && s.kind === "term" && !s.task && !s.dead;
+}
+
+// A snippet goes in as a paste, which xterm hands to the same `onData` a keystroke
+// takes: so broadcast fans it out, and a shell with bracketed paste on shows it as
+// pasted text. It is never followed by Enter. It stops at the shell's screen like
+// everything else that sends bytes: in an editor the text would be commands, and in
+// a broadcast one pane in an editor stops it for all of them.
+function typeSnippet(sn) {
+  const s = sessions.get(activeId);
+  if (!shellInFront()) return alertish("a snippet needs a shell in front to be typed into");
+  if (!snippetOk(sn.text)) {
+    return alertish(`"${sn.name}" isn't one plain line, so nothing was typed`);
+  }
+  const panes = s.bcast?.on ? [...s.bcast.live].map((id) => sessions.get(id)).filter(Boolean) : [s];
+  const busy = panes.find((p) => p.term.buffer.active.type !== "normal");
+  if (busy) {
+    return alertish(
+      `nothing was typed: "${labelOf(busy.name)}" is in an editor, where the text would be commands`,
+    );
+  }
+  s.term.paste(sn.text);
+  s.term.focus();
+  flash(`Typed "${sn.name}". Enter runs it.`);
+}
+
+// Whether something of ours has to be drawn where the page is. Sheets and the palette
+// cover the window; a menu only counts when it actually reaches over the page, so a
+// right-click in the sidebar no longer blanks the tab beside it.
+function covered(r) {
+  return OVERLAYS().some((el) => {
+    if (el.hidden) return false;
+    const o = el.getBoundingClientRect();
+    return o.left < r.right && o.right > r.left && o.top < r.bottom && o.bottom > r.top;
+  });
+}
+
 function placeWebViews() {
   for (const s of sessions.values()) {
     if (s.kind !== "web") continue;
     const r = s.host.getBoundingClientRect();
-    const shown = s.id === activeId && !modalOpen() && !s.failed && r.width > 0;
+    const shown = s.id === activeId && !covered(r) && !s.failed && r.width > 0;
     invoke("place_web_view", {
       id: s.id,
       x: shown ? r.left : 0,
@@ -943,10 +984,6 @@ async function openWebSession(name) {
 }
 
 function renderTabs() {
-  // The browse tab is the crumb: the selected folder and its count.
-  const label = group === null ? "All jacks" : groupLabel().split("/").join(" / ");
-  const browse = `<div class="tab" data-id="" aria-selected="${activeId === null}">
-      ${icon("layers")}<span class="lbl">${esc(label)}</span><span class="n">${shown.length}</span></div>`;
   // A broadcast group is one chip, selected whenever any of its panes has focus.
   const seen = new Set();
   const chips = [];
@@ -986,12 +1023,24 @@ function renderTabs() {
       <span class="x" data-close="${s.id}" data-tip="Close  ${chord("w")}">${icon("x")}</span>
     </div>`);
   }
-  tabsEl.innerHTML = browse + chips.join("");
-  // Here rather than in render(): the extension starts after the first paint.
+  tabsEl.innerHTML = chips.join("");
+  // Here rather than in render(): the extension starts after the first paint, and
+  // which chips apply changes with the tab in front, which is not a render.
+  const live = sessions.get(activeId);
   const vault = $("vault");
   vault.hidden = !webextRunning;
   vault.innerHTML = `${icon("key-round")}Vault`;
   vault.dataset.tip = "Open Bitwarden";
+  // The map is of the tree's selection; over a session it would be a button for a
+  // view that is not on screen. The pane beside a session is the other way round.
+  $("viewmode").hidden = !!live;
+  const details = $("details");
+  details.hidden = !live;
+  details.innerHTML = `${icon("panel-right")}Details`;
+  details.setAttribute("aria-pressed", detailsOpen);
+  details.dataset.tip = detailsOpen ? "Hide the device's details" : "Show the device's details";
+  appEl.classList.toggle("details", !!live && detailsOpen);
+  if (live && detailsOpen) renderDetail();
   // Scroll the active tab into view by hand: scrollIntoView walks up to any scrollable
   // ancestor and took the detail pane off the side of the window with it.
   const active = tabsEl.querySelector('[aria-selected="true"]');
@@ -1070,7 +1119,7 @@ tabsEl.addEventListener("click", (e) => {
   }
   const tab = e.target.closest("[data-id]");
   if (!tab) return;
-  activeId = tab.dataset.id === "" ? null : +tab.dataset.id;
+  activeId = +tab.dataset.id;
   showTab();
   renderTabs();
 });
@@ -1430,10 +1479,8 @@ async function openRdpSession(name) {
     // Every resize tears the session down and rebuilds it, so the pointer is only
     // believed once it has stopped moving. A server without the Display Control
     // channel ignores it and the letterboxing above is all there is.
-    // ponytail: a move to a screen with another pixel ratio keeps the old size until
-    // the pane is next resized; a matchMedia on the resolution if that shows.
     let settle;
-    const ro = new ResizeObserver(() => {
+    const resized = () => {
       // A hidden pane measures zero, and asking for that would shrink the desktop to
       // the minimum every time another tab is looked at.
       if (!host.clientWidth || !host.clientHeight) return;
@@ -1454,10 +1501,21 @@ async function openRdpSession(name) {
           }).catch(() => {}),
         400,
       );
-    });
+    };
+    const ro = new ResizeObserver(resized);
     ro.observe(host);
+    // A move to a screen with another pixel ratio changes no box, so the observer says
+    // nothing. The query names one ratio, so it is asked again each time it stops matching.
+    let ratio;
+    const moved = () => {
+      ratio = matchMedia(`(resolution: ${devicePixelRatio}dppx)`);
+      ratio.addEventListener("change", moved, { once: true });
+      resized();
+    };
+    moved();
     s.unlisten.push(() => {
       ro.disconnect();
+      ratio.removeEventListener("change", moved);
       clearTimeout(settle);
     });
     const held = queued;

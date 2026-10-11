@@ -145,8 +145,16 @@ body[data-os="macos"] {
      breakpoint below exists to avoid. Clamped here rather than in the drag, so the
      stored width survives and comes back when there is room for it. */
   --side: clamp(150px, var(--side-w, 208px), calc(100vw - 700px));
-  grid-template-columns: var(--side) minmax(0, 1fr) 272px;
+  grid-template-columns: var(--side) minmax(0, 1fr);
   height: 100%;
+}
+/* The pane beside a session, behind the Details chip. Browsing, the same detail is
+   drawn wide inside #browse instead, so the column is only ever for a session. */
+#app.details {
+  grid-template-columns: var(--side) minmax(0, 1fr) 272px;
+}
+#app:not(.details) > #detail {
+  display: none;
 }
 /* An id selector outranks the UA's [hidden] rule, so hidden needs saying again here. */
 #app[hidden] {
@@ -242,7 +250,7 @@ body:not([data-os="macos"]) .tabs {
   border-radius: 7px;
   font-size: 12.5px;
   color: var(--fg-dim);
-  max-width: 200px;
+  max-width: 340px;
   -webkit-app-region: no-drag;
 }
 /* Only the label shrinks; the close button has to stay hittable. */
@@ -460,11 +468,134 @@ body:not([data-os="macos"]) .tabs {
 .grip.on::after {
   opacity: 1;
 }
-/* All jacks is a scope, not a folder, so a rule separates it from the list. */
-.tree-sep {
-  height: 1px;
-  margin: 6px 0;
-  background: var(--line);
+/* A vault's own row: a badge, its name over who can see it, and how many. */
+.group.vault {
+  gap: 9px;
+  padding: 6px 8px;
+}
+.group.vault:not(:first-child) {
+  margin-top: 14px;
+}
+.vault .badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--row);
+  color: var(--fg-dim);
+}
+.vault.team .badge {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  color: var(--accent);
+}
+.vault.away .badge {
+  background: color-mix(in oklab, var(--down) 20%, transparent);
+  color: var(--down);
+}
+.vault .label {
+  flex: 1;
+  min-width: 0;
+}
+.vault .label b {
+  display: block;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.vault .label small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--fg-dim);
+  text-overflow: ellipsis;
+}
+.vault.away .label small {
+  color: var(--down);
+}
+.vault .label small .dot {
+  width: 6px;
+  height: 6px;
+}
+.vault .n {
+  margin-left: auto;
+}
+/* Why the team's devices are missing, said where they would be. */
+.vault-away {
+  margin: 4px 0 0 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--row);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.vault-away button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+/* A device in the tree: the list row's selection, marks and dot, at the tree's size. */
+.jack.dev {
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+:is(.group, .dev) + :is(.group, .dev) {
+  margin-top: 2px;
+}
+.dev .os {
+  display: flex;
+  flex: none;
+  color: var(--fg-dim);
+}
+.dev .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dev .live {
+  margin-left: auto;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.dev .live.on {
+  background: var(--accent);
+}
+.dev .kind {
+  display: flex;
+  flex: none;
+  color: var(--fg-faint);
+}
+.dev .kind .i {
+  width: 13px;
+  height: 13px;
+}
+.dev .only {
+  color: var(--fg-dim);
+}
+/* The selected row is the accent block, and nothing on it keeps a colour of its own
+   but the status dot. */
+.dev[aria-selected="true"] :is(.os, .kind, .gi, .only, .twist) {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+.dev[aria-selected="true"] .live.on {
+  background: var(--on-accent);
 }
 .drag {
   -webkit-app-region: drag;
@@ -658,6 +789,143 @@ body.dragging * {
 /* Bulk actions for marked rows. Same shape as #find and #uptoast, so the floating pills read as one family. */
 #browse {
   position: relative;
+}
+#list[hidden] {
+  display: none;
+}
+/* The detail of what the tree has selected, across the whole right-hand side. The
+   actions float, so the name and the line under it run beside them and the cards
+   start below whichever is taller. */
+#wide {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 30px 36px 90px;
+}
+#wide[hidden] {
+  display: none;
+}
+#wide .dactions {
+  float: right;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 60%;
+  margin: 0 0 12px 16px;
+}
+#wide .d-body {
+  padding: 0;
+}
+#wide .d-name {
+  font-size: 22px;
+  line-height: 1.25;
+}
+#wide .d-desc {
+  margin-top: 2px;
+  min-height: 1.45em;
+}
+#wide .d-cards {
+  clear: both;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 12px;
+  max-width: 980px;
+  padding-top: 8px;
+}
+#wide .d-card {
+  min-width: 0;
+  padding: 2px 16px 14px;
+  border-radius: 10px;
+  background: var(--row);
+}
+#wide .btns {
+  flex-wrap: wrap;
+}
+#wide .d-card.span {
+  grid-column: 1 / -1;
+}
+/* A snippet in Settings: its name, the line it types, where it is kept. */
+.snip-row {
+  display: grid;
+  grid-template-columns: minmax(0, 150px) minmax(0, 1fr) 28px;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.snip-row.two {
+  grid-template-columns: minmax(0, 150px) minmax(0, 1fr) auto 28px;
+}
+.snip-row :is(input, select) {
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--row);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+.snip-row :is(input, select):focus {
+  border-color: var(--accent);
+}
+.snip-row input.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+#snip-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+/* In the palette: the text a snippet types, and whose it is. */
+.jack .host.snip {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jack .pvault {
+  flex: none;
+  margin-left: 8px;
+  padding: 0 7px;
+  border-radius: 20px;
+  background: var(--row-hover);
+  font-size: 10.5px;
+  color: var(--fg-dim);
+}
+.jack[aria-selected="true"] .pvault {
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.85);
+}
+/* Which vault, beside a name. */
+.d-vault {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 10px;
+  padding: 1px 8px;
+  border-radius: 20px;
+  background: var(--row-hover);
+  color: var(--fg-dim);
+  font-size: 11px;
+  font-weight: 450;
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+.d-vault.team {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+.d-vault .i {
+  width: 10px;
+  height: 10px;
+}
+.chip[aria-pressed="true"] {
+  background: var(--row-hover);
+  color: var(--fg);
 }
 #dock {
   position: absolute;

@@ -89,6 +89,10 @@ fn main() {
             jacks::jacks,
             jacks::probe,
             jacks::save_jack,
+            jacks::move_jack,
+            jacks::remove_copies,
+            jacks::snippets,
+            jacks::save_snippets,
             jacks::delete_jack,
             jacks::restore_jack,
             jacks::set_folders,
@@ -169,6 +173,7 @@ fn main() {
             // the window and keeps its port.
             if matches!(event, tauri::RunEvent::Exit) {
                 handle.state::<rdp::SharedTunnels>().close_all();
+                sftp::close_all();
             }
         });
 }

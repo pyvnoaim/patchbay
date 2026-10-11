@@ -8,6 +8,23 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- **Snippets.** Lines you type often, kept in Settings ▸ Snippets and picked in Search while a shell is in front. patchbay types the line at the prompt and never presses Enter. Into a broadcast it goes to every pane.
+- A snippet is yours or the team's, like a device. New ones are yours until you say otherwise.
+- **Mine and Team.** With a shared list set, your own devices show beside the team's as a second vault only this machine sees. Both can have a `web`; a device of yours can jump through the team's bastion, never the other way round.
+- Move a device between the two from its menu, its detail or the sheet's "Who can see it?".
+- When the shared list is away, your own devices still open and the sidebar says why the team's are missing.
+- Starting a team list now moves your devices into it. If an earlier one left copies behind, Settings ▸ One shared list removes them.
+- **The sidebar is the list.** Folders unfold to their devices, a folder with one device shows it on its own row, and whatever you select is described across the whole right-hand side.
+- A session gets the full width; the Details button brings the device's pane back beside it.
+- Right-clicking in the sidebar no longer blanks the web page beside it.
+- The Sort menu is gone: folders are A to Z, devices in the order the file has them.
+- Bitwarden works with a server of your own: Settings ▸ Bitwarden ▸ Your own server.
+- Renaming or deleting a folder no longer leaves two devices of one name in the same place; it says which one is in the way.
+- A remote desktop moved to a screen with another sharpness redraws at the new one.
+- Quitting closes the connections the file browser kept open, instead of leaving them for a minute.
+
 ## 0.1.27 - 2026-10-06
 
 - **Install my key** on an ssh device makes you a key if you have none and puts it on the device, asking the password once in a tab. It uses the device's `key` path, so a shared list can name one for everyone.

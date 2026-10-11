@@ -9,6 +9,11 @@ use std::path::{Path, PathBuf};
 
 pub type Jacks = IndexMap<String, Jack>;
 
+/// What a device in your own vault is called once a shared list is set: `me:web` beside
+/// the team's `web`. Only ever in memory, never in a file. A `:` can't be part of a
+/// `patchbay://` link name, so a link always means the team's device.
+pub const MINE: &str = "me:";
+
 /// Everything optional so `[defaults]` and `[jack.x]` deserialize with one shape;
 /// `host` is checked when a jack is used, not when it is parsed.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -41,6 +46,10 @@ pub struct Jack {
     /// Hardware address, for Wake on LAN. Nothing else reads it: patchbay wakes a
     /// device, it does not address one by it.
     pub mac: Option<String>,
+    /// Set by `merge` on a device of your own whose `jump` may name a team device while
+    /// the team list is away. Never in a file.
+    #[serde(skip)]
+    pub waits: bool,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -97,7 +106,12 @@ pub fn config_path() -> PathBuf {
 pub fn list_at(own: &Path) -> Option<PathBuf> {
     let l = crate::config::load_settings_at(own).list?;
     let l = l.trim();
-    (!l.is_empty()).then(|| PathBuf::from(expand(l)))
+    let p = PathBuf::from(expand(l));
+    // The own config named as its own shared list would be one file read as two vaults,
+    // every device in it a copy of itself - and "Remove the copies" would empty it.
+    let same =
+        p == own || matches!((p.canonicalize(), own.canonicalize()), (Ok(a), Ok(b)) if a == b);
+    (!l.is_empty() && !same).then_some(p)
 }
 
 pub fn list() -> Option<PathBuf> {
@@ -134,6 +148,44 @@ pub fn folders(src: &str) -> IndexMap<String, Folder> {
         Ok(raw) => raw.folder,
         Err(_) => IndexMap::new(),
     }
+}
+
+/// A snippet is a line of text typed onto a prompt, never a command that is run: the
+/// person at the keyboard presses Enter. That promise is this check and nothing else,
+/// the way `dest` is for a host. No control character at all: `\r` and `\n` are Enter,
+/// `\x03` is ^C, `\x1b` starts an escape sequence, and a tab asks the shell to complete.
+pub fn snippet_ok(text: &str) -> Result<(), String> {
+    if text.trim().is_empty() {
+        return Err("a snippet needs some text".into());
+    }
+    if text.chars().any(char::is_control) {
+        return Err(
+            "a snippet is one line of plain text - it can't press Enter or a control key".into(),
+        );
+    }
+    if text.chars().count() > 1000 {
+        return Err("a snippet is at most 1000 characters".into());
+    }
+    Ok(())
+}
+
+/// The `[snippet]` table, in file order, and the names of the ones that were refused.
+/// Read apart from `Raw` so one bad value costs that snippet and not the whole list:
+/// this file may be a colleague's, and it never went through a save here.
+pub fn snippets(src: &str) -> (Vec<(String, String)>, Vec<String>) {
+    let table = toml::from_str::<toml::Table>(src)
+        .ok()
+        .and_then(|mut t| t.remove("snippet"))
+        .and_then(|v| v.try_into::<toml::Table>().ok())
+        .unwrap_or_default();
+    let (mut kept, mut refused) = (Vec::new(), Vec::new());
+    for (name, v) in table {
+        match v.as_str().filter(|t| snippet_ok(t).is_ok()) {
+            Some(text) => kept.push((name, text.to_string())),
+            None => refused.push(name),
+        }
+    }
+    (kept, refused)
 }
 
 /// Every folder a device is in, innermost first: `acme/prod/db` is also in `acme/prod`
@@ -232,11 +284,60 @@ pub fn parse_all(src: &str) -> Result<(Jacks, Sources), String> {
                 desc: j.desc.or_else(|| d.desc.clone()),
                 forward: j.forward.or_else(|| d.forward.clone()),
                 mac: j.mac.or_else(|| d.mac.clone()),
+                waits: false,
             };
             (name, merged)
         })
         .collect();
     Ok((jacks, sources))
+}
+
+/// Two vaults as one list: the team's devices under their own keys, yours under
+/// `me:<key>`. Each was parsed on its own, so nothing inherits across. The one thing
+/// that crosses is a jump, and only one way: a `jump` of yours that names one of your
+/// own devices is pointed at it here, and anything else is left to find the team's.
+/// `team` is `None` while the shared list is away.
+pub fn merge(team: Option<Jacks>, mine: Jacks) -> Jacks {
+    let away = team.is_none();
+    // The one name the scheme can't tell apart, so a hand-written one is left out.
+    let mut all: Jacks = team
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(k, _)| !k.starts_with(MINE))
+        .collect();
+    let own: HashSet<String> = mine.keys().cloned().collect();
+    for (key, mut j) in mine {
+        match j.jump.take() {
+            Some(h) if own.contains(&h) => j.jump = Some(format!("{MINE}{h}")),
+            Some(h) => {
+                j.waits = away;
+                j.jump = Some(h);
+            }
+            None => {}
+        }
+        all.insert(format!("{MINE}{key}"), j);
+    }
+    all
+}
+
+/// One step of a jump chain. A team device never finds one of yours, whatever its file
+/// says: it has to behave the same on every machine the list is read on.
+fn via<'a>(from: &str, h: &str, jacks: &'a Jacks) -> Option<&'a Jack> {
+    (from.starts_with(MINE) || !h.starts_with(MINE))
+        .then(|| jacks.get(h))
+        .flatten()
+}
+
+/// A jump that found nothing is a raw ssh spec, unless the team list it may be in is
+/// away: handing the name to ssh would dial whatever `~/.ssh/config` calls it.
+fn raw_hop(from: &str, j: &Jack, h: String) -> Result<String, String> {
+    if j.waits {
+        return Err(format!(
+            "\"{}\" jumps through \"{h}\", and the team list is not there",
+            from.strip_prefix(MINE).unwrap_or(from)
+        ));
+    }
+    dest(h)
 }
 
 /// A missing file is an empty list (a first run), not an error. A file that won't parse
@@ -292,23 +393,23 @@ pub fn hops(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
 
     let mut out: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::from([name.to_string()]);
-    let mut hop = j.jump.clone();
-    while let Some(h) = hop {
+    let (mut from, mut cur) = (name.to_string(), j);
+    while let Some(h) = cur.jump.clone() {
         if !seen.insert(h.clone()) {
             return Err(format!("jump loop through \"{h}\""));
         }
-        match jacks.get(&h) {
+        match via(&from, &h, jacks) {
             // Not a jack name: a raw ssh spec, passed through.
             None => {
-                out.push(dest(h)?);
+                out.push(raw_hop(&from, cur, h)?);
                 break;
             }
-            Some(via) => {
-                out.push(match via.port {
-                    Some(p) => format!("{}:{p}", dest_of(via)?),
-                    None => dest_of(via)?,
+            Some(next) => {
+                out.push(match next.port {
+                    Some(p) => format!("{}:{p}", dest_of(next)?),
+                    None => dest_of(next)?,
                 });
-                hop = via.jump.clone();
+                (from, cur) = (h, next);
             }
         }
     }
@@ -323,12 +424,16 @@ pub fn entry(name: &str, jacks: &Jacks) -> Result<(String, u16), String> {
         .get(name)
         .ok_or_else(|| format!("no jack named \"{name}\""))?;
     let mut seen: HashSet<String> = HashSet::from([name.to_string()]);
+    let mut from = name.to_string();
     while let Some(h) = cur.jump.clone() {
         if !seen.insert(h.clone()) {
             return Err(format!("jump loop through \"{h}\""));
         }
-        match jacks.get(&h) {
-            Some(via) => cur = via,
+        match via(&from, &h, jacks) {
+            Some(next) => (from, cur) = (h, next),
+            // The same refusal a connection gets: a name that may be the team's is not
+            // probed as a host while their list is away.
+            None if cur.waits => return raw_hop(&from, cur, h).map(|_| (String::new(), 0)),
             // A raw spec: user@host, host:port, or both.
             None => {
                 let hp = h.rsplit('@').next().unwrap_or(&h);
@@ -503,10 +608,11 @@ pub fn task_argv(task: &str, name: &str, jacks: &Jacks) -> Result<(String, Vec<S
         return Ok(local_task(task, host));
     };
     // ponytail: the far side is assumed POSIX. It answers ssh, so it isn't cmd.exe.
-    let mut args = match jacks.contains_key(hop) {
-        true => without_forwards(ssh_args(hop, jacks)?),
+    // The same step a connection takes, so a ping can't reach what a session may not.
+    let mut args = match via(name, hop, jacks) {
+        Some(_) => without_forwards(ssh_args(hop, jacks)?),
         // A jump that isn't a jack is a raw ssh spec with no chain of its own.
-        false => vec![hop.clone()],
+        None => vec![raw_hop(name, j, hop.clone())?],
     };
     // Without a remote tty, ^C kills the local ssh and the far ping never prints its tally.
     if task == "ping-on" {
@@ -662,6 +768,99 @@ mod tests {
     /// The merge, for a test that doesn't care who lent what.
     fn jacks_of(src: &str) -> Result<Jacks, String> {
         parse_all(src).map(|(jacks, _)| jacks)
+    }
+
+    const TEAM: &str = r#"
+[jack.bastion]
+host = "10.0.0.2"
+port = 2222
+[jack.web]
+host = "10.0.0.4"
+jump = "bastion"
+[jack.db]
+host = "10.0.0.5"
+jump = "nas"
+[jack.odd]
+host = "10.0.0.6"
+jump = "me:nas"
+"#;
+    const OWN: &str = r#"
+[defaults]
+user = "me"
+[jack.nas]
+host = "10.0.1.20"
+[jack.pi]
+host = "10.0.1.30"
+jump = "nas"
+[jack.vm]
+host = "10.0.0.41"
+jump = "web"
+[jack.bastion]
+host = "10.0.1.2"
+"#;
+
+    #[test]
+    fn a_snippet_can_never_press_a_key() {
+        assert!(snippet_ok("sudo systemctl restart nginx").is_ok());
+        assert!(snippet_ok("grep -r 'ä' /srv | head").is_ok());
+        for bad in [
+            "ls\n", "ls\r", "a\tb", "\x03", "\x1b[2J", "x\u{7f}", "x\u{85}", "", "  ",
+        ] {
+            assert!(snippet_ok(bad).is_err(), "{bad:?}");
+        }
+        assert!(snippet_ok(&"x".repeat(1001)).is_err());
+
+        let (kept, refused) = snippets(
+            "[snippet]\ndisk = \"df -h /\"\n\"two steps\" = \"cd /srv\\nls\"\nodd = 3\nlast = \"w\"\n",
+        );
+        assert_eq!(
+            kept,
+            [
+                ("disk".to_string(), "df -h /".to_string()),
+                ("last".into(), "w".into())
+            ]
+        );
+        assert_eq!(refused, ["two steps", "odd"]);
+    }
+
+    #[test]
+    fn two_vaults_share_a_key_and_a_jump_only_crosses_one_way() {
+        let all = merge(Some(jacks_of(TEAM).unwrap()), jacks_of(OWN).unwrap());
+        assert_eq!(all["bastion"].host, "10.0.0.2");
+        assert_eq!(all["me:bastion"].host, "10.0.1.2");
+        // Yours through one of yours.
+        assert_eq!(hops("me:pi", &all).unwrap(), ["me@10.0.1.20"]);
+        // Yours through the team's, three deep: their bastion keeps its own port and
+        // none of your `[defaults]`, and the chain never comes back for your `bastion`.
+        assert_eq!(hops("me:vm", &all).unwrap(), ["10.0.0.2:2222", "10.0.0.4"]);
+        // The team's never finds yours: the name goes to ssh as written, as it does on
+        // every other machine the list is read on.
+        assert_eq!(hops("db", &all).unwrap(), ["nas"]);
+        assert_eq!(hops("odd", &all).unwrap(), ["me:nas"]);
+        assert_eq!(entry("db", &all).unwrap(), ("nas".to_string(), 22));
+        let (_, ping) = task_argv("ping", "odd", &all).unwrap();
+        assert_eq!(ping[0], "me:nas", "a team ping went through one of yours");
+    }
+
+    #[test]
+    fn with_the_team_list_away_yours_still_connect_unless_they_jump_into_it() {
+        let all = merge(None, jacks_of(OWN).unwrap());
+        assert!(!all.contains_key("web"));
+        assert_eq!(hops("me:pi", &all).unwrap(), ["me@10.0.1.20"]);
+        let err = ssh_args("me:vm", &all).unwrap_err();
+        assert_eq!(
+            err,
+            r#""vm" jumps through "web", and the team list is not there"#
+        );
+        // A ping and the status dot's probe are refused the same way.
+        assert_eq!(task_argv("ping", "me:vm", &all).unwrap_err(), err);
+        assert_eq!(entry("me:vm", &all).unwrap_err(), err);
+    }
+
+    #[test]
+    fn a_team_key_shaped_like_one_of_yours_is_left_out() {
+        let team = jacks_of("[jack.\"me:x\"]\nhost = \"10.0.0.9\"\n").unwrap();
+        assert!(merge(Some(team), Jacks::new()).is_empty());
     }
 
     #[test]

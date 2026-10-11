@@ -86,6 +86,7 @@ pub fn update_restart(app: tauri::AppHandle) {
     // A restart is not `RunEvent::Exit`, so the tunnels are closed by hand or
     // `ssh -N -L` outlives us and keeps the ports.
     app.state::<rdp::SharedTunnels>().close_all();
+    crate::sftp::close_all();
     app.restart();
 }
 

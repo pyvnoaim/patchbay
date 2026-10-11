@@ -391,7 +391,12 @@ fn web_hosts() -> Result<Vec<String>, String> {
 #[tauri::command]
 pub async fn webext_start(app: tauri::AppHandle) -> Result<crate::webext::Package, String> {
     let hosts = web_hosts()?;
-    let out = crate::webext::load(&app, hosts).await;
+    // Checked on save and again here: the file can be edited by hand in between.
+    let server = crate::config::load_settings()
+        .bitwarden_server
+        .as_deref()
+        .and_then(crate::webext::server_pattern);
+    let out = crate::webext::load(&app, hosts, server).await;
     // A failure at launch only ever reaches a pill; the log is where to find it after.
     if let Err(e) = &out {
         eprintln!("patchbay: bitwarden start failed: {e}");

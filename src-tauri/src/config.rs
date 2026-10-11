@@ -72,6 +72,70 @@ pub fn defaults_stamp_at(file: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// The `[snippet]` table as read, stamped the way `[defaults]` is: missing is empty.
+pub fn snippets_stamp_at(file: &Path) -> String {
+    std::fs::read_to_string(file)
+        .ok()
+        .and_then(|s| s.parse::<DocumentMut>().ok())
+        .and_then(|doc| doc.get("snippet").map(stamp_of))
+        .unwrap_or_default()
+}
+
+/// The whole `[snippet]` table as the sheet has it. A name that is still there keeps
+/// its line and the comment on it; one that is gone is removed; a new one goes last.
+/// Every text goes through `snippet_ok`, which is what keeps a snippet from ever being
+/// more than text on a prompt.
+pub fn set_snippets_at(
+    file: &Path,
+    list: &[(String, String)],
+    stamp: Option<&str>,
+) -> Result<(), String> {
+    let mut seen = std::collections::HashSet::new();
+    for (name, text) in list {
+        let name = name.trim();
+        if name.is_empty() || name.chars().any(char::is_control) {
+            return Err("a snippet needs a name".into());
+        }
+        if !seen.insert(name) {
+            return Err(format!("there are two snippets named \"{name}\""));
+        }
+        patchbay::snippet_ok(text).map_err(|e| format!("\"{name}\": {e}"))?;
+    }
+    let (mut doc, was) = read_doc(file)?;
+    stale("the snippets", stamp, doc.get("snippet"))?;
+    let empty = {
+        let t = doc
+            .entry("snippet")
+            .or_insert_with(|| Item::Table(Table::new()))
+            .as_table_mut()
+            .ok_or("`snippet` in that file isn't a table")?;
+        let gone: Vec<String> = t
+            .iter()
+            .map(|(k, _)| k.to_string())
+            .filter(|k| !seen.contains(k.as_str()))
+            // Only what the sheet showed: a line it left out as unusable was never
+            // offered for keeping, so it is not this save's to delete.
+            .filter(|k| {
+                t.get(k)
+                    .and_then(Item::as_str)
+                    .is_some_and(|v| patchbay::snippet_ok(v).is_ok())
+            })
+            .collect();
+        for k in gone {
+            t.remove(&k);
+        }
+        for (name, text) in list {
+            t[name.trim()] = value(text.as_str());
+        }
+        t.is_empty()
+    };
+    if empty {
+        let orphan = orphan_comments(doc.as_table_mut(), "snippet");
+        rehome_comments(&mut doc, orphan);
+    }
+    write_doc(file, &doc, was.as_deref())
+}
+
 fn stale(what: &str, stamp: Option<&str>, current: Option<&Item>) -> Result<(), String> {
     let Some(sent) = stamp else { return Ok(()) };
     let now = current.map(stamp_of).unwrap_or_default();
@@ -412,7 +476,8 @@ fn clash(jacks: &Table, skip: Option<&str>, name: &str, folders: &[String]) -> R
 }
 
 /// `original` is None when adding and the old key when editing; a different free name renames.
-pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Result<(), String> {
+/// Answers with the key it was written under, which a move to the other vault needs.
+pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Result<String, String> {
     let name = j.name.trim().to_string();
     if name.is_empty() {
         return Err("a jack needs a name".into());
@@ -489,7 +554,8 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     set_num(t, "rdp", j.rdp);
     set_num(t, "port", j.port);
 
-    write_doc(path, &doc, was.as_deref())
+    write_doc(path, &doc, was.as_deref())?;
+    Ok(key)
 }
 
 /// Set or clear a folder's note. A blank note removes it, and the `[folder]` table goes
@@ -590,6 +656,99 @@ pub struct Removed {
     pub position: Option<usize>,
 }
 
+/// A device from one vault to the other, table and all: the keys the sheet doesn't
+/// know and the comments inside it go along. Written where it is going before it is
+/// removed from where it was, because the other order loses the device if the second
+/// write fails; a failure in between leaves a copy, which is visible.
+pub fn move_jack_at(from: &Path, to: &Path, name: &str) -> Result<(), String> {
+    let (mut src, _) = read_doc(from)?;
+    let Some(mut item) = jack_table(&mut src)?.get(name).cloned() else {
+        return Err(format!("no jack named \"{name}\""));
+    };
+    // What its old file's `[defaults]` and folders lent it goes along, written onto it,
+    // as `fold_spaces_at` does: left behind, the same device would connect as someone
+    // else, or by another route, the moment it changed vault.
+    let lent = patchbay::load(from)?.swap_remove(name);
+    if let (Some(t), Some(j)) = (item.as_table_mut(), lent) {
+        for (k, v) in [("user", j.user), ("key", j.key), ("jump", j.jump)] {
+            if !t.contains_key(k) {
+                set_str(t, k, v.as_deref());
+            }
+        }
+        if !t.contains_key("port") {
+            set_num(t, "port", j.port);
+        }
+    }
+    let folders: Vec<String> = item
+        .get("folders")
+        .and_then(Item::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str())
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default();
+    let (mut dst, _) = read_doc(to)?;
+    clash(jack_table(&mut dst)?, None, label_of(name, &item), &folders)?;
+    restore_jack_at(
+        to,
+        &Removed {
+            name: name.to_string(),
+            block: block_of(name, item),
+            position: None,
+        },
+    )?;
+    delete_jack_at(from, name, None).map(|_| ())
+}
+
+/// A one-table document, so the block round-trips through the same parser.
+fn block_of(name: &str, item: Item) -> String {
+    let mut alone = DocumentMut::new();
+    let mut only = Table::new();
+    only.set_implicit(true);
+    only[name] = item;
+    if let Some(t) = only[name].as_table_mut() {
+        t.decor_mut().set_prefix("");
+    }
+    alone["jack"] = Item::Table(only);
+    alone.to_string()
+}
+
+/// The devices in `own` that are the same table, under the same key, in `team`: what
+/// seeding a shared list from this machine's left behind. One you changed on either
+/// side since is not a copy.
+pub fn copies_at(own: &Path, team: &Path) -> Vec<String> {
+    let theirs = stamps_at(team, "jack");
+    let mut same: Vec<String> = stamps_at(own, "jack")
+        .into_iter()
+        .filter(|(k, stamp)| theirs.get(k) == Some(stamp))
+        .map(|(k, _)| k)
+        .collect();
+    same.sort();
+    same
+}
+
+pub fn remove_copies_at(own: &Path, team: &Path) -> Result<usize, String> {
+    let same = copies_at(own, team);
+    let (mut doc, was) = read_doc(own)?;
+    for key in &same {
+        let orphan = orphan_comments(jack_table(&mut doc)?, key);
+        rehome_comments(&mut doc, orphan);
+    }
+    // A seed copies the snippets too, and the palette would list every one twice.
+    let snips = snippets_stamp_at(own);
+    let twice = !snips.is_empty() && snips == snippets_stamp_at(team);
+    if twice {
+        let orphan = orphan_comments(doc.as_table_mut(), "snippet");
+        rehome_comments(&mut doc, orphan);
+    }
+    if !same.is_empty() || twice {
+        write_doc(own, &doc, was.as_deref())?;
+    }
+    Ok(same.len())
+}
+
 /// Hands back the removed jack so a wrong "yes" can be undone. The comments above it
 /// go to the next table (`rehome_comments`) and stay there through an undo: a comment
 /// left where it was is visible and fixable, a duplicated one is not.
@@ -606,18 +765,9 @@ pub fn delete_jack_at(path: &Path, name: &str, stamp: Option<&str>) -> Result<Re
     rehome_comments(&mut doc, orphan);
     write_doc(path, &doc, was.as_deref())?;
 
-    // A one-table document, so the block round-trips through the same parser.
-    let mut alone = DocumentMut::new();
-    let mut only = Table::new();
-    only.set_implicit(true);
-    only[name] = item;
-    if let Some(t) = only[name].as_table_mut() {
-        t.decor_mut().set_prefix("");
-    }
-    alone["jack"] = Item::Table(only);
     Ok(Removed {
         name: name.to_string(),
-        block: alone.to_string(),
+        block: block_of(name, item),
         position,
     })
 }
@@ -728,6 +878,10 @@ pub struct Settings {
     /// be running.
     #[serde(default)]
     pub webext: bool,
+    /// A Bitwarden server of your own, beside Bitwarden's clouds. It widens what the
+    /// extension may reach by one host, so it is this machine's setting and https only.
+    #[serde(default)]
+    pub bitwarden_server: Option<String>,
 }
 
 fn yes() -> bool {
@@ -760,6 +914,7 @@ impl Default for Settings {
             sidebar: sidebar(),
             list: None,
             webext: false,
+            bitwarden_server: None,
         }
     }
 }
@@ -835,6 +990,14 @@ pub fn save_settings(s: &Settings) -> Result<(), String> {
 }
 
 pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
+    let server = s.bitwarden_server.as_deref().map(str::trim);
+    if let Some(u) = server.filter(|u| !u.is_empty()) {
+        if crate::webext::server_pattern(u).is_none() {
+            return Err(format!(
+                "\"{u}\" isn't a Bitwarden server address - it has to start with https://"
+            ));
+        }
+    }
     let (mut doc, was) = read_doc(file)?;
     let t = doc
         .entry("settings")
@@ -857,6 +1020,7 @@ pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
     t["sidebar"] = value(s.sidebar.clamp(150.0, 480.0));
     set_str(t, "list", s.list.as_deref());
     t["webext"] = value(s.webext);
+    set_str(t, "bitwarden_server", server);
     write_doc(file, &doc, was.as_deref())
 }
 
@@ -949,15 +1113,13 @@ fn move_note(doc: &mut DocumentMut, from: &str, to: Option<&str>) {
     }
 }
 
-// ponytail: a rename onto an existing folder can merge two devices of the same name into
-// one folder unchecked; `clash` here too if that turns out to be more than rare.
 fn map_folders(file: &Path, path: &str, to: Option<&str>) -> Result<usize, String> {
     let (mut doc, was) = read_doc(file)?;
     move_note(&mut doc, path, to);
     let jacks = jack_table(&mut doc)?;
-    let mut touched = 0;
+    let mut touched = Vec::new();
 
-    for (_, item) in jacks.iter_mut() {
+    for (key, item) in jacks.iter_mut() {
         let Some(t) = item.as_table_mut() else {
             continue;
         };
@@ -979,7 +1141,7 @@ fn map_folders(file: &Path, path: &str, to: Option<&str>) -> Result<usize, Strin
             }
         }
         if changed {
-            touched += 1;
+            touched.push(key.to_string());
             if next.is_empty() {
                 t.remove("folders");
             } else {
@@ -988,10 +1150,27 @@ fn map_folders(file: &Path, path: &str, to: Option<&str>) -> Result<usize, Strin
         }
     }
 
-    if touched > 0 {
+    // A rename onto a folder that is already there merges the two, and a deleted folder
+    // drops its devices to the top level: either can land two of one name together.
+    for key in &touched {
+        let t = &jacks[key];
+        let folders: Vec<String> = t
+            .get("folders")
+            .and_then(Item::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default();
+        clash(jacks, Some(key), label_of(key, t), &folders)?;
+    }
+
+    if !touched.is_empty() {
         write_doc(file, &doc, was.as_deref())?;
     }
-    Ok(touched)
+    Ok(touched.len())
 }
 
 pub fn rename_group_at(file: &Path, from: &str, to: &str) -> Result<usize, String> {
@@ -1547,6 +1726,132 @@ folders = ["prod/eu/web"]
     }
 
     #[test]
+    fn snippets_are_written_one_line_each_and_the_rest_of_the_file_survives() {
+        let p = scratch("snippets");
+        let list = |xs: &[(&str, &str)]| -> Vec<(String, String)> {
+            xs.iter()
+                .map(|(a, b)| (a.to_string(), b.to_string()))
+                .collect()
+        };
+        set_snippets_at(
+            &p,
+            &list(&[
+                ("disk", "df -h /"),
+                ("restart nginx", "sudo systemctl restart nginx"),
+            ]),
+            None,
+        )
+        .unwrap();
+        let out = read(&p);
+        assert!(out.contains("disk = \"df -h /\""), "{out}");
+        assert!(
+            out.contains("keep this comment"),
+            "the file was re-serialized"
+        );
+        assert_eq!(patchbay::snippets(&out).0.len(), 2);
+
+        // A text that could press Enter is refused, and nothing is written.
+        let err = set_snippets_at(&p, &list(&[("bad", "ls\nrm -rf /")]), None).unwrap_err();
+        assert!(err.contains("can't press Enter"), "{err}");
+        assert_eq!(read(&p), out);
+
+        // Someone else's edit in between is refused; with the new stamp it is a decision.
+        let stamp = snippets_stamp_at(&p);
+        set_snippets_at(&p, &list(&[("disk", "df -h")]), Some(&stamp)).unwrap();
+        assert!(set_snippets_at(&p, &list(&[]), Some(&stamp)).is_err());
+        set_snippets_at(&p, &list(&[]), Some(&snippets_stamp_at(&p))).unwrap();
+        assert!(
+            !read(&p).contains("[snippet]"),
+            "an empty table was left behind"
+        );
+    }
+
+    #[test]
+    fn a_move_takes_the_whole_table_and_leaves_nothing_behind() {
+        let (from, to) = (scratch("move-from"), scratch("move-to"));
+        std::fs::write(
+            &from,
+            "[defaults]\nuser = \"me\"\n\n\
+             [jack.vm]\nhost = \"10.0.0.41\"\nfolders = [\"acme\"]\nodd = 1 # keep\n",
+        )
+        .unwrap();
+        std::fs::write(&to, "[jack.web]\nhost = \"10.0.0.4\"\n").unwrap();
+        move_jack_at(&from, &to, "vm").unwrap();
+        assert!(read(&to).contains("odd = 1 # keep"), "{}", read(&to));
+        // What its old `[defaults]` lent it is written onto it: it still connects as `me`.
+        assert!(read(&to).contains("user = \"me\""), "{}", read(&to));
+        assert!(read(&to).contains("[jack.web]"));
+        assert!(!read(&from).contains("[jack.vm]"));
+
+        // A key the other vault already has: refused before either file is written.
+        std::fs::write(&from, "[jack.web]\nhost = \"10.0.1.4\"\n").unwrap();
+        let (a, b) = (read(&from), read(&to));
+        assert!(move_jack_at(&from, &to, "web").is_err());
+        assert_eq!((read(&from), read(&to)), (a, b));
+    }
+
+    #[test]
+    fn only_an_unchanged_copy_is_removed() {
+        let (own, team) = (scratch("copies-own"), scratch("copies-team"));
+        std::fs::write(
+            &own,
+            "[settings]\ntheme = \"dark\"\n\n[jack.a]\nhost = \"1\"\n\n\
+             [jack.b]\nhost = \"2\"\n\n[jack.c]\nhost = \"3\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &team,
+            "[jack.a]\nhost = \"1\"\n\n[jack.b]\nhost = \"2\"\nport = 2222\n",
+        )
+        .unwrap();
+        assert_eq!(copies_at(&own, &team), ["a"]);
+        assert_eq!(remove_copies_at(&own, &team).unwrap(), 1);
+        let left = read(&own);
+        assert!(!left.contains("[jack.a]"), "{left}");
+        assert!(left.contains("[jack.b]") && left.contains("[jack.c]"));
+        assert!(left.contains("[settings]"));
+    }
+
+    #[test]
+    fn a_bitwarden_server_has_to_be_https() {
+        let p = scratch("bw-server");
+        let with = |u: &str| Settings {
+            bitwarden_server: Some(u.into()),
+            ..Settings::default()
+        };
+        let err = save_settings_at(&p, &with("http://vault.example.com")).unwrap_err();
+        assert!(err.contains("https://"), "{err}");
+        save_settings_at(&p, &with(" https://vault.example.com ")).unwrap();
+        assert_eq!(
+            load_settings_at(&p).bitwarden_server.as_deref(),
+            Some("https://vault.example.com")
+        );
+        assert_eq!(
+            crate::webext::server_pattern("https://vault.example.com:8443/x").as_deref(),
+            Some("https://vault.example.com/*")
+        );
+    }
+
+    #[test]
+    fn a_folder_change_that_lands_two_of_one_name_together_is_refused() {
+        let p = scratch("group-merge");
+        std::fs::write(
+            &p,
+            "[jack.web]\nhost = \"a\"\nfolders = [\"eu\"]\n\n\
+             [jack.web-2]\nname = \"web\"\nhost = \"b\"\nfolders = [\"us\"]\n",
+        )
+        .unwrap();
+        let before = read(&p);
+        let err = rename_group_at(&p, "us", "eu").unwrap_err();
+        assert!(err.contains(r#"named "web" in "eu""#), "{err}");
+        assert_eq!(read(&p), before, "a refused rename wrote something");
+        // Deleting both folders in turn would leave two unfiled `web`s.
+        delete_group_at(&p, "eu").unwrap();
+        assert!(delete_group_at(&p, "us").is_err());
+        assert!(read(&p).contains(r#"folders = ["us"]"#));
+    }
+
+    #[test]
     fn renaming_a_group_rewrites_the_whole_subtree() {
         let p = scratch("group-rename");
         assert_eq!(rename_group_at(&p, "prod/eu", "prod/emea").unwrap(), 2);
@@ -1898,6 +2203,8 @@ folders = ["prod/eu/web"]
         assert!(!seeded.contains("[settings]"), "{seeded}");
         assert!(!seeded.contains("#112233"), "{seeded}");
         assert!(read(&own).contains("[jack.web]"), "the seed is a copy");
+        // Which is what lets the command that seeds take them back out of the own vault.
+        assert!(copies_at(&own, &to).contains(&"web".to_string()));
         assert!(
             seed_list_at(&own, &to).is_err(),
             "never over a file that is there"

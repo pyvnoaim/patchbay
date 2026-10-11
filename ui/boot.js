@@ -6,42 +6,50 @@ searchBtn.addEventListener("click", () => openPalette());
 $("vault").addEventListener("click", (e) => bitwardenKey(e.currentTarget, true));
 $("viewmode").addEventListener("click", () => {
   listMode = listMode === "map" ? "list" : "map";
+  browse();
   render();
 });
-$("sortby").addEventListener("click", (e) => {
-  const r = e.currentTarget.getBoundingClientRect();
-  const items = Object.entries(SORTS).map(([k, label]) => ({
-    label,
-    icon: k === listSort ? "check" : "",
-    run: () => {
-      // The selection is an index; keep it on the same device, not the same row.
-      const was = shown[sel]?.name;
-      listSort = k;
-      remember("sort", k);
-      shown = sortJacks(all.filter(inGroup));
-      sel = Math.max(
-        0,
-        shown.findIndex((j) => j.name === was),
-      );
-      render();
-    },
-  }));
-  showCtx(r.left, r.bottom + 4, "Sort by", items);
+// The pane beside a session. The page in a web tab is an OS view sized over its host,
+// so it is placed again once the column has made room.
+$("details").addEventListener("click", () => {
+  detailsOpen = !detailsOpen;
+  renderTabs();
+  requestAnimationFrame(() => {
+    sessions.get(activeId)?.fit?.fit();
+    placeWebViews();
+  });
 });
 $("newjack").addEventListener("click", () => openJack(null, group));
-$("newgroup").addEventListener("click", () => newGroup({ path: null }));
+$("newgroup").addEventListener("click", () => newGroup({ path: null, vault: group?.vault }));
 $("editcfg").addEventListener("click", () => invoke("open_config").catch(alertish));
 // Called, not passed: the event would arrive as the pane name and match nothing.
 $("settings").addEventListener("click", () => openSettings());
 
+// A device row, in the tree or on the map: select, mark, or with a second click open.
+function devClick(e, row) {
+  let i = +row.dataset.i;
+  // The map draws devices the tree has folded away; the tree unfolds to this one.
+  if (i < 0) i = revealDevice(row.dataset.name);
+  if (i < 0) return;
+  if (picking(e)) return markToggle(i);
+  if (e.shiftKey) return markRange(i);
+  marked.clear();
+  select(i);
+  // e.detail is the click count, so this survives a re-render landing mid-gesture.
+  if (e.detail === 2) primary(shown[sel].name);
+}
+
 treeEl.addEventListener("click", (e) => {
+  if (e.target.closest("[data-retry]")) return load();
+  const dev = e.target.closest(".jack[data-i]");
+  if (dev) return devClick(e, dev);
   const el = e.target.closest(".group");
   if (!el) return;
-  const id = el.dataset.group ? { path: el.dataset.path || null } : null;
+  const id = idOf(el);
   // Clicking the triangle folds; clicking the row selects.
   const foldable = el.dataset.hasKids === "true";
-  if (id && picking(e)) return markFolder(id.path);
-  if (id && e.shiftKey) return markFolderRange(id.path);
+  if (id.path && picking(e)) return markFolder(id);
+  if (id.path && e.shiftKey) return markFolderRange(id);
   if (e.target.closest(".twist") && foldable) {
     toggleGroup(gkey(id));
     render();
@@ -64,79 +72,79 @@ listEl.addEventListener("click", (e) => {
   }
   // The map draws a jump host that isn't a device as a row with nothing behind it.
   if (row.dataset.i === undefined) return;
-  const i = +row.dataset.i;
-  if (picking(e)) return markToggle(i);
-  if (e.shiftKey) return markRange(i);
-  marked.clear();
-  select(i);
-  // e.detail is the click count, so this survives a re-render landing mid-gesture.
-  if (e.detail === 2) primary(shown[sel].name);
+  devClick(e, row);
 });
 
-// Drag a row onto a folder in the tree. Pointer events, not HTML5 drag and drop: the
+// Drag a device onto a folder in the tree. Pointer events, not HTML5 drag and drop: the
 // window's file-drop handler (uploads) takes that over on some platforms, and a web
 // tab is an OS view above the page that would swallow a dragend anyway. A drag is a
 // press that travels; a press that doesn't is still the click above.
 let dragged = false; // the click that ends a drag is not a click
-listEl.addEventListener("pointerdown", (e) => {
-  const row = e.target.closest(".jack[data-i]");
-  if (!row || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
-  const j = shown[+row.dataset.i];
-  if (!j) return;
-  const js = marked.has(j.name) ? markedHere() : [j];
-  const [x0, y0] = [e.clientX, e.clientY];
-  let ghost = null;
-  let over = null;
-  const target = (ev) => {
-    const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest("#tree .group");
-    return el && (el.dataset.group || el.dataset.path === "") ? el : null;
-  };
-  const onMove = (ev) => {
-    if (!ghost) {
-      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
-      listEl.setPointerCapture(e.pointerId);
-      document.body.classList.add("dragging");
-      ghost = document.createElement("div");
-      ghost.className = "drag-ghost";
-      ghost.textContent = js.length === 1 ? js[0].label : `${js.length} devices`;
-      document.body.append(ghost);
-    }
-    ghost.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 12}px)`;
-    const next = target(ev);
-    if (next !== over) {
+function dragFrom(root) {
+  root.addEventListener("pointerdown", (e) => {
+    const row = e.target.closest(".jack[data-i]");
+    if (!row || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    const j = shown[+row.dataset.i];
+    if (!j) return;
+    const js = marked.has(j.name) ? markedHere() : [j];
+    // The folder the row was drawn in is the one a move takes it out of.
+    const from = shownIn[+row.dataset.i]?.path ?? null;
+    const [x0, y0] = [e.clientX, e.clientY];
+    let ghost = null;
+    let over = null;
+    const target = (ev) => {
+      const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest("#tree .group");
+      return el && el !== row ? el : null;
+    };
+    const onMove = (ev) => {
+      if (!ghost) {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+        root.setPointerCapture(e.pointerId);
+        document.body.classList.add("dragging");
+        ghost = document.createElement("div");
+        ghost.className = "drag-ghost";
+        ghost.textContent = js.length === 1 ? js[0].label : `${js.length} devices`;
+        document.body.append(ghost);
+      }
+      ghost.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 12}px)`;
+      const next = target(ev);
+      if (next !== over) {
+        over?.classList.remove("drop-on");
+        next?.classList.add("drop-on");
+        over = next;
+      }
+    };
+    const end = () => {
+      root.removeEventListener("pointermove", onMove);
+      root.removeEventListener("pointerup", end);
+      root.removeEventListener("lostpointercapture", end);
+      if (!ghost) return;
+      ghost.remove();
+      document.body.classList.remove("dragging");
       over?.classList.remove("drop-on");
-      next?.classList.add("drop-on");
-      over = next;
-    }
-  };
-  const end = () => {
-    listEl.removeEventListener("pointermove", onMove);
-    listEl.removeEventListener("pointerup", end);
-    listEl.removeEventListener("lostpointercapture", end);
-    if (!ghost) return;
-    ghost.remove();
-    document.body.classList.remove("dragging");
-    over?.classList.remove("drop-on");
-    // The click lands in this same turn; a release outside the window sends none.
-    dragged = true;
-    setTimeout(() => (dragged = false), 0);
-    if (over) moveJacks(js, over.dataset.path || null);
-  };
-  listEl.addEventListener("pointermove", onMove);
-  listEl.addEventListener("pointerup", end);
-  listEl.addEventListener("lostpointercapture", end);
-});
-listEl.addEventListener(
-  "click",
-  (e) => {
-    if (!dragged) return;
-    dragged = false;
-    e.stopImmediatePropagation();
-  },
-  true,
-);
+      // The click lands in this same turn; a release outside the window sends none.
+      dragged = true;
+      setTimeout(() => (dragged = false), 0);
+      if (over) moveJacks(js, idOf(over).path, from, idOf(over).vault);
+    };
+    root.addEventListener("pointermove", onMove);
+    root.addEventListener("pointerup", end);
+    root.addEventListener("lostpointercapture", end);
+  });
+  root.addEventListener(
+    "click",
+    (e) => {
+      if (!dragged) return;
+      dragged = false;
+      e.stopImmediatePropagation();
+    },
+    true,
+  );
+}
+dragFrom(treeEl);
+dragFrom(listEl);
 
-detailPane.addEventListener("click", async (e) => {
+async function detailClick(e) {
   const gact = e.target.closest("[data-gact]")?.dataset.gact;
   if (gact) {
     if (gact === "new") openJack(null, group);
@@ -183,6 +191,7 @@ detailPane.addEventListener("click", async (e) => {
   }
   if (act === "edit") openJack(j);
   if (act === "dup") openJack({ ...j, name: "" });
+  if (act === "move") moveVault([j]);
   if (act === "copy") {
     const btn = e.target.closest("[data-act]");
     try {
@@ -193,7 +202,9 @@ detailPane.addEventListener("click", async (e) => {
     }
     setTimeout(() => (btn.innerHTML = icon("copy")), 900);
   }
-});
+}
+detailPane.addEventListener("click", detailClick);
+wideEl.addEventListener("click", detailClick);
 
 presultsEl.addEventListener("click", (e) => {
   if (e.target.closest("[data-adhoc]")) {
@@ -332,7 +343,7 @@ document.addEventListener("keydown", (e) => {
   } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
     e.preventDefault();
     stepTree(e.key === "ArrowLeft" ? -1 : 1);
-  } else if (e.key === "Enter" && shown[sel]) {
+  } else if (e.key === "Enter" && detailMode === "jack" && shown[sel]) {
     e.preventDefault();
     primary(shown[sel].name);
   } else if (e.key === "Escape") {
@@ -344,12 +355,14 @@ document.addEventListener("keydown", (e) => {
     } else {
       group = null;
       sel = 0;
+      selKey = null;
+      detailMode = "group";
       render();
     }
   } else if (foldersMarked().length && (e.key === "Backspace" || e.key === "Delete")) {
     e.preventDefault();
     removeFolders(foldersMarked());
-  } else if (shown[sel] && (e.key === "Backspace" || e.key === "Delete")) {
+  } else if (detailMode === "jack" && shown[sel] && (e.key === "Backspace" || e.key === "Delete")) {
     e.preventDefault();
     const bulk = markedHere();
     if (bulk.length > 1) removeMarked(bulk);
@@ -388,21 +401,34 @@ async function load() {
   try {
     // In parallel: load() runs on every focus and sits in front of the first paint.
     // Only `jacks` is left uncaught; its failure is what the error branch is for.
-    let noteRows, tun, paths;
-    [prefs, sshKeys, colors, paths, tun, noteRows, all] = await Promise.all([
+    let noteRows, tun, paths, snip, listing;
+    [prefs, sshKeys, colors, paths, tun, noteRows, snip, listing] = await Promise.all([
       invoke("settings").catch(() => ({})),
       sshKeys.length ? sshKeys : invoke("ssh_keys").catch(() => []),
       invoke("colors").catch(() => ({})),
       invoke("config_path").catch(() => ({ list: "", own: "" })),
       invoke("tunnels").catch(() => ({ live: [], ended: [] })),
       invoke("notes").catch(() => []),
+      invoke("snippets").catch(() => ({ list: [], refused: [], stamps: {} })),
       invoke("jacks"),
     ]);
     ({ list: cfgPath, own: ownPath } = paths);
+    ({ jacks: all, vaults } = listing);
+    snips = snip.list;
+    snipStamps = snip.stamps;
+    // Said once: a snippet that could press a key is left out, and whoever wrote it
+    // should hear that it was.
+    const refused = snip.refused.join(", ");
+    if (refused && refused !== snipsRefused) {
+      alertish(`left out, because a snippet is one plain line: ${refused}`);
+    }
+    snipsRefused = refused;
     takeTunnels(tun);
-    notes = new Map(noteRows.map((n) => [n.path, n.note]));
-    lends = new Map(noteRows.map((n) => [n.path, n.defaults ?? {}]));
-    noteStamps = new Map(noteRows.map((n) => [n.path, n.stamp]));
+    // By folder, and a folder is in one vault.
+    const at = (n) => gkey({ path: n.path, vault: n.vault ?? undefined });
+    notes = new Map(noteRows.map((n) => [at(n), n.note]));
+    lends = new Map(noteRows.map((n) => [at(n), n.defaults ?? {}]));
+    noteStamps = new Map(noteRows.map((n) => [at(n), n.stamp]));
     loadErr = "";
     // Last session's open folders, on the first load only: a focus would re-open
     // what has been closed since. Nothing remembered means everything folded.
@@ -421,6 +447,8 @@ async function load() {
       loadErr = String(e);
     } else {
       treeEl.innerHTML = "";
+      listEl.hidden = false;
+      wideEl.hidden = true;
       listEl.innerHTML = `<p class="empty">${esc(e)}</p>`;
     }
   }

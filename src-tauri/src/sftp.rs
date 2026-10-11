@@ -37,6 +37,40 @@ pub fn control_path(name: &str) -> PathBuf {
         .join(format!("pb-{}-{:016x}", std::process::id(), h.finish()))
 }
 
+/// Called on exit: a master with `ControlPersist` has no parent to hang up on and would
+/// hold its connection, and any forward on it, for another minute. Every socket this
+/// process made carries its pid, so the folder is the list.
+#[cfg(not(windows))]
+pub fn close_all() {
+    let dir = control_path("");
+    let mine = format!("pb-{}-", std::process::id());
+    let Some(entries) = dir.parent().and_then(|d| std::fs::read_dir(d).ok()) else {
+        return;
+    };
+    let asked: Vec<_> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with(&mine))
+        .filter_map(|e| {
+            // The host is never dialled: `-O` only talks to the socket.
+            Command::new("ssh")
+                .args(["-O", "exit", "-o"])
+                .arg(format!("ControlPath={}", e.path().display()))
+                .arg("patchbay")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .ok()
+        })
+        .collect();
+    for mut child in asked {
+        let _ = child.wait();
+    }
+}
+
+#[cfg(windows)]
+pub fn close_all() {}
+
 /// A jack's name as one path segment; it comes from a file someone else may have written.
 fn safe_name(name: &str) -> String {
     name.chars()
@@ -84,8 +118,8 @@ fn sftp_args(ssh: Vec<String>, socket: &Path) -> Vec<String> {
 /// The options that share one ssh connection. `pty.rs` puts the same ones on a terminal
 /// session, so a shell authenticates and the file browser rides it. Win32-OpenSSH has
 /// no multiplexing, so only the keepalives go on Windows.
-/// ponytail: ControlPersist=60 outlives `close_all()`; `ControlPersist=no` plus `-O exit`
-/// if that ever matters.
+/// `ControlPersist` is what lets the file browser outlive the shell it rode in on, and
+/// `close_all` is what stops it outliving the window.
 pub fn mux(socket: &Path) -> Vec<String> {
     let _ = socket;
     let mut opts = vec![

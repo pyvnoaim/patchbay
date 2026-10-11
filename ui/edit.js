@@ -23,10 +23,16 @@ function showCtx(x, y, head, items, os) {
         return `<div class="ctx-item ${it.danger ? "danger" : ""}" data-a="${i}">${icon(it.icon)}${esc(it.label)}${key}</div>`;
       })
       .join("");
+  // Asked before the menu is up, because once it is the page counts as covered.
+  const web = webViewRect();
   ctxEl.hidden = false;
   // Flip back inside the window rather than overflowing it.
   const r = ctxEl.getBoundingClientRect();
-  ctxEl.style.left = `${Math.min(x, innerWidth - r.width - 8)}px`;
+  let left = Math.min(x, innerWidth - r.width - 8);
+  // A menu opened beside a web tab stays beside it: the page is an OS view, and one
+  // pixel of menu over it means the whole page has to go while the menu is up.
+  if (web && x < web.left) left = Math.max(4, Math.min(left, web.left - r.width - 4));
+  ctxEl.style.left = `${left}px`;
   ctxEl.style.top = `${Math.min(y, innerHeight - r.height - 8)}px`;
 }
 const hideCtx = () => {
@@ -47,14 +53,16 @@ ctxEl.addEventListener("click", (e) => {
 // The webview's own menu is Reload / Inspect Element.
 document.addEventListener("contextmenu", (e) => {
   e.preventDefault();
-  const jackRow = e.target.closest("#list .jack");
+  const jackRow = e.target.closest("#list .jack, #tree .jack");
   const groupRow = e.target.closest(".group");
 
   if (jackRow && jackRow.dataset.i !== undefined) {
-    const at = +jackRow.dataset.i;
+    let at = +jackRow.dataset.i;
+    if (at < 0) at = revealDevice(jackRow.dataset.name);
+    if (at < 0) return;
     // Right-clicking an unmarked row is an ordinary click: it selects and drops the marks.
     if (!marked.has(shown[at]?.name)) marked.clear();
-    select(at);
+    select(at, true);
     const bulk = markedHere();
     if (bulk.length > 1) {
       const ssh = bulk.filter((x) => x.ssh);
@@ -72,6 +80,7 @@ document.addEventListener("contextmenu", (e) => {
             ]
           : []),
         { icon: "folder-input", label: "Move to folder…", run: () => moveAsked(bulk) },
+        ...vaultMoves(bulk),
         "-",
         {
           icon: "trash-2",
@@ -167,23 +176,42 @@ document.addEventListener("contextmenu", (e) => {
         // Everything but the name, which is the one field a copy has to differ in.
         { icon: "copy-plus", label: "Duplicate…", run: () => openJack({ ...j, name: "" }) },
         { icon: "folder-input", label: "Move to folder…", run: () => moveAsked([j]) },
+        ...vaultMoves([j]),
         { icon: "trash-2", label: "Delete", key: "⌫", danger: true, run: () => removeJack(j) },
+        // A folder drawn as its one device is still a folder to rename or remove.
+        ...(jackRow.classList.contains("solo")
+          ? [
+              "-",
+              // Its note and what it lends: the row itself opens the device.
+              {
+                icon: "folder-open",
+                label: "Folder details",
+                run: () => pickGroup(idOf(jackRow), false),
+              },
+              { icon: "pencil", label: "Rename folder…", run: () => renameGroup(idOf(jackRow)) },
+              {
+                icon: "trash-2",
+                label: "Delete folder",
+                danger: true,
+                run: () => removeGroup(idOf(jackRow)),
+              },
+            ]
+          : []),
       ],
       j.os ?? null,
     );
   }
 
-  if (groupRow && groupRow.dataset.group && !groupRow.dataset.path) {
-    return showCtx(e.clientX, e.clientY, "All devices", [
-      { icon: "plus", label: "New device here…", run: () => openJack(null, { path: null }) },
-      { icon: "folder-plus", label: "New folder…", run: () => newGroup({ path: null }) },
-    ]);
-  }
-
   if (groupRow) {
-    const id = { path: groupRow.dataset.path || null };
-    if (!id.path) return; // "All jacks" isn't a folder
-    if (!markedFolders.has(id.path)) unmarkFolders();
+    const id = idOf(groupRow);
+    // A vault's own row: somewhere to put things, not a folder to rename.
+    if (!id.path) {
+      return showCtx(e.clientX, e.clientY, groupLabelOf(id), [
+        { icon: "plus", label: "New device here…", run: () => openJack(null, id) },
+        { icon: "folder-plus", label: "New folder…", run: () => newGroup(id) },
+      ]);
+    }
+    if (!markedFolders.has(gkey(id))) unmarkFolders();
     const fs = foldersMarked();
     if (fs.length > 1) {
       return showCtx(e.clientX, e.clientY, `${fs.length} folders`, [
@@ -202,6 +230,27 @@ document.addEventListener("contextmenu", (e) => {
       "-",
       { icon: "pencil", label: "Rename…", run: () => renameGroup(id) },
       { icon: "trash-2", label: "Delete folder", danger: true, run: () => removeGroup(id) },
+    ]);
+  }
+
+  // A shell's tab: the palette is where snippets are, and a menu is how you find that out.
+  const tab = e.target.closest("#tabs .tab[data-id]");
+  const onTab = tab && sessions.get(+tab.dataset.id);
+  if (onTab && onTab.kind === "term" && !onTab.task && !onTab.dead) {
+    return showCtx(e.clientX, e.clientY, labelOf(onTab.name), [
+      {
+        icon: "text-cursor-input",
+        label: "Snippets…",
+        key: chord("k"),
+        run: () => {
+          activeId = onTab.id;
+          showTab();
+          renderTabs();
+          openPalette();
+        },
+      },
+      "-",
+      { icon: "x", label: "Close", key: chord("w"), run: () => closeSession(onTab.id) },
     ]);
   }
 
@@ -241,7 +290,11 @@ document.addEventListener("contextmenu", (e) => {
 
   showCtx(e.clientX, e.clientY, null, [
     { icon: "plus", label: "New device…", run: () => openJack(null, group) },
-    { icon: "folder-plus", label: "New folder…", run: () => newGroup({ path: null }) },
+    {
+      icon: "folder-plus",
+      label: "New folder…",
+      run: () => newGroup({ path: null, vault: group?.vault }),
+    },
     "-",
     {
       icon: "file-pen-line",
@@ -251,6 +304,19 @@ document.addEventListener("contextmenu", (e) => {
     { icon: "keyboard", label: "Keyboard shortcuts", key: "?", run: () => openSettings("keys") },
   ]);
 });
+// "Move to Team" or "Move to Mine", for whichever of the devices are not there yet.
+// Nothing with one vault: there is nowhere else to be.
+function vaultMoves(js) {
+  return Object.keys(VAULTS)
+    .filter((v) => js.some((j) => j.vault && j.vault !== v))
+    .map((v) => ({
+      icon: VAULTS[v][0],
+      label: `Move to ${VAULTS[v][1]}`,
+      run: () => moveVault(js.filter((j) => j.vault !== v)),
+    }));
+}
+const groupLabelOf = (id) => id.path ?? VAULTS[id.vault]?.[1] ?? "All devices";
+
 window.addEventListener("blur", hideCtx);
 document.addEventListener("mousedown", (e) => {
   if (!e.target.closest("#ctx")) hideCtx();
@@ -525,6 +591,9 @@ function openJack(j, prefillGroup) {
   jfDelete.innerHTML = `${icon("trash-2")}Delete`;
   jfErr.hidden = true;
   const f = jackForm.elements;
+  // Where it is, or where you are looking; the team's when neither says, as before.
+  $("jf-vault").hidden = !vaults.two;
+  f.vault.value = j?.vault ?? prefillGroup?.vault ?? "team";
   // `primary` is already resolved in Rust, so it is the answer even for a device that
   // still carries two ways in.
   f.reach.value = j?.primary ?? "ssh";
@@ -613,8 +682,10 @@ jackForm.addEventListener("submit", async (e) => {
         folders: commaList(f.folders.value),
         stamp: editStamp,
       },
+      vault: vaults.two ? f.vault.value : null,
     });
-    for (const f2 of commaList(f.folders.value)) pending.delete(gkey({ path: f2 }));
+    const vault = vaults.two ? f.vault.value : undefined;
+    for (const f2 of commaList(f.folders.value)) pending.delete(gkey({ path: f2, vault }));
     closeJack();
     await load();
   } catch (err) {
@@ -678,7 +749,7 @@ async function removeJack(j) {
   if (!(await ask(`Delete "${j.label}"? This edits your config file.`, null, "Delete"))) return;
   try {
     const removed = await invoke("delete_jack", { name: j.name, stamp: j.stamp ?? null });
-    sel = 0;
+    selKey = null;
     await load();
     offerUndo([removed]);
   } catch (e) {
@@ -709,10 +780,31 @@ async function removeMarked(js) {
     }
   }
   marked.clear();
-  sel = 0;
+  selKey = null;
   await load();
   if (removed.length) offerUndo(removed, failed);
   else alertish(`could not delete ${failed.join(", ")}`);
+}
+
+// To the other vault, table and all. One call per device, so a refusal names the one
+// it was on and the rest still move.
+async function moveVault(js) {
+  const to = VAULTS[otherVault(js[0]?.vault)]?.[1];
+  const moved = [];
+  for (const j of js) {
+    try {
+      await invoke("move_jack", { name: j.name });
+      moved.push(j.label);
+    } catch (e) {
+      alertish(e);
+    }
+  }
+  marked.clear();
+  selKey = null;
+  await load();
+  if (moved.length) {
+    flash(`Moved ${moved.length === 1 ? `"${moved[0]}"` : `${moved.length} devices`} to ${to}.`);
+  }
 }
 
 async function newGroup(parent) {
@@ -723,20 +815,21 @@ async function newGroup(parent) {
   );
   if (!name) return;
   const leaf = name.replace(/^\/+|\/+$/g, "");
-  const id = { path: parent?.path ? `${parent.path}/${leaf}` : leaf };
+  // A new folder is in a vault like any other; the team's when nobody said.
+  const vault = parent?.vault ?? (vaults.two ? "team" : undefined);
+  const id = { path: parent?.path ? `${parent.path}/${leaf}` : leaf, vault };
   pending.set(gkey(id), id);
-  openGroup(gkey({ path: id.path.split("/")[0] }));
-  group = id;
-  render();
+  openGroup(gkey({ path: id.path.split("/")[0], vault }));
+  pickGroup(id, false);
 }
 
 async function renameGroup(id) {
   const to = await ask(`Rename folder ${id.path} to`, id.path.split("/").pop(), "Rename");
   if (!to) return;
   const parent = id.path.includes("/") ? id.path.slice(0, id.path.lastIndexOf("/")) : "";
-  const next = { path: parent ? `${parent}/${to}` : to };
+  const next = { path: parent ? `${parent}/${to}` : to, vault: id.vault };
   try {
-    await invoke("rename_group", { from: id.path, to: next.path });
+    await invoke("rename_group", { from: id.path, to: next.path, vault: id.vault ?? null });
     if (pending.delete(gkey(id))) pending.set(gkey(next), next);
     if (sameGroup(group, id)) group = next;
     await load();
@@ -745,16 +838,21 @@ async function renameGroup(id) {
   }
 }
 
+const underFolder = (id) => (j) =>
+  inVault(j, id.vault) && j.folders.some((f) => f === id.path || f.startsWith(id.path + "/"));
+
 async function removeGroup(id) {
-  const n = all.filter((j) =>
-    j.folders.some((f) => f === id.path || f.startsWith(id.path + "/")),
-  ).length;
+  const n = all.filter(underFolder(id)).length;
   const msg = `Remove folder "${id.path}" from ${n} device${n === 1 ? "" : "s"}? The devices stay.`;
   if (!(await ask(msg, null, "Remove"))) return;
   try {
-    await invoke("delete_group", { path: id.path });
+    await invoke("delete_group", { path: id.path, vault: id.vault ?? null });
     pending.delete(gkey(id));
-    if (sameGroup(group, id) || group?.path?.startsWith(id.path + "/")) group = null;
+    if (
+      group?.vault === id.vault &&
+      (group.path === id.path || group.path?.startsWith(id.path + "/"))
+    )
+      group = null;
     await load();
   } catch (e) {
     alertish(e);
@@ -762,12 +860,15 @@ async function removeGroup(id) {
 }
 
 // Loops the single-folder command, like `removeMarked`. A folder inside another marked
-// one goes with it, so it is neither counted nor asked for twice.
-async function removeFolders(paths) {
+// one goes with it, so it is neither counted nor asked for twice. Marks are all in one
+// vault, so the first one's is everyone's.
+async function removeFolders(ids) {
+  const vault = ids[0]?.vault;
+  const paths = ids.map((id) => id.path);
   const tops = paths.filter((p) => !paths.some((q) => p.startsWith(q + "/")));
-  if (tops.length === 1) return removeGroup({ path: tops[0] });
+  if (tops.length === 1) return removeGroup({ path: tops[0], vault });
   const under = (f) => tops.some((p) => f === p || f.startsWith(p + "/"));
-  const n = all.filter((j) => j.folders.some(under)).length;
+  const n = all.filter((j) => inVault(j, vault) && j.folders.some(under)).length;
   const msg =
     `Remove ${tops.length} folders from ${n} device${n === 1 ? "" : "s"}? The devices stay.` +
     `\n\n${tops.slice(0, 8).join(", ")}${tops.length > 8 ? `, and ${tops.length - 8} more` : ""}`;
@@ -775,27 +876,34 @@ async function removeFolders(paths) {
   const failed = [];
   for (const p of tops) {
     try {
-      await invoke("delete_group", { path: p });
-      pending.delete(gkey({ path: p }));
+      await invoke("delete_group", { path: p, vault: vault ?? null });
+      pending.delete(gkey({ path: p, vault }));
     } catch {
       failed.push(p);
     }
   }
   markedFolders.clear();
-  if (group?.path && under(group.path)) group = null;
+  if (group?.vault === vault && group.path && under(group.path)) group = null;
   await load();
   if (failed.length) alertish(`could not remove ${failed.join(", ")}`);
 }
 
-// Put devices in a folder. Seen from inside a folder it is a move: every entry under
-// that folder becomes `to`, and `to` of null takes them out of it. Seen from All
-// devices it is an add, because there is nothing to move out of. Only the folders list
-// is written, so a hand-written key on the device survives.
-async function moveJacks(js, to) {
-  const from = group?.path ?? null;
+// Put devices in a folder. From inside a folder it is a move: every entry under
+// `from` becomes `to`, and `to` of null takes them out of it. From nowhere in
+// particular it is an add, because there is nothing to move out of. Only the folders
+// list is written, so a hand-written key on the device survives. `vault` is the one
+// the target folder is in: a drag stays inside it, because the other vault is another
+// file and putting a device there is "Move to", said out loud.
+async function moveJacks(js, to, from = group?.path ?? null, vault = js[0]?.vault ?? undefined) {
+  const here = js.filter((j) => inVault(j, vault));
+  if (here.length < js.length) {
+    alertish(
+      `a drag stays inside one vault - "Move to ${VAULTS[vault]?.[1] ?? "Team"}" puts a device in the other`,
+    );
+  }
   const under = (f) => from !== null && (f === from || f.startsWith(from + "/"));
   let moved = 0;
-  for (const j of js) {
+  for (const j of here) {
     const was = j.folders;
     const next = [
       ...new Set(
@@ -817,8 +925,8 @@ async function moveJacks(js, to) {
   }
   if (!moved) return;
   if (to !== null) {
-    openGroup(gkey({ path: to.split("/")[0] }));
-    pending.delete(gkey({ path: to }));
+    openGroup(gkey({ path: to.split("/")[0], vault }));
+    pending.delete(gkey({ path: to, vault }));
   }
   marked.clear();
   await load();
@@ -850,8 +958,13 @@ async function openImport(r, where) {
   $("imp-find").value = "";
   impWrap.hidden = false;
 
-  // Devices already in the config are shown unticked, so running this twice is safe.
-  impFound = r.hosts.map((h) => ({ ...h, here: all.some((j) => j.name === h.name) }));
+  // Devices already in the vault this lands in are shown unticked, so running it twice
+  // is safe. By the key a file would have, which is what an import writes.
+  const into = vaults.two ? (group?.vault ?? "team") : undefined;
+  impFound = r.hosts.map((h) => ({
+    ...h,
+    here: all.some((j) => inVault(j, into) && bareKey(j.name) === h.name),
+  }));
   const fresh = impFound.filter((h) => !h.here).length;
   impNote.innerHTML =
     `<b>${impFound.length}</b> device${impFound.length === 1 ? "" : "s"} found` +
@@ -1035,6 +1148,9 @@ impForm.addEventListener("submit", async (e) => {
           os: h.os ?? null,
           desc: h.desc ?? null,
         },
+        // ponytail: an import lands in the vault being looked at, the team's when
+        // neither is; its own choice in the sheet if people import into both.
+        vault: vaults.two ? (group?.vault ?? "team") : null,
       });
     } catch {
       failed.push(h.name);
@@ -1136,16 +1252,24 @@ async function openSettings(pane) {
   for (const k of DEFAULT_KEYS) setForm.elements[`def_${k}`].value = defs[k] ?? "";
   defsWas = defsState();
   setForm.elements.list.value = prefs.list ?? "";
+  setForm.elements.bitwarden_server.value = prefs.bitwarden_server ?? "";
   // Only worth saying while there are two files.
   const shared = cfgPath && ownPath && cfgPath !== ownPath;
   $("team-own").hidden = $("cfg-own").hidden = !shared;
-  $("team-own").textContent = `Your own devices are waiting in ${ownPath}.`;
+  $("team-own").textContent = vaults.copies
+    ? `${vaults.copies} device${vaults.copies === 1 ? " in Mine is" : "s in Mine are"} also in Team, unchanged: what starting the list from this machine left in ${ownPath}.`
+    : `Your own devices are in ${ownPath}, and only this machine sees them.`;
+  $("team-copies").hidden = !shared || !vaults.copies;
+  $("team-copies").innerHTML = `${icon("trash-2")}Remove the copies`;
   $("cfg-own").textContent = `Settings and colours stay in ${ownPath}, this machine's own.`;
   renderSwatches();
   for (const el of setWrap.querySelectorAll("[data-icon]")) {
     if (!el.firstChild) el.innerHTML = icon(el.dataset.icon);
   }
   resetSources();
+  snipDraft = snips.map((s) => ({ ...s }));
+  snipWas = JSON.stringify(snipDraft);
+  renderSnips();
   showPane(pane);
   $("new-list").innerHTML = `${icon("folder-plus")}New…`;
   $("pick-list").innerHTML = `${icon("folder-open")}Open…`;
@@ -1207,6 +1331,7 @@ setForm.addEventListener("submit", async (e) => {
   next.theme = setForm.elements.theme.value;
   next.font_size = parseFloat(setForm.elements.font_size.value);
   next.list = setForm.elements.list.value.trim() || null;
+  next.bitwarden_server = setForm.elements.bitwarden_server.value.trim() || null;
   // Rust clamps it too, silently; this is the half that can say why.
   if (!(next.font_size >= 8 && next.font_size <= 32)) {
     return showErr(setErr, "terminal font size has to be between 8 and 32");
@@ -1219,7 +1344,16 @@ setForm.addEventListener("submit", async (e) => {
 
   try {
     const wasProbing = prefs.probe !== false;
+    // Snippets first: they are the write most likely to be refused, and refused after
+    // the settings went in, a second Save would send those twice.
+    await saveSnips(snipRows());
+    const server = prefs.bitwarden_server ?? null;
     await invoke("save_settings", { next });
+    // Host access is granted when the extension loads, so a new server is a reload.
+    if (next.webext && next.bitwarden_server !== server) {
+      await invoke("webext_stop").catch(() => {});
+      invoke("webext_start").catch(alertish);
+    }
     if (defsState() !== defsWas) await invoke("save_defaults", { next: defs, stamp: defsStamp });
     prefs = next;
     listStamp = null;
@@ -1233,6 +1367,10 @@ setForm.addEventListener("submit", async (e) => {
     }
   } catch (err) {
     showErr(setErr, String(err));
+    // Whatever of the snippets did go in is what the next Save is compared against.
+    await invoke("snippets")
+      .then((r) => ({ list: snips, stamps: snipStamps } = r))
+      .catch(() => {});
     // Refused as someone else's edit: the sheet takes the new stamp, so Save a second
     // time is a decision. The fields stay as typed - they are the change being kept.
     if (String(err).includes("changed by someone else")) {
@@ -1243,6 +1381,96 @@ setForm.addEventListener("submit", async (e) => {
   }
 });
 $("set-cancel").addEventListener("click", closeSettings);
+
+// ── snippets ───────────────────────────────────────────────────────────────
+// The sheet's own copy, written back whole per vault on Save. A row's vault is where
+// it is stored, so changing it is the move.
+let snipDraft = [];
+let snipWas = "[]";
+function renderSnips() {
+  const pick = (s, i) =>
+    vaults.two
+      ? `<select data-si="${i}" data-k="vault" aria-label="Who can see it">${Object.keys(VAULTS)
+          .map(
+            (v) =>
+              `<option value="${v}"${s.vault === v ? " selected" : ""}>${VAULTS[v][1]}</option>`,
+          )
+          .join("")}</select>`
+      : "";
+  $("snip-rows").innerHTML = snipDraft.length
+    ? snipDraft
+        .map(
+          (s, i) => `<div class="snip-row${vaults.two ? " two" : ""}">
+      <input data-si="${i}" data-k="name" spellcheck="false" placeholder="name" aria-label="Name" value="${esc(s.name)}" />
+      <input data-si="${i}" data-k="text" class="mono" spellcheck="false" placeholder="what gets typed" aria-label="Text" value="${esc(s.text)}" />
+      ${pick(s, i)}
+      <button type="button" class="flat" data-sdel="${i}" aria-label="Remove">${icon("x")}</button>
+    </div>`,
+        )
+        .join("")
+    : `<p class="page-note">None yet.</p>`;
+  $("snip-add").innerHTML = `${icon("plus")}Add a snippet`;
+}
+$("snip-rows").addEventListener("input", (e) => {
+  const el = e.target.closest("[data-si]");
+  if (el) snipDraft[+el.dataset.si][el.dataset.k] = el.value;
+});
+$("snip-rows").addEventListener("click", (e) => {
+  const del = e.target.closest("[data-sdel]");
+  if (!del) return;
+  snipDraft.splice(+del.dataset.sdel, 1);
+  renderSnips();
+});
+$("snip-add").addEventListener("click", () => {
+  // Yours unless you say otherwise: a line typed onto a colleague's prompt is
+  // something to choose to share.
+  snipDraft.push({ name: "", text: "", vault: vaults.two ? "mine" : null });
+  renderSnips();
+  $("snip-rows").querySelector(".snip-row:last-child input")?.focus();
+});
+
+// What the sheet's rows come to, checked before anything in the sheet is written: a
+// refusal here must not leave the settings saved and the snippets not.
+function snipRows() {
+  const rows = snipDraft
+    .map((s) => ({ ...s, name: s.name.trim() }))
+    .filter((s) => s.name || s.text);
+  const bad = rows.find((s) => !s.name || !snippetOk(s.text));
+  if (bad) {
+    throw bad.name
+      ? `"${bad.name}": a snippet is one line of plain text - it can't press Enter`
+      : "a snippet needs a name";
+  }
+  return rows;
+}
+
+// Each vault's table whole, and only the ones that changed. The vault that gained a
+// row goes first, so a failure in between leaves a snippet in both rather than neither.
+// ponytail: rows moved both ways in one save can't both go first; the second write
+// failing then loses the ones that left its vault, until they are typed again.
+async function saveSnips(rows) {
+  if (JSON.stringify(snipDraft) === snipWas) return;
+  const of = (list, v) => list.filter((s) => (s.vault ?? null) === v).map((s) => [s.name, s.text]);
+  const order = vaults.two ? ["mine", "team"] : [null];
+  const gained = (v) => of(rows, v).length - of(snips, v).length;
+  for (const v of [...order].sort((a, b) => gained(b) - gained(a))) {
+    const next = of(rows, v);
+    if (JSON.stringify(next) === JSON.stringify(of(snips, v))) continue;
+    await invoke("save_snippets", { vault: v, list: next, stamp: snipStamps[v ?? "team"] ?? null });
+  }
+}
+$("team-copies").addEventListener("click", async () => {
+  try {
+    const n = await invoke("remove_copies");
+    await load();
+    flash(`Removed ${n} cop${n === 1 ? "y" : "ies"} from Mine.`);
+    $("team-own").textContent =
+      `Your own devices are in ${ownPath}, and only this machine sees them.`;
+    $("team-copies").hidden = true;
+  } catch (e) {
+    showErr(setErr, String(e));
+  }
+});
 // What Bitwarden for Mac has installed. Read rather than assumed, so an extension
 // WKWebExtension won't take says so here instead of leaving a toggle that does nothing.
 async function sayWebext() {

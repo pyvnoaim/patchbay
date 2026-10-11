@@ -1,6 +1,6 @@
 //! `[settings]`, `[defaults]`, `[colors]`, the theme, and the config file itself.
 
-use super::{blocking, list_file, os_open, ssh_dir, writable_list};
+use super::{blocking, list_file, os_open, ssh_dir};
 use crate::{config, patchbay};
 
 #[tauri::command]
@@ -12,6 +12,7 @@ pub fn settings() -> config::Settings {
 pub async fn save_settings(next: config::Settings) -> Result<(), String> {
     blocking(move || {
         let was = config::load_settings();
+        let mut seeded = None;
         // Pointing at a list that isn't there yet seeds it with this machine's, before
         // the setting is written: a seed that fails leaves the setting as it was. Only
         // for a path just typed: a share that is away must not block the theme.
@@ -27,6 +28,7 @@ pub async fn save_settings(next: config::Settings) -> Result<(), String> {
             }
             if !path.exists() {
                 config::seed_list_at(&patchbay::config_path(), &path)?;
+                seeded = Some(path);
             } else if !path.is_file() {
                 return Err(format!("{} is a folder, not a file", path.display()));
             }
@@ -34,6 +36,11 @@ pub async fn save_settings(next: config::Settings) -> Result<(), String> {
         // `jacks` only ever writes the ssh include, so turning the switch off has to
         // remove it here.
         config::save_settings(&next)?;
+        // Starting a team list moves this machine's devices into it: left behind they
+        // would be a second copy of everything, in the vault only you can see.
+        if let Some(team) = seeded {
+            config::remove_copies_at(&patchbay::config_path(), &team)?;
+        }
         if was.write_ssh_config && !next.write_ssh_config {
             if let Some(dir) = ssh_dir() {
                 config::remove_ssh_include(&dir)?;
@@ -67,7 +74,7 @@ pub async fn defaults() -> Result<DefaultsView, String> {
 
 #[tauri::command]
 pub async fn save_defaults(next: config::Defaults, stamp: Option<String>) -> Result<(), String> {
-    blocking(move || config::save_defaults_at(&writable_list()?, &next, stamp.as_deref())).await
+    blocking(move || config::save_defaults_at(&list_file()?, &next, stamp.as_deref())).await
 }
 
 #[tauri::command]

@@ -62,22 +62,38 @@ const chordKey = (e) =>
 const picking = (e) => (isMac ? e.metaKey : e.ctrlKey);
 const pickChord = isMac ? "⌘-click" : "Ctrl-click";
 
-// The key for a folder in Sets and Maps; null is the row above all of them. Rust gets
-// the path itself, never this.
-const gkey = (g) => (g ? (g.path ?? "") : "");
+// The key for a folder in Sets and Maps; null is every device. A folder is in one
+// vault, so with two the vault is part of which folder it is. Rust gets the path and
+// the vault's word, never this.
+const gkey = (g) => (g ? `${g.vault ? `${g.vault}:` : ""}${g.path ?? ""}` : "");
 const sameGroup = (a, b) => gkey(a) === gkey(b);
 
 let all = []; // every jack, in file order
-let shown = []; // what the middle column currently lists
+let shown = []; // the device rows the tree is drawing, top to bottom
+let shownIn = []; // the folder each of those rows sits in, as a { path, vault }
+// The selected row by what it is, so it survives a folder unfolding above it.
+let selKey = null;
+// Two once a shared list is set: yours and the team's. `away` is why the team's is missing.
+let vaults = { two: false, team: null, away: null, copies: 0 };
+let detailsOpen = false; // the side pane beside a session, behind the Details chip
+// Lines of text the palette types at a prompt, from both vaults, yours first.
+let snips = []; // { name, text, vault }
+let snipStamps = {}; // each vault's [snippet] table as read, for the save
+let snipsRefused = ""; // the refused names already said, so a focus doesn't repeat them
+// One plain line, at most 1000 characters. Rust refuses the same on save and on read;
+// this is the check on the way out, the last thing between a file and a prompt.
+const snippetOk = (t) =>
+  t.trim().length > 0 && [...t].length <= 1000 && !/[\u0000-\u001f\u007f-\u009f]/.test(t);
 let probes = new Map(); // name -> { target, ms }
-// The selected row: { path }, or null for every device.
+// The selected folder: { path, vault }, or null for every device.
 let group = null;
 let expanded = new Set(); // open rows, by gkey
 let sel = 0;
 // Marks are names, not indexes: the list is refiltered under them by every render.
 let marked = new Set();
-// Folder paths marked in the tree. Never alongside `marked`: one dock, one Delete.
-let markedFolders = new Set();
+// Folders marked in the tree, gkey -> id, all in one vault. Never alongside `marked`:
+// one dock, one Delete.
+let markedFolders = new Map();
 let palSel = 0;
 let editing = null; // jack name being edited, or null when adding
 let editStamp = null; // the table as it was when the sheet opened, sent back with the save
@@ -95,17 +111,9 @@ let lastProbe = 0; // epoch ms of the last sweep, for the throttle below
 let pressing = false;
 let missedRender = false;
 let webextRunning = false; // Bitwarden is loaded, so web tabs get its key button
-let detailMode = "jack"; // what the right pane describes: "jack" or "group"
-// "list" is the flat column; "map" groups devices by the route to them.
+let detailMode = "group"; // what the detail describes: "jack" or "group"
+// "map" draws the selected folder by the route to each device, in place of the detail.
 let listMode = "list";
-// The flat list's order, one of SORTS in browse.js. This machine's habit, like the theme.
-let listSort = (() => {
-  try {
-    return localStorage.sort || "file";
-  } catch {
-    return "file";
-  }
-})();
 let prefs = {}; // [settings] from the config
 let colors = {}; // [colors] overrides, os key -> hex
 let cfgPath = ""; // where the list lives, shown on first run
@@ -304,6 +312,13 @@ function osColor(os) {
 // `name` is the key everything goes by; `label` is what the window says, and two
 // devices in different folders can share one.
 const labelOf = (name) => all.find((j) => j.name === name)?.label ?? name;
+// A device of your own is `me:<key>` once there are two vaults; a file only has the key.
+const bareKey = (name) => name.replace(/^me:/, "");
+// The two vaults as the window names them: an icon and a word.
+const VAULTS = { mine: ["user", "Mine"], team: ["users", "Team"] };
+const vaultIds = () => (vaults.two ? ["mine", "team"] : [undefined]);
+const inVault = (j, v) => (j.vault ?? undefined) === v;
+const otherVault = (v) => (v === "mine" ? "team" : "mine");
 
 // The url as well as the host: a device that is only a web UI has no host to find it
 // by, and an address pasted from a ticket is as likely to be one as the other.

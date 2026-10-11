@@ -237,8 +237,7 @@ const SAFARI_UA: &str = "Version/26.0 Safari/605.1.15";
 /// fetches skip CORS only where it holds host access, so with just your devices it
 /// could see the NAS and not its own vault - sign-in died on `api.bitwarden.com`
 /// refusing the `webkit-extension://` origin. Its own domains, and nobody else's.
-// ponytail: cloud only; a self-hosted server's address joins these from a setting once
-// someone runs one.
+/// A server of your own joins them from `[settings].bitwarden_server`.
 #[cfg(target_os = "macos")]
 const BITWARDEN_SERVERS: [&str; 3] = [
     "https://*.bitwarden.com/*",
@@ -655,7 +654,11 @@ pub fn unload() -> Result<(), String> {
 /// handful of appliances you named yourself. An empty list is not a refusal: the vault
 /// is worth opening for a password to read even where nothing here can be filled.
 #[cfg(target_os = "macos")]
-pub async fn load(app: &tauri::AppHandle, hosts: Vec<String>) -> Result<Package, String> {
+pub async fn load(
+    app: &tauri::AppHandle,
+    hosts: Vec<String>,
+    server: Option<String>,
+) -> Result<Package, String> {
     use block2::RcBlock;
     use objc2::{runtime::ProtocolObject, MainThreadMarker};
     use objc2_foundation::{NSDate, NSDictionary, NSError, NSString, NSURL};
@@ -726,7 +729,8 @@ pub async fn load(app: &tauri::AppHandle, hosts: Vec<String>) -> Result<Package,
                 // None is fine: with no device page to fill, the vault still opens.
                 let mut patterns: Vec<_> = hosts.iter().filter_map(|h| pattern(h)).collect();
                 let devices = patterns.len();
-                patterns.extend(BITWARDEN_SERVERS.iter().filter_map(|h| pattern(h)));
+                let servers = BITWARDEN_SERVERS.iter().copied().chain(server.as_deref());
+                patterns.extend(servers.filter_map(pattern));
                 let pk: Vec<_> = patterns.iter().map(|p| &**p).collect();
                 let pw = vec![&*forever; pk.len()];
                 ctx.setGrantedPermissionMatchPatterns(&NSDictionary::from_slices(&pk, &pw));
@@ -806,13 +810,23 @@ pub fn host_pattern(url: &str) -> Option<String> {
     }
 }
 
+/// A self-hosted Bitwarden's address as its match pattern. https only: the vault's
+/// own traffic, and Bitwarden's clients refuse a cleartext server anyway.
+pub fn server_pattern(url: &str) -> Option<String> {
+    host_pattern(url).filter(|p| p.starts_with("https://"))
+}
+
 #[cfg(not(target_os = "macos"))]
 pub fn supported() -> bool {
     false
 }
 
 #[cfg(not(target_os = "macos"))]
-pub async fn load(_app: &tauri::AppHandle, _hosts: Vec<String>) -> Result<Package, String> {
+pub async fn load(
+    _app: &tauri::AppHandle,
+    _hosts: Vec<String>,
+    _server: Option<String>,
+) -> Result<Package, String> {
     Err("hosting a browser extension only works on macOS".into())
 }
 
