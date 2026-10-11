@@ -8,6 +8,10 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- The Ping, Trace and key buttons beside a session wrap instead of running off the edge of the pane.
+
 ## 0.1.33 - 2026-10-11
 
 - Every folder in the sidebar has a dot: green when something in it answers from this network.

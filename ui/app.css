@@ -839,9 +839,6 @@ body.dragging * {
   border-radius: 10px;
   background: var(--row);
 }
-#wide .btns {
-  flex-wrap: wrap;
-}
 #wide .d-card.span {
   grid-column: 1 / -1;
 }
@@ -1576,6 +1573,7 @@ button,
 /* Buttons stretch by default, which is wrong in a row of two where one is .ghost. */
 .btns {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 10px;
 }
@@ -2796,6 +2794,9 @@ button:disabled {
 .btns .page-note {
   margin: 0;
   align-self: center;
+  /* The row wraps; a long answer still breaks its own lines beside the button, not under it. */
+  flex: 1;
+  min-width: 0;
 }
 
 /* One block per space in the settings sheet. */
