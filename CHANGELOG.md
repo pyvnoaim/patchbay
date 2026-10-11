@@ -8,6 +8,10 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- A folder with a single device is named after that device in the sidebar, so the row says what a click opens.
+
 ## 0.1.30 - 2026-10-11
 
 - "Find the break" no longer uses the team's recorded host keys when it asks a hop: only the keys this machine already trusts count there.

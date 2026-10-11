@@ -586,12 +586,9 @@ body:not([data-os="macos"]) .tabs {
   width: 13px;
   height: 13px;
 }
-.dev .only {
-  color: var(--fg-dim);
-}
 /* The selected row is the accent block, and nothing on it keeps a colour of its own
    but the status dot. */
-.dev[aria-selected="true"] :is(.os, .kind, .gi, .only, .twist, .here) {
+.dev[aria-selected="true"] :is(.os, .kind, .gi, .twist, .here) {
   color: rgba(255, 255, 255, 0.85) !important;
 }
 .dev[aria-selected="true"] .live.on {

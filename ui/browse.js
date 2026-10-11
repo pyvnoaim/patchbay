@@ -170,13 +170,15 @@ function devRow(j, i, depth, live, id) {
 }
 
 // The folder and its one device as a single row: it selects and opens the device, and
-// still takes a drop and a right-click as the folder it is.
+// still takes a drop and a right-click as the folder it is. Named for the device, since
+// that is what a click gives you; the folder's name is in the tooltip, and it would
+// push the device's off the end of a narrow sidebar anyway.
 function soloRow(node, id, depth, j, i, live) {
   return `<div class="group jack dev solo" data-i="${i}" ${idAttrs(id)} data-group="1"
        data-has-kids="false" ${indent(depth)}>
     <span class="twist leaf">${icon("chevron-right")}</span>
     <span class="gi">${icon("folder")}</span>
-    <span class="label">${esc(node.name)}<span class="only"> · ${esc(j.label)}</span></span>
+    <span class="label" data-tip="${esc(`The only device in ${node.name}`)}">${esc(j.label)}</span>
     <span class="dot ${dotState(j.name)}"></span>${devTail(j, live)}
   </div>`;
 }
