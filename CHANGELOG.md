@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.32 - 2026-10-11
 
 - A vault or folder page shows how much of it answers from this network and what is in it, as tiles you can click into.
 - A folder with a single device has a triangle like any other, so it can be unfolded.
