@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.28 - 2026-10-11
 
 - **Snippets.** Lines you type often, kept in Settings ▸ Snippets and picked in Search while a shell is in front. patchbay types the line at the prompt and never presses Enter. Into a broadcast it goes to every pane.
 - A snippet is yours or the team's, like a device. New ones are yours until you say otherwise.
