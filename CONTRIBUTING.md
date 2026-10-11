@@ -29,6 +29,9 @@ src-tauri/src/
   rdp.rs           remote desktop by handoff (.rdp file) and the ssh tunnels
   rdp_session.rs   remote desktop in a tab (IronRDP to a canvas)
   clipboard.rs     the CLIPRDR backend for rdp_session.rs
+  drive.rs         the RDPDR drive for rdp_session.rs (unix only)
+  keychain.rs      a remembered RDP password, in the OS keychain
+  webext.rs        Bitwarden's extension over web tabs (macOS 15.4+)
   terminal.rs      opening the system terminal, per platform
 ui/                the window: classic scripts sharing one global scope, no bundler
   core.js → browse.js → sessions.js → edit.js → boot.js, loaded in that order
