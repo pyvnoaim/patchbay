@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.31 - 2026-10-11
 
 - A folder with a single device is named after that device in the sidebar, so the row says what a click opens.
 

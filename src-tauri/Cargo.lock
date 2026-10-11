@@ -4246,7 +4246,7 @@ dependencies = [
 
 [[package]]
 name = "patchbay-app"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "arboard",
  "block2 0.6.2",
