@@ -45,6 +45,14 @@ function folderPaths(vault) {
   }
   return out;
 }
+// What a folder box suggests: one vault's, because the other's are in another file and
+// a name picked from there would make a new folder here.
+function offerFolders(vault) {
+  $("folderlist").innerHTML = [...folderPaths(vault)]
+    .sort()
+    .map((f) => `<option value="${esc(f)}">`)
+    .join("");
+}
 // The same, across both vaults, as the ids a folder is selected by.
 const folderIds = () =>
   vaultIds().flatMap((vault) => [...folderPaths(vault)].map((path) => ({ path, vault })));
@@ -135,10 +143,15 @@ function row(node, depth, live, id) {
   const open = expanded.has(gkey(id));
   // The dot is always in the layout for its auto margin; painted only with a live session.
   const on = [...node.members].some((n) => live.has(n));
+  const [dot, say] = node.members.size
+    ? reachSaid([...node.members].map((name) => ({ name })))
+    : [];
   return `<div class="group" ${idAttrs(id)} data-group="1" data-has-kids="${kids}" ${indent(depth)}>
     <span class="twist ${kids ? "" : "leaf"} ${open ? "open" : ""}">${icon("chevron-right")}</span>
     <span class="gi">${icon(kids && open ? "folder-open" : "folder")}</span>
-    <span class="label">${esc(node.name)}</span>
+    <span class="label">${esc(node.name)}</span>${
+      say ? `<span class="dot ${dot}" data-tip="${esc(say)}"></span>` : ""
+    }
     <span class="live ${on ? "on" : ""}"${on ? ' data-tip="A session is open in here"' : ""}></span>
     <span class="n">${node.members.size}</span>
   </div>`;
@@ -188,6 +201,8 @@ function soloRow(node, id, depth, j, i, live) {
 // reachability checks are off. One decider, so the dot, the pane and the tally agree.
 function dotState(name) {
   if (prefs.probe === false) return "unknown";
+  // A session that is up is a better answer than a sweep that has not come round yet.
+  for (const s of sessions.values()) if (!s.dead && s.name === name) return "up";
   const p = probes.get(name);
   return !p ? "checking" : p.ms == null ? "down" : "up";
 }
@@ -219,10 +234,6 @@ function render() {
     )
     .join("");
   $("sshkeys").innerHTML = sshKeys.map((k) => `<option value="${esc(k)}">`).join("");
-  $("folderlist").innerHTML = [...new Set(folderIds().map((id) => id.path))]
-    .sort()
-    .map((f) => `<option value="${esc(f)}">`)
-    .join("");
 
   renderTabs();
   searchBtn.innerHTML = `${icon("search")}Search<kbd>${chord("k")}</kbd>`;
@@ -446,21 +457,26 @@ function groupTiles(members) {
   ];
 }
 
-function tileHtml(t) {
-  const n = t.js.length;
-  const { up, down } = tallyOf(t.js);
+// One dot for several devices, and the words for it: a tile's, and a folder's row.
+function reachSaid(js) {
+  const n = js.length;
+  const { up, down } = tallyOf(js);
   // "Out of reach", not "down": most of a list only answers from a network this
   // machine is not on, and that is not a fault.
-  const [dot, say] =
-    prefs.probe === false
-      ? ["unknown", "Not checked"]
-      : up === n
-        ? ["up", n === 1 ? "Reachable" : "All reachable"]
-        : up
-          ? ["up", `${up} of ${n} reachable`]
-          : down < n
-            ? ["checking", "Still checking"]
-            : ["", "Out of reach"];
+  return prefs.probe === false
+    ? ["unknown", "Not checked", up]
+    : up === n
+      ? ["up", n === 1 ? "Reachable" : "All reachable", up]
+      : up
+        ? ["up", `${up} of ${n} reachable`, up]
+        : down < n
+          ? ["checking", "Still checking", up]
+          : ["", "Out of reach", up];
+}
+
+function tileHtml(t) {
+  const n = t.js.length;
+  const [dot, say, up] = reachSaid(t.js);
   return `<button type="button" class="tile" ${t.name ? `data-name="${esc(t.name)}"` : idAttrs(t.id)}>
     <span class="tile-top"><b>${esc(t.label)}</b><small>${esc(t.kind)}</small></span>
     ${n > 1 && prefs.probe !== false ? `<span class="meter"><i style="width:${(up / n) * 100}%"></i></span>` : ""}
@@ -679,7 +695,10 @@ function renderJack(j, live) {
         ? `<span style="color:var(--fg-faint)">checking…</span>`
         : said === "down"
           ? `<span style="color:var(--down)">no answer</span> · ${esc(p.target)}`
-          : `<span style="color:var(--up)">up</span> · ${esc(p.target)} · ${esc(p.ms)}ms`;
+          : // Up by its session: the sweep may not have come round, or may have got no answer.
+            p?.ms == null
+            ? `<span style="color:var(--up)">up</span> · a session is open`
+            : `<span style="color:var(--up)">up</span> · ${esc(p.target)} · ${esc(p.ms)}ms`;
 
   const stops = [...j.hops, j.user ? `${j.user}@${j.host}` : j.host];
   const mine = tunnels.filter((t) => t.jack === j.name);

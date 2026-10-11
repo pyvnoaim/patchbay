@@ -687,6 +687,9 @@ jackForm.addEventListener("submit", async (e) => {
     const vault = vaults.two ? f.vault.value : undefined;
     for (const f2 of commaList(f.folders.value)) pending.delete(gkey({ path: f2, vault }));
     closeJack();
+    // A device just written has no dot until the next sweep; the throttle would hold
+    // that back by up to 30s.
+    lastProbe = 0;
     await load();
   } catch (err) {
     showErr(jfErr, String(err));
@@ -935,6 +938,7 @@ async function moveJacks(js, to, from = group?.path ?? null, vault = js[0]?.vaul
 // "Move to folder…": the same move, typed. The list of folders is offered as you type.
 async function moveAsked(js) {
   const what = js.length === 1 ? `"${js[0].label}"` : `${js.length} devices`;
+  offerFolders(js[0]?.vault ?? undefined);
   askInput.setAttribute("list", "folderlist");
   let to;
   try {
@@ -1577,8 +1581,7 @@ $("url-scheme").addEventListener("click", () =>
 
 // A plain datalist; entered folders are shown underneath as paths.
 function renderFolderSuggestions() {
-  const known = [...new Set(all.flatMap((j) => j.folders))].sort();
-  $("folderlist").innerHTML = known.map((f) => `<option value="${esc(f)}">`).join("");
+  offerFolders(vaults.two ? jackForm.elements.vault.value : undefined);
   renderCrumbs();
 }
 
@@ -1602,6 +1605,7 @@ function renderCrumbs() {
 }
 
 jackForm.elements.folders.addEventListener("input", renderCrumbs);
+for (const r of jackForm.elements.vault) r.addEventListener("change", renderFolderSuggestions);
 $("crumbs").addEventListener("click", (e) => {
   const dropped = e.target.closest("[data-drop]")?.dataset.drop;
   if (!dropped) return;

@@ -8,6 +8,13 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Every folder in the sidebar has a dot: green when something in it answers from this network.
+- A device with a session open shows as up right away, and a new device is checked as soon as it is saved.
+- The folder box only suggests folders from the vault the device is in.
+- The triangle beside a folder is a much bigger target.
+
 ## 0.1.32 - 2026-10-11
 
 - A vault or folder page shows how much of it answers from this network and what is in it, as tiles you can click into.

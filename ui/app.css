@@ -701,6 +701,10 @@ body.dragging * {
   flex: none;
   color: var(--fg-faint);
   transition: transform 0.12s ease;
+  /* A 12px glyph is a target nobody hits: the row's height, and out to its neighbours.
+     Taken back as margin so nothing moves, and even all round so the turn stays centred. */
+  padding: 5px 6px;
+  margin: -5px -6px;
 }
 .twist .i {
   width: 12px;
