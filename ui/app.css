@@ -841,6 +841,10 @@ body.dragging * {
 #wide .d-card.span {
   grid-column: 1 / -1;
 }
+/* A folder's overview fills the pane: its tiles are a grid, not a column to read. */
+#wide .d-cards.full {
+  max-width: none;
+}
 /* A snippet in Settings: its name, the line it types, where it is kept. */
 .snip-row {
   display: grid;
@@ -1168,7 +1172,12 @@ body.dragging * {
 .dot.up {
   background: var(--up);
 }
+/* No answer from here is grey, not red: most of a list only answers over a VPN, and
+   that is not a fault. A shared list that is missing is one, so the vault's dot stays red. */
 .dot.down {
+  background: var(--fg-faint);
+}
+.vault .dot.down {
   background: var(--down);
 }
 .dot.unknown {
@@ -2180,14 +2189,129 @@ button.danger:hover {
   height: 12px;
 }
 
-/* Folder overview tallies in the detail pane. */
-.tallies {
+/* The folder overview: how much of it answers from here, and what is in it. */
+.reach {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--fg-dim);
+}
+.reach b {
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 650;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+.meter {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--row-hover);
+  overflow: hidden;
+}
+.meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--up);
+}
+.d-card > .meter {
+  height: 6px;
+  border-radius: 3px;
+  margin: 10px 0 8px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.chips button {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+}
+.chips button small {
+  color: var(--fg-dim);
+  font-size: inherit;
+}
+.chips button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.on-now {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   font-size: 12.5px;
 }
-.tallies span {
+.on-now span {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.on-now small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: inherit;
+  color: var(--fg-dim);
+}
+.d-tiles {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.tile {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--row);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+}
+.tile:hover {
+  background: var(--row-hover);
+}
+.tile-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.tile-top b {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.tile-top small,
+.tile-say {
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+.tile-top small {
+  flex: none;
+}
+.tile-say {
   display: flex;
   align-items: center;
   gap: 6px;

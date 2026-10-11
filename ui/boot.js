@@ -41,6 +41,12 @@ function devClick(e, row) {
 
 treeEl.addEventListener("click", (e) => {
   if (e.target.closest("[data-retry]")) return load();
+  // A one-device folder is a device row everywhere but on its triangle.
+  const solo = e.target.closest(".solo .twist");
+  if (solo) {
+    toggleGroup(gkey(idOf(solo.parentElement)));
+    return render();
+  }
   const dev = e.target.closest(".jack[data-i]");
   if (dev) return devClick(e, dev);
   const el = e.target.closest(".group");
@@ -145,6 +151,18 @@ dragFrom(treeEl);
 dragFrom(listEl);
 
 async function detailClick(e) {
+  const reach = e.target.closest("[data-reach]")?.dataset.reach;
+  if (reach) {
+    reachShow = reach;
+    return renderDetail();
+  }
+  const tile = e.target.closest(".tile");
+  if (tile) {
+    if (!tile.dataset.name) return pickGroup(idOf(tile), true);
+    const i = revealDevice(tile.dataset.name);
+    if (i >= 0) select(i);
+    return;
+  }
   const gact = e.target.closest("[data-gact]")?.dataset.gact;
   if (gact) {
     if (gact === "new") openJack(null, group);

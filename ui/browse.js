@@ -73,8 +73,9 @@ function renderTree() {
       for (const node of [...level.values()].sort((a, b) => collate(a.name, b.name))) {
         const id = { path: node.path, vault };
         const here = js.filter((j) => j.folders.some((f) => normPath(f) === node.path));
-        // A folder that is one device: opening it would cost a click for one row.
-        if (!node.children.size && here.length === 1) {
+        // A folder that is one device: opening it would cost a click for one row. Its
+        // triangle still unfolds it, and then it is drawn like any other folder.
+        if (!node.children.size && here.length === 1 && !expanded.has(gkey(id))) {
           rows.push(soloRow(node, id, depth, here[0], place(here[0], id), live));
           continue;
         }
@@ -176,7 +177,7 @@ function devRow(j, i, depth, live, id) {
 function soloRow(node, id, depth, j, i, live) {
   return `<div class="group jack dev solo" data-i="${i}" ${idAttrs(id)} data-group="1"
        data-has-kids="false" ${indent(depth)}>
-    <span class="twist leaf">${icon("chevron-right")}</span>
+    <span class="twist">${icon("chevron-right")}</span>
     <span class="gi">${icon("folder")}</span>
     <span class="label" data-tip="${esc(`The only device in ${node.name}`)}">${esc(j.label)}</span>
     <span class="dot ${dotState(j.name)}"></span>${devTail(j, live)}
@@ -397,18 +398,99 @@ const groupLabel = () =>
 const vaultBadge = (v) =>
   v ? `<span class="d-vault ${esc(v)}">${icon(VAULTS[v][0])}${VAULTS[v][1]}</span>` : "";
 
+// Which tiles the overview shows: "all", "up" or "out". Back to all with every folder picked.
+let reachShow = "all";
+
+const tallyOf = (js) => {
+  const c = { up: 0, down: 0 };
+  for (const j of js) {
+    const s = dotState(j.name);
+    if (s in c) c[s]++;
+  }
+  return c;
+};
+
+// What is directly in the folder being looked at: its folders, each with how much of it
+// answers, then its own devices. A folder that is one device is that device, as in the tree.
+function groupTiles(members) {
+  const path = group?.path ?? null;
+  const kids = new Map();
+  const direct = [];
+  for (const j of members) {
+    const fs = j.folders.map(normPath).filter(Boolean);
+    if (path === null ? !fs.length : fs.includes(path)) direct.push(j);
+    for (const f of fs) {
+      if (path !== null && !f.startsWith(path + "/")) continue;
+      const name = (path === null ? f : f.slice(path.length + 1)).split("/")[0];
+      const id = { path: path === null ? name : `${path}/${name}`, vault: j.vault ?? undefined };
+      const k = gkey(id);
+      if (!kids.has(k)) kids.set(k, { id, name, js: new Set() });
+      kids.get(k).js.add(j);
+    }
+  }
+  const dev = (j) => ({
+    js: [j],
+    name: j.name,
+    label: j.label,
+    kind: (KIND[j.primary] ?? KIND.ssh)[1],
+  });
+  return [
+    ...[...kids.values()]
+      .sort((a, b) => collate(a.name, b.name))
+      .map((k) =>
+        k.js.size === 1
+          ? dev([...k.js][0])
+          : { js: [...k.js], id: k.id, label: k.name, kind: `${k.js.size} devices` },
+      ),
+    ...direct.map(dev),
+  ];
+}
+
+function tileHtml(t) {
+  const n = t.js.length;
+  const { up, down } = tallyOf(t.js);
+  // "Out of reach", not "down": most of a list only answers from a network this
+  // machine is not on, and that is not a fault.
+  const [dot, say] =
+    prefs.probe === false
+      ? ["unknown", "Not checked"]
+      : up === n
+        ? ["up", n === 1 ? "Reachable" : "All reachable"]
+        : up
+          ? ["up", `${up} of ${n} reachable`]
+          : down < n
+            ? ["checking", "Still checking"]
+            : ["", "Out of reach"];
+  return `<button type="button" class="tile" ${t.name ? `data-name="${esc(t.name)}"` : idAttrs(t.id)}>
+    <span class="tile-top"><b>${esc(t.label)}</b><small>${esc(t.kind)}</small></span>
+    ${n > 1 && prefs.probe !== false ? `<span class="meter"><i style="width:${(up / n) * 100}%"></i></span>` : ""}
+    <span class="tile-say"><i class="dot ${dot}"></i>${say}</span>
+  </button>`;
+}
+
 function renderGroup() {
   const members = all.filter(inGroup);
-  const up = members.filter((j) => dotState(j.name) === "up").length;
-  const down = members.filter((j) => dotState(j.name) === "down").length;
+  const { up, down } = tallyOf(members);
   const rest = members.length - up - down;
-  const waiting = prefs.probe !== false;
+  const probing = prefs.probe !== false;
   const open = [...sessions.values()].filter(
     (s) => !s.dead && members.some((j) => j.name === s.name),
   );
+  // Yours first, then whoever else the shared list says is on something in here.
+  const on = [
+    ...open.map((s) => ["You", labelOf(s.name)]),
+    ...members.flatMap((j) => (present.get(j.name) ?? []).map((who) => [who, j.label])),
+  ];
   // Every device, or a whole vault, has no folder to rename or delete.
   const real = !!group && group.path !== null;
   const gk = gkey(group);
+  const tiles = groupTiles(members).filter((t) => {
+    const c = tallyOf(t.js);
+    // The chips are not drawn with checks off, so a filter left on could not be undone.
+    return !probing || reachShow === "all" || (reachShow === "up" ? c.up > 0 : c.down > 0);
+  });
+  const chip = (id, label, n) =>
+    `<button type="button" data-reach="${id}" aria-pressed="${reachShow === id}">${label}<small>${n}</small></button>`;
 
   dBody().innerHTML = `
     <div class="d-name"><span class="d-os">${icon(
@@ -418,29 +500,37 @@ function renderGroup() {
       real && group.path.includes("/")
         ? ` · in ${esc(group.path.slice(0, group.path.lastIndexOf("/")))}`
         : ""
-    }</div>
+    }${!real && group?.vault === "team" && vaults.team ? ` · ${esc(vaults.team)}` : ""}</div>
 
-    <div class="d-cards">
-    <section class="d-card">
-    <div class="d-sec">${icon("plug")}Reachable</div>
-    <div class="tallies">
-      <span><i class="dot up"></i>${up} up</span>
-      <span><i class="dot down"></i>${down} down</span>
-      ${
-        rest
-          ? `<span><i class="dot ${waiting ? "checking" : "unknown"}"></i>${
-              rest
-            } ${waiting ? "still checking" : "not checked"}</span>`
-          : ""
-      }
-    </div>
-
-    </section>
+    <div class="d-cards full">
     ${
-      open.length
-        ? `<section class="d-card"><div class="d-sec">${icon("square-terminal")}Sessions</div>
-      <div class="route">${open.map((s) => `<span class="last"><i class="pip"></i>${esc(labelOf(s.name))}</span>`).join("")}</div></section>`
+      !members.length
+        ? ""
+        : `<section class="d-card">
+    <div class="d-sec">${icon("plug")}Reachable from here</div>
+    ${
+      probing
+        ? `<div class="reach"><b>${up}</b>of ${members.length} answer${up === 1 ? "s" : ""} from this network${
+            rest ? ` · ${rest} still checking` : ""
+          }</div>
+    <span class="meter"><i style="width:${(up / members.length) * 100}%"></i></span>
+    ${down ? `<p class="page-note">The rest may sit behind a VPN or a network this machine isn't on.</p>` : ""}
+    <div class="chips">${chip("all", "All", members.length)}${chip("up", "Reachable", up)}${chip("out", "Out of reach", down)}</div>`
+        : `<p class="page-note">Reachability checks are off.</p>`
+    }
+    </section>`
+    }
+    ${
+      on.length
+        ? `<section class="d-card"><div class="d-sec">${icon("users")}On now</div>
+      <div class="on-now">${on.map(([who, what]) => `<span><b>${esc(who)}</b><small>${esc(what)}</small></span>`).join("")}</div></section>`
         : ""
+    }
+    ${
+      !members.length
+        ? ""
+        : `<section class="d-tiles"><div class="d-sec">${icon("folder")}In here</div>
+      ${tiles.length ? `<div class="tiles">${tiles.map(tileHtml).join("")}</div>` : `<p class="page-note">Nothing in here matches.</p>`}</section>`
     }
 
     ${
@@ -928,6 +1018,7 @@ const move = (d) => select(detailMode === "jack" ? sel + d : d > 0 ? 0 : -1);
 // A folder row taken as the list: the click and the arrow keys land here.
 function pickGroup(id, foldable) {
   group = id;
+  reachShow = "all";
   if (foldable) openGroup(gkey(id));
   sel = 0;
   selKey = null;

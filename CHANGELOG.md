@@ -8,6 +8,12 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- A vault or folder page shows how much of it answers from this network and what is in it, as tiles you can click into.
+- A folder with a single device has a triangle like any other, so it can be unfolded.
+- A device that doesn't answer from here has a grey dot instead of a red one: usually that is a VPN that is off, not a fault.
+
 ## 0.1.31 - 2026-10-11
 
 - A folder with a single device is named after that device in the sidebar, so the row says what a click opens.
