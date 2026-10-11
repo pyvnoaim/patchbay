@@ -332,11 +332,12 @@ pub struct Asked {
 #[tauri::command]
 pub async fn find_break(name: String) -> Result<Vec<Asked>, String> {
     blocking(move || {
-        let jacks = load_jacks()?;
-        let stops = patchbay::break_steps(&name, &jacks)?;
-        // What the team has seen counts here as it does for a session, or a hop this
-        // machine only knows through the team's file would read as refusing us.
-        let keys = hostkeys::opts(&name, &jacks);
+        let stops = patchbay::break_steps(&name, &load_jacks()?)?;
+        // The team's host keys are deliberately not offered here. Each of these ssh runs
+        // ends at a *hop*, and the check that keeps the team's file from outvoting this
+        // machine's own key is made per host: made for the device and applied to a hop,
+        // it would let a planted key for the bastion pass. A hop this machine has never
+        // connected to reads as "could not log in", which is true of it.
         let mut out: Vec<Asked> = Vec::new();
         let mut broken = false;
         for stop in &stops {
@@ -349,7 +350,6 @@ pub async fn find_break(name: String) -> Result<Vec<Asked>, String> {
                 },
                 (Some(argv), _) => {
                     let ran = std::process::Command::new("ssh")
-                        .args(&keys)
                         .args(argv)
                         .stdin(std::process::Stdio::null())
                         .output()

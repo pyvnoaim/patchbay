@@ -8,6 +8,10 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- "Find the break" no longer uses the team's recorded host keys when it asks a hop: only the keys this machine already trusts count there.
+
 ## 0.1.29 - 2026-10-11
 
 - **Find the break.** On a device behind a jump host, patchbay asks each hop in turn whether the next one answers and marks the link that doesn't on the route.
