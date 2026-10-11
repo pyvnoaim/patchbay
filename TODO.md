@@ -28,6 +28,10 @@ ships half done.
 
 Rough, unranked. Most are a `ponytail:` ceiling someone hasn't hit yet.
 
+- **Shared host keys for the bastions.** ssh applies the option to the last hop only,
+  so a jump host is still asked about the old way.
+- **Offer to share a host key after a first connect**, not only from the device's
+  detail, where few will look.
 - **A fill-in blank in a snippet** (`journalctl -u {?} -f`), if ending the text where
   the variable goes turns out not to be enough. Not `{host}` or `{user}`: the shell is
   already on that machine, and a value from the file inside a command line means what

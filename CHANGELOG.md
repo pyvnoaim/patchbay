@@ -8,6 +8,12 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- **Find the break.** On a device behind a jump host, patchbay asks each hop in turn whether the next one answers and marks the link that doesn't on the route.
+- **Host keys the team has seen.** Share the key your machine trusts for a team device, and everyone else's ssh checks against it without asking. A key that changes is refused for all of you.
+- **Who is connected.** On a shared list, everyone sees which team devices a colleague has a session on right now, and they see yours. Needs no server, and never says anything about your own devices.
+
 ## 0.1.28 - 2026-10-11
 
 - **Snippets.** Lines you type often, kept in Settings ▸ Snippets and picked in Search while a shell is in front. patchbay types the line at the prompt and never presses Enter. Into a broadcast it goes to every pane.

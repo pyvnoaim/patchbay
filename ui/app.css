@@ -591,7 +591,7 @@ body:not([data-os="macos"]) .tabs {
 }
 /* The selected row is the accent block, and nothing on it keeps a colour of its own
    but the status dot. */
-.dev[aria-selected="true"] :is(.os, .kind, .gi, .only, .twist) {
+.dev[aria-selected="true"] :is(.os, .kind, .gi, .only, .twist, .here) {
   color: rgba(255, 255, 255, 0.85) !important;
 }
 .dev[aria-selected="true"] .live.on {
@@ -1454,6 +1454,81 @@ button,
 }
 .route .last .pip {
   background: var(--accent);
+}
+/* What "Find the break" heard, on the stop it heard it from. */
+.route .ok .pip {
+  background: var(--up);
+}
+.route .bad .pip {
+  background: var(--down);
+}
+.route .bad {
+  color: var(--down);
+}
+.route .said {
+  margin-left: 8px;
+}
+.route .bad .said {
+  color: var(--down);
+}
+/* Someone else is on this device right now. */
+.dev .here {
+  display: flex;
+  flex: none;
+  color: var(--accent);
+}
+.dev .here .i {
+  width: 12px;
+  height: 12px;
+}
+.d-here {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--accent);
+}
+.d-here .i {
+  width: 12px;
+  height: 12px;
+}
+.d-dim {
+  color: var(--fg-faint);
+}
+/* A host key: the fingerprint, then whatever there is to say or do about it. */
+.d-row dd.d-key {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+}
+.d-print {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  word-break: break-all;
+}
+.d-print .d-from {
+  font-family: inherit;
+  word-break: normal;
+}
+.d-warn {
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--down) 14%, transparent);
+  color: var(--down);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.d-key button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 12px;
 }
 .route .arm {
   color: var(--fg-faint);

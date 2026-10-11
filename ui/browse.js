@@ -144,8 +144,14 @@ function row(node, depth, live, id) {
 }
 
 // What both kinds of device row end with: a session's dot, then how it is reached.
+const hereTip = (name) =>
+  `${present.get(name).join(", ")} ${present.get(name).length === 1 ? "is" : "are"} connected`;
 const devTail = (j, live) => `
-    <span class="live ${live.has(j.name) ? "on" : ""}"${live.has(j.name) ? ' data-tip="A session is open"' : ""}></span>
+    <span class="live ${live.has(j.name) ? "on" : ""}"${live.has(j.name) ? ' data-tip="A session is open"' : ""}></span>${
+      present.has(j.name)
+        ? `<span class="here" data-tip="${esc(hereTip(j.name))}">${icon("users")}</span>`
+        : ""
+    }
     <span class="kind" data-tip="${esc((KIND[j.primary] ?? KIND.ssh)[1])}">${icon(
       (KIND[j.primary] ?? KIND.ssh)[0],
     )}</span>`;
@@ -530,6 +536,33 @@ function renderGroup() {
 `;
 }
 
+// A team device's host key: what the team has seen, and whether this machine agrees.
+// Asked for once per device, when it is first looked at.
+function hostKeyRow(j) {
+  if (j.vault !== "team" || !j.ssh) return "";
+  if (!hostKeys.has(j.name)) {
+    hostKeys.set(j.name, null);
+    invoke("host_key", { name: j.name })
+      .then((k) => {
+        hostKeys.set(j.name, k);
+        renderDetail();
+      })
+      .catch(() => {});
+  }
+  const k = hostKeys.get(j.name);
+  if (!k || (!k.team.length && !k.mine.length)) return "";
+  // The fingerprint on a line of its own, and anything to say or do about it under it.
+  const said = k.team.length
+    ? `<span class="d-print">${esc(k.team[0])}<span class="d-from" data-tip="Recorded beside the shared list: ssh checks against it for everyone">team</span></span>${
+        k.differs
+          ? `<span class="d-warn">This machine has a different key for it. One of the two is not the machine the other saw.</span>`
+          : ""
+      }`
+    : `<span class="d-dim">Only this machine has seen its key.</span>
+       <button class="ghost" data-act="vouch" data-tip="Record the key this machine trusts, so colleagues are checked against it">${icon("users")}Share with the team</button>`;
+  return `<div class="d-row"><dt>id</dt><dd class="d-key">${said}</dd></div>`;
+}
+
 // A value the device didn't set itself, and who lent it. Nothing for a device's own:
 // the marker is there to answer "why does it say that", not to label every row.
 function lentFrom(j, key) {
@@ -574,6 +607,7 @@ function renderJack(j, live) {
       ${j.key ? `<div class="d-row"><dt>key</dt><dd>${esc(j.key)}${lentFrom(j, "key")}</dd></div>` : ""}
       ${j.url ? `<div class="d-row"><dt>web</dt><dd>${esc(j.url)}</dd></div>` : ""}
       ${j.rdp ? `<div class="d-row"><dt>rdp</dt><dd>${esc(j.rdp)}</dd></div>` : ""}
+      ${hostKeyRow(j)}
       ${
         j.folders.length
           ? `<div class="d-row"><dt>in</dt><dd>${j.folders
@@ -603,7 +637,17 @@ function renderJack(j, live) {
     <section class="d-card">
     <div class="d-sec">${icon("plug")}Reachable</div>
     <div style="font-size:12.5px">${reach}</div>
+    ${
+      present.has(j.name) ? `<div class="d-here">${icon("users")}${esc(hereTip(j.name))}</div>` : ""
+    }
     <div class="btns">
+      ${
+        j.hops.length
+          ? `<button class="ghost" data-act="break" data-tip="Ask each hop whether the next one answers"${
+              breaks.get(j.name)?.busy ? " disabled" : ""
+            }>${icon("search")}${breaks.get(j.name)?.busy ? "Asking…" : "Find the break"}</button>`
+          : ""
+      }
       <button class="ghost" data-act="ping" data-tip="${j.hops.length ? `Ping from ${esc(j.hops.at(-1))}` : "Ping this host"}">${icon("plug")}Ping</button>
       <button class="ghost" data-act="trace" data-tip="${j.hops.length ? `Trace from ${esc(j.hops.at(-1))}` : "Trace the route there"}">${icon("waypoints")}Trace</button>
       ${
@@ -624,10 +668,15 @@ function renderJack(j, live) {
     <div class="route">
       <span><i class="pip"></i>this machine</span>
       ${stops
-        .map(
-          (h, i) => `<span class="${i === stops.length - 1 ? "last" : ""}">
-        <i class="pip"></i>${esc(h)}${i < stops.length - 1 ? `<i class="arm">jump</i>` : ""}</span>`,
-        )
+        .map((h, i) => {
+          // What "Find the break" heard at this stop, if it was asked.
+          const heard = breaks.get(j.name)?.steps?.[i];
+          const state = heard?.ok === true ? " ok" : heard?.ok === false ? " bad" : "";
+          return `<span class="${i === stops.length - 1 ? "last" : ""}${state}">
+        <i class="pip"></i>${esc(h)}${i < stops.length - 1 ? `<i class="arm">jump</i>` : ""}${
+          heard?.said ? `<i class="arm said">${esc(heard.said)}</i>` : ""
+        }</span>`;
+        })
         .join("")}
     </div>
     </section>
@@ -718,6 +767,9 @@ function select(i, stay = false) {
   unmarkFolders();
   sel = (i + shown.length) % shown.length;
   selKey = keyAt(sel);
+  // Asked again each time a device is picked: a first connect, or a colleague's share,
+  // changes the answer while the window is open.
+  hostKeys.delete(shown[sel].name);
   // The folder it was picked in is the one "New device" and a move start from.
   // Not on the map, which is drawn from the folder it was opened on.
   if (listMode !== "map") group = gkey(shownIn[sel]) ? shownIn[sel] : null;

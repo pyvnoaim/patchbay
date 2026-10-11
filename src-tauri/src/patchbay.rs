@@ -419,6 +419,20 @@ pub fn hops(name: &str, jacks: &Jacks) -> Result<Vec<String>, String> {
 
 /// The machine the first TCP connection goes to: the outermost bastion, or the jack
 /// itself. The only thing worth probing; anything past it is reachable only through ssh.
+/// A hop as `-J` takes it, `user@host:port` with either end optional, as the host and
+/// port a socket would be opened to.
+/// ponytail: a bare IPv6 address reads its last group as a port; brackets if one shows.
+fn host_port(h: &str) -> (String, u16) {
+    let hp = h.rsplit('@').next().unwrap_or(h);
+    match hp
+        .rsplit_once(':')
+        .and_then(|(a, b)| b.parse().ok().map(|p| (a, p)))
+    {
+        Some((host, port)) => (host.to_string(), port),
+        None => (hp.to_string(), 22),
+    }
+}
+
 pub fn entry(name: &str, jacks: &Jacks) -> Result<(String, u16), String> {
     let mut cur = jacks
         .get(name)
@@ -435,18 +449,7 @@ pub fn entry(name: &str, jacks: &Jacks) -> Result<(String, u16), String> {
             // probed as a host while their list is away.
             None if cur.waits => return raw_hop(&from, cur, h).map(|_| (String::new(), 0)),
             // A raw spec: user@host, host:port, or both.
-            None => {
-                let hp = h.rsplit('@').next().unwrap_or(&h);
-                return Ok(
-                    match hp
-                        .rsplit_once(':')
-                        .and_then(|(a, b)| b.parse().ok().map(|p| (a, p)))
-                    {
-                        Some((host, port)) => (host.to_string(), port),
-                        None => (hp.to_string(), 22),
-                    },
-                );
-            }
+            None => return Ok(host_port(&h)),
         }
     }
     Ok((cur.host.clone(), probe_port(cur)))
@@ -587,6 +590,80 @@ pub fn without_forwards(args: Vec<String>) -> Vec<String> {
         }
     }
     out
+}
+
+/// One stop on the way to a device, and how to ask whether it answers. `ask` is the
+/// ssh argv that asks from the stop before it; the first stop has none, because that
+/// one is asked from here with a plain TCP connect.
+#[derive(Debug, PartialEq)]
+pub struct Stop {
+    pub label: String,
+    pub host: String,
+    pub port: u16,
+    pub ask: Option<Vec<String>>,
+}
+
+/// The route to a device as questions that can each be answered on its own, in order,
+/// so a failed connection can be pinned on one link. Each hop is asked the way the
+/// connection itself reaches it: over the chain before it, with nothing typed, so a hop
+/// that would need a password says so instead of waiting for one.
+pub fn break_steps(name: &str, jacks: &Jacks) -> Result<Vec<Stop>, String> {
+    let j = jacks
+        .get(name)
+        .ok_or_else(|| format!("no jack named \"{name}\""))?;
+    let hops = hops(name, jacks)?;
+    let mut stops: Vec<Stop> = hops
+        .iter()
+        .map(|h| {
+            let (host, port) = host_port(h);
+            Stop {
+                label: h.clone(),
+                host,
+                port,
+                ask: None,
+            }
+        })
+        .collect();
+    stops.push(Stop {
+        label: spec(j),
+        host: j.host.clone(),
+        port: probe_port(j),
+        ask: None,
+    });
+    for k in 1..stops.len() {
+        let from = &hops[k - 1];
+        let (host, port) = (plain_host(&stops[k].host)?.to_string(), stops[k].port);
+        let mut ask: Vec<String> = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=6"]
+            .map(String::from)
+            .to_vec();
+        if k > 1 {
+            ask.push("-J".into());
+            ask.push(hops[..k - 1].join(","));
+        }
+        if stops[k - 1].port != 22 {
+            ask.push("-p".into());
+            ask.push(stops[k - 1].port.to_string());
+        }
+        // The destination without its port, which went into `-p`.
+        let user = from.rsplit_once('@').map(|(u, _)| format!("{u}@"));
+        ask.push(dest(format!(
+            "{}{}",
+            user.unwrap_or_default(),
+            stops[k - 1].host
+        ))?);
+        // `plain_host` is what makes this safe to hand a remote shell as written. Both
+        // ways of asking give up after three seconds: a firewall that drops the packet
+        // is the case this exists for, and the kernel would wait two minutes on it.
+        // ponytail: needs nc, or bash and timeout, on the hop; one with neither reads
+        // as no answer. And a hop that is only a `Host` alias in `~/.ssh/config` can't
+        // be asked about by name from another machine.
+        ask.push(format!(
+            "if command -v nc >/dev/null 2>&1; then nc -z -w 3 {host} {port}; \
+             else timeout 3 bash -c 'exec 3<>/dev/tcp/{host}/{port}'; fi 2>/dev/null"
+        ));
+        stops[k].ask = Some(ask);
+    }
+    Ok(stops)
 }
 
 /// Ping or traceroute toward a device, as `(program, args)`. A device behind a jump
@@ -798,6 +875,40 @@ jump = "web"
 [jack.bastion]
 host = "10.0.1.2"
 "#;
+
+    #[test]
+    fn a_route_is_asked_one_link_at_a_time_over_the_chain_before_it() {
+        let jacks = jacks_of(
+            "[jack.edge]\nhost = \"10.0.0.2\"\nport = 2222\nuser = \"ops\"\n\
+             [jack.mid]\nhost = \"10.0.0.3\"\njump = \"edge\"\n\
+             [jack.db]\nhost = \"10.0.0.5\"\njump = \"mid\"\n\
+             [jack.solo]\nhost = \"10.0.0.9\"\n",
+        )
+        .unwrap();
+        let s = break_steps("db", &jacks).unwrap();
+        assert_eq!(
+            s.iter()
+                .map(|x| (x.host.as_str(), x.port))
+                .collect::<Vec<_>>(),
+            [("10.0.0.2", 2222), ("10.0.0.3", 22), ("10.0.0.5", 22)]
+        );
+        // The first hop is asked from here; nothing is run for it.
+        assert_eq!(s[0].ask, None);
+        // The second is asked from the first, on the first's own port.
+        let a = s[1].ask.as_ref().unwrap();
+        assert_eq!(a[4..7], ["-p", "2222", "ops@10.0.0.2"]);
+        assert!(a[7].contains("nc -z -w 3 10.0.0.3 22;"), "{}", a[7]);
+        // The third from the second, through the first.
+        let b = s[2].ask.as_ref().unwrap();
+        assert_eq!(b[4..7], ["-J", "ops@10.0.0.2:2222", "10.0.0.3"]);
+        assert!(
+            b[7].contains("timeout 3 bash -c 'exec 3<>/dev/tcp/10.0.0.5/22'"),
+            "{}",
+            b[7]
+        );
+        // With no chain there is one question, and it is asked from here.
+        assert_eq!(break_steps("solo", &jacks).unwrap().len(), 1);
+    }
 
     #[test]
     fn a_snippet_can_never_press_a_key() {

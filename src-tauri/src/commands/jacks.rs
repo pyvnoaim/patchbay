@@ -3,7 +3,7 @@
 
 use super::remote::rdp_pin;
 use super::{blocking, file_for, file_of, list_file, load_all, load_jacks, os_open, ssh_dir};
-use crate::{config, import, keychain, patchbay, terminal};
+use crate::{config, hostkeys, import, keychain, patchbay, presence, terminal};
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -316,6 +316,114 @@ pub async fn probe() -> Result<Vec<Probe>, String> {
             .collect())
     })
     .await
+}
+
+/// One stop of a route after it was asked: `ok` is absent for the ones past the break,
+/// which nobody could ask.
+#[derive(Serialize)]
+pub struct Asked {
+    label: String,
+    ok: Option<bool>,
+    said: String,
+}
+
+/// Walk the route to a device one link at a time and say where it stops. Reads only:
+/// a TCP connect from here, then each hop asked whether the next one answers.
+#[tauri::command]
+pub async fn find_break(name: String) -> Result<Vec<Asked>, String> {
+    blocking(move || {
+        let jacks = load_jacks()?;
+        let stops = patchbay::break_steps(&name, &jacks)?;
+        // What the team has seen counts here as it does for a session, or a hop this
+        // machine only knows through the team's file would read as refusing us.
+        let keys = hostkeys::opts(&name, &jacks);
+        let mut out: Vec<Asked> = Vec::new();
+        let mut broken = false;
+        for stop in &stops {
+            let at = format!("port {}", stop.port);
+            let (ok, said) = match (&stop.ask, broken) {
+                (_, true) => (None, String::new()),
+                (None, _) => match connect_ms(&stop.host, stop.port) {
+                    Some(ms) => (Some(true), format!("answers from here on {at}, {ms}ms")),
+                    None => (Some(false), format!("no answer from this machine on {at}")),
+                },
+                (Some(argv), _) => {
+                    let ran = std::process::Command::new("ssh")
+                        .args(&keys)
+                        .args(argv)
+                        .stdin(std::process::Stdio::null())
+                        .output()
+                        .map_err(|e| format!("could not run ssh: {e}"))?;
+                    match ran.status.code() {
+                        Some(0) => (Some(true), format!("answers on {at} from the hop before")),
+                        // ssh's own failure: the hop before answered, and would not let us in.
+                        Some(255) => {
+                            let why = String::from_utf8_lossy(&ran.stderr)
+                                .lines()
+                                .last()
+                                .unwrap_or("ssh could not log in")
+                                .trim()
+                                .to_string();
+                            if let Some(prev) = out.last_mut() {
+                                prev.ok = Some(false);
+                                prev.said = format!("it answers, but ssh could not log in: {why}");
+                            }
+                            (None, String::new())
+                        }
+                        _ => (
+                            Some(false),
+                            format!("no answer on {at} from the hop before"),
+                        ),
+                    }
+                }
+            };
+            broken = broken || ok != Some(true);
+            out.push(Asked {
+                label: stop.label.clone(),
+                ok,
+                said,
+            });
+        }
+        Ok(out)
+    })
+    .await
+}
+
+/// A team device's host as `known_hosts` names it.
+fn key_host(name: &str) -> Result<String, String> {
+    let jacks = load_jacks()?;
+    let j = jacks
+        .get(name)
+        .ok_or_else(|| format!("no jack named \"{name}\""))?;
+    Ok(hostkeys::spec(&j.host, j.port))
+}
+
+/// What this machine and the team each know of a device's host key, as fingerprints.
+#[tauri::command]
+pub async fn host_key(name: String) -> Result<hostkeys::Known, String> {
+    blocking(move || Ok(hostkeys::known(&key_host(&name)?))).await
+}
+
+/// Put the key this machine has for a device into the team's file.
+#[tauri::command]
+pub async fn share_host_key(name: String) -> Result<usize, String> {
+    blocking(move || hostkeys::share(&key_host(&name)?)).await
+}
+
+/// Which team devices this window has a session on. Sent again on a timer: the file's
+/// age is the heartbeat. Async for the share's sake, like everything that touches it.
+#[tauri::command]
+pub async fn presence_set(names: Vec<String>) -> Result<(), String> {
+    blocking(move || {
+        presence::set(&names);
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn presence() -> Result<Vec<presence::Seen>, String> {
+    blocking(|| Ok(presence::others())).await
 }
 
 const POOL: usize = 64;

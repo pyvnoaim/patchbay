@@ -8,9 +8,11 @@ mod clipboard;
 mod commands;
 mod config;
 mod drive;
+mod hostkeys;
 mod import;
 mod keychain;
 mod patchbay;
+mod presence;
 mod pty;
 mod rdp;
 mod rdp_session;
@@ -92,6 +94,11 @@ fn main() {
             jacks::move_jack,
             jacks::remove_copies,
             jacks::snippets,
+            jacks::find_break,
+            jacks::host_key,
+            jacks::share_host_key,
+            jacks::presence_set,
+            jacks::presence,
             jacks::save_snippets,
             jacks::delete_jack,
             jacks::restore_jack,
@@ -174,6 +181,7 @@ fn main() {
             if matches!(event, tauri::RunEvent::Exit) {
                 handle.state::<rdp::SharedTunnels>().close_all();
                 sftp::close_all();
+                presence::clear();
             }
         });
 }

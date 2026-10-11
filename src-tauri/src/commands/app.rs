@@ -87,6 +87,7 @@ pub fn update_restart(app: tauri::AppHandle) {
     // `ssh -N -L` outlives us and keeps the ports.
     app.state::<rdp::SharedTunnels>().close_all();
     crate::sftp::close_all();
+    crate::presence::clear();
     app.restart();
 }
 

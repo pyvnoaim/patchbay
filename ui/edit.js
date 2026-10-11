@@ -1257,8 +1257,8 @@ async function openSettings(pane) {
   const shared = cfgPath && ownPath && cfgPath !== ownPath;
   $("team-own").hidden = $("cfg-own").hidden = !shared;
   $("team-own").textContent = vaults.copies
-    ? `${vaults.copies} device${vaults.copies === 1 ? " in Mine is" : "s in Mine are"} also in Team, unchanged: what starting the list from this machine left in ${ownPath}.`
-    : `Your own devices are in ${ownPath}, and only this machine sees them.`;
+    ? `${vaults.copies} of your own ${vaults.copies === 1 ? "is an unchanged copy" : "are unchanged copies"} of the team's.`
+    : `Your own devices stay in ${ownPath}.`;
   $("team-copies").hidden = !shared || !vaults.copies;
   $("team-copies").innerHTML = `${icon("trash-2")}Remove the copies`;
   $("cfg-own").textContent = `Settings and colours stay in ${ownPath}, this machine's own.`;
@@ -1464,8 +1464,7 @@ $("team-copies").addEventListener("click", async () => {
     const n = await invoke("remove_copies");
     await load();
     flash(`Removed ${n} cop${n === 1 ? "y" : "ies"} from Mine.`);
-    $("team-own").textContent =
-      `Your own devices are in ${ownPath}, and only this machine sees them.`;
+    $("team-own").textContent = `Your own devices stay in ${ownPath}.`;
     $("team-copies").hidden = true;
   } catch (e) {
     showErr(setErr, String(e));

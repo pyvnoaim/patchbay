@@ -192,6 +192,27 @@ async function detailClick(e) {
   if (act === "edit") openJack(j);
   if (act === "dup") openJack({ ...j, name: "" });
   if (act === "move") moveVault([j]);
+  if (act === "break") {
+    breaks.set(j.name, { busy: true });
+    renderDetail();
+    try {
+      breaks.set(j.name, { steps: await invoke("find_break", { name: j.name }) });
+    } catch (err) {
+      breaks.delete(j.name);
+      alertish(err);
+    }
+    renderDetail();
+  }
+  if (act === "vouch") {
+    try {
+      await invoke("share_host_key", { name: j.name });
+      hostKeys.delete(j.name);
+      flash(`The team now checks "${j.label}" against the key this machine has.`);
+    } catch (err) {
+      alertish(err);
+    }
+    renderDetail();
+  }
   if (act === "copy") {
     const btn = e.target.closest("[data-act]");
     try {
@@ -439,6 +460,7 @@ async function load() {
     applyTheme();
     applySidebar(prefs.sidebar);
     render();
+    seePresence();
     refreshProbes();
   } catch (e) {
     // A list already on screen stays: a share that is away is not an empty list.
@@ -482,6 +504,31 @@ async function pollList() {
     /* the next load() says why */
   } finally {
     polling = false;
+  }
+}
+
+// Who else is on what, read from beside the shared list. Quiet on failure, and
+// nothing to ask without a shared list.
+async function seePresence() {
+  if (!vaults.two) {
+    if (present.size) {
+      present = new Map();
+      render();
+    }
+    return;
+  }
+  try {
+    const next = new Map();
+    for (const p of await invoke("presence")) {
+      for (const n of p.names) next.set(n, [...(next.get(n) ?? []), p.who]);
+    }
+    const said = JSON.stringify([...next]);
+    if (said !== JSON.stringify([...present])) {
+      present = next;
+      render();
+    }
+  } catch {
+    /* a share that is away has nobody on it */
   }
 }
 
@@ -645,6 +692,7 @@ async function startWebext() {
 load().then(startWebext).then(restoreTabs).then(takeLink).then(offerUpdate).then(offerSshCleanup);
 setInterval(refreshProbes, PROBE_EVERY);
 setInterval(pollList, PROBE_EVERY);
+setInterval(seePresence, PROBE_EVERY);
 // The config is hand-edited, so reload on focus.
 window.addEventListener("focus", load);
 // Not `matchMedia`: with a theme pinned, our own `color-scheme` fixes what

@@ -76,6 +76,16 @@ let selKey = null;
 // Two once a shared list is set: yours and the team's. `away` is why the team's is missing.
 let vaults = { two: false, team: null, away: null, copies: 0 };
 let detailsOpen = false; // the side pane beside a session, behind the Details chip
+// A route walked one link at a time, by device: { busy } while asking, then { steps }.
+// Held for the run, never kept: it was true when it was asked.
+let breaks = new Map();
+// What this machine and the team each know of a team device's host key, by device.
+// `null` while the answer is on its way, so it is asked for once.
+let hostKeys = new Map();
+// Who else has a session on a team device right now: name -> [who]. Empty without a
+// shared list.
+let present = new Map();
+let presentSaid = ""; // what was last told about this window, so a redraw isn't a write
 // Lines of text the palette types at a prompt, from both vaults, yours first.
 let snips = []; // { name, text, vault }
 let snipStamps = {}; // each vault's [snippet] table as read, for the save

@@ -47,7 +47,16 @@ pub async fn open_session(
         .as_deref()
         .map(|r| sftp::mux(&sftp::control_path(r)))
         .unwrap_or_default();
-    let spawned: Vec<String> = mux.into_iter().chain(args.iter().cloned()).collect();
+    // What the team has seen of this host goes in front of what ssh would ask you.
+    let keys = resolved
+        .as_deref()
+        .map(|r| crate::hostkeys::opts(r, &jacks))
+        .unwrap_or_default();
+    let spawned: Vec<String> = mux
+        .into_iter()
+        .chain(keys)
+        .chain(args.iter().cloned())
+        .collect();
     let log = config::load_settings()
         .log_sessions
         .then(|| log_path(resolved.as_deref().unwrap_or(&name)));
@@ -121,6 +130,7 @@ pub async fn open_master(
         // -N first: everything after the destination would be a remote command.
         let mut spawned = vec!["-N".to_string()];
         spawned.extend(sftp::mux(&sftp::control_path(&resolved)));
+        spawned.extend(crate::hostkeys::opts(&resolved, &jacks));
         spawned.extend(args);
         sessions.open(&app, id, "ssh", &spawned, cols.max(2), rows.max(2), None)
     }

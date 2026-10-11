@@ -1053,6 +1053,22 @@ function renderTabs() {
   }
   markTabOverflow();
   rememberTabs();
+  tellPresence();
+}
+
+// Which of the team's devices this window has a session on, told to Rust whenever it
+// changes. Rust keeps the file beside the shared list and its heartbeat: a window in
+// the background has its timers slowed, and a session is just as open back there.
+function tellPresence() {
+  const names = vaults.two
+    ? [...new Set([...sessions.values()].filter((s) => !s.dead).map((s) => s.name))]
+        .filter((n) => all.find((j) => j.name === n)?.vault === "team")
+        .sort()
+    : [];
+  const said = names.join("\n");
+  if (said === presentSaid) return;
+  presentSaid = said;
+  invoke("presence_set", { names }).catch(() => {});
 }
 
 // Shells, pages and file listings come back on the next launch. Stored in localStorage
