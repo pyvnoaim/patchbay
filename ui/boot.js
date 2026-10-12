@@ -466,7 +466,6 @@ async function load() {
     // By folder, and a folder is in one vault.
     const at = (n) => gkey({ path: n.path, vault: n.vault ?? undefined });
     notes = new Map(noteRows.map((n) => [at(n), n.note]));
-    lends = new Map(noteRows.map((n) => [at(n), n.defaults ?? {}]));
     noteStamps = new Map(noteRows.map((n) => [at(n), n.stamp]));
     loadErr = "";
     // Last session's open folders, on the first load only: a focus would re-open

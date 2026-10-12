@@ -110,7 +110,6 @@ let editStamp = null; // the table as it was when the sheet opened, sent back wi
 // A new empty folder, held until a device lands in it. Dropped on reload.
 let pending = new Map(); // gkey -> { path }
 let notes = new Map(); // folder path -> the note hung on it
-let lends = new Map(); // folder path -> what it lends its devices (user, port, key, jump)
 let noteStamps = new Map(); // folder path -> the folder's table as read, for the save
 let seeded = false; // the tree's initial expansion is a one-off
 let lastProbe = 0; // epoch ms of the last sweep, for the throttle below

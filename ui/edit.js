@@ -182,7 +182,7 @@ document.addEventListener("contextmenu", (e) => {
         ...(jackRow.classList.contains("solo")
           ? [
               "-",
-              // Its note and what it lends: the row itself opens the device.
+              // Its note: the row itself opens the device.
               {
                 icon: "folder-open",
                 label: "Folder details",

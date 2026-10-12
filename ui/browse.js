@@ -537,6 +537,13 @@ function renderGroup() {
     </section>`
     }
     ${
+      real
+        ? `<section class="d-card d-notes"><div class="d-sec">${icon("file-pen-line")}Notes</div>
+      <textarea class="d-note" id="gnote" rows="4" spellcheck="false"
+        placeholder="What somebody arriving here needs to know."></textarea></section>`
+        : ""
+    }
+    ${
       on.length
         ? `<section class="d-card"><div class="d-sec">${icon("users")}On now</div>
       <div class="on-now">${on.map(([who, what]) => `<span><b>${esc(who)}</b><small>${esc(what)}</small></span>`).join("")}</div></section>`
@@ -548,66 +555,16 @@ function renderGroup() {
         : `<section class="d-tiles"><div class="d-sec">${icon("folder")}In here</div>
       ${tiles.length ? `<div class="tiles">${tiles.map(tileHtml).join("")}</div>` : `<p class="page-note">Nothing in here matches.</p>`}</section>`
     }
-
-    ${
-      !real
-        ? ""
-        : `<section class="d-card span"><div class="d-sec">${icon("share-2")}Everything in here</div>
-      <div class="lends">
-        <label>User<input id="lend-user" spellcheck="false" placeholder="—"></label>
-        <label>Port<input id="lend-port" inputmode="numeric" placeholder="—"></label>
-        <label>Key<input id="lend-key" spellcheck="false" placeholder="—"></label>
-        <label>Jump<input id="lend-jump" spellcheck="false" placeholder="—"></label>
-      </div>
-      <p class="page-note">A device in this folder that doesn't say otherwise uses these.</p></section>
-
-      <section class="d-card span"><div class="d-sec">${icon("file-pen-line")}Notes</div>
-      <textarea class="d-note" id="gnote" rows="4" spellcheck="false"
-        placeholder="What somebody arriving here needs to know."></textarea></section>`
-    }
     </div>
 `;
 
   // Set as a value, not interpolated: a `</textarea>` in a note would end the element.
   if (real) {
-    // Saved on blur like the note below, and against the same stamp: one table holds
-    // both, so a save either way carries the other's value as it was read.
-    //
-    // One at a time, because tabbing through the fields blurs the next one before the
-    // last save's reload has landed: the maps read here would still be the file as it
-    // was, and the write, which sends all four, would clear what was just saved.
+    // One at a time: a second blur before the last save's reload has landed would
+    // send the stamp that save just moved.
     let saving = Promise.resolve();
     const queue = (work) => (saving = saving.then(work).catch(alertish));
-
-    const fields = { user: "lend-user", port: "lend-port", key: "lend-key", jump: "lend-jump" };
-    const lent = lends.get(gk) ?? {};
     const vault = group.vault ?? null;
-    for (const [k, id] of Object.entries(fields)) $(id).value = lent[k] ?? "";
-    for (const [k, id] of Object.entries(fields)) {
-      $(id).addEventListener("blur", () => {
-        const path = group.path;
-        const v = $(id).value.trim();
-        if (k === "port" && v && !/^\d{1,5}$/.test(v)) return alertish(`"${v}" isn't a port`);
-        queue(async () => {
-          const was = lends.get(gk) ?? {};
-          if (v === String(was[k] ?? "")) return;
-          const next = { ...was, [k]: k === "port" ? (v ? Number(v) : null) : v || null };
-          try {
-            await invoke("save_folder_defaults", {
-              path,
-              defaults: next,
-              stamp: noteStamps.get(gk) ?? null,
-              vault,
-            });
-          } catch (e) {
-            alertish(e);
-          }
-          // Either way: a refusal means the pane is behind the file, and a save moved
-          // the stamp the note's own blur would send.
-          await load();
-        });
-      });
-    }
 
     const box = $("gnote");
     box.value = notes.get(gk) ?? "";
@@ -615,7 +572,6 @@ function renderGroup() {
     box.addEventListener("blur", () => {
       const path = group.path;
       const note = box.value;
-      // Behind the same queue: the settings above share this table and its stamp.
       queue(async () => {
         if (note === (notes.get(gk) ?? "")) return;
         try {

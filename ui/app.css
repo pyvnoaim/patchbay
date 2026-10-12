@@ -842,6 +842,14 @@ body.dragging * {
 #wide .d-card.span {
   grid-column: 1 / -1;
 }
+/* The note fills its card, so it is as tall as the one beside it. */
+#wide .d-notes {
+  display: flex;
+  flex-direction: column;
+}
+#wide .d-notes .d-note {
+  flex: 1;
+}
 /* A folder's overview fills the pane: its tiles are a grid, not a column to read. */
 #wide .d-cards.full {
   max-width: none;
@@ -1388,39 +1396,6 @@ button,
 }
 .d-in {
   margin: 0 5px 2px 0;
-}
-
-/* What a folder lends its devices: two columns of short fields, the note's own look. */
-.lends {
-  display: grid;
-  /* minmax: an input's intrinsic width would otherwise push the second column out. */
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 6px;
-  margin-top: 2px;
-}
-.lends label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 11px;
-  color: var(--fg-faint);
-}
-.lends input {
-  min-width: 0;
-  padding: 5px 8px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--row);
-  color: var(--fg);
-  font: inherit;
-  font-size: 12.5px;
-  outline: none;
-}
-.lends input:focus {
-  border-color: var(--accent);
-}
-.lends input::placeholder {
-  color: var(--fg-faint);
 }
 
 .d-row {
