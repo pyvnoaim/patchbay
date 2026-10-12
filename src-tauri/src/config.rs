@@ -575,7 +575,17 @@ pub fn set_note_at(
     match note.trim().is_empty() {
         true => {
             if let Some(t) = doc.get_mut("folder").and_then(Item::as_table_mut) {
-                t.remove(path);
+                // Only the note: what the folder lends its devices is in the same table.
+                let bare = t
+                    .get_mut(path)
+                    .and_then(Item::as_table_like_mut)
+                    .is_none_or(|f| {
+                        f.remove("note");
+                        f.is_empty()
+                    });
+                if bare {
+                    t.remove(path);
+                }
                 if t.is_empty() {
                     doc.remove("folder");
                 }
@@ -1672,6 +1682,15 @@ folders = ["prod/eu/web"]
             "the bastion is theirs, not ours",
             "the note and the settings share one table"
         );
+
+        // A cleared note leaves the settings where they are.
+        set_note_at(&p, "acme", "", None).unwrap();
+        assert_eq!(
+            patchbay::parse_all(&read(&p)).unwrap().0["db"].port,
+            Some(2222),
+            "clearing the note took the folder's settings with it"
+        );
+        set_note_at(&p, "acme", "the bastion is theirs, not ours", None).unwrap();
 
         // Cleared one at a time; the note is still nobody else's business.
         set_folder_defaults_at(&p, "acme", &patchbay::Folder::default(), None).unwrap();
