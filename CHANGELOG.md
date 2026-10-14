@@ -8,6 +8,12 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- The sidebar draws a guide line under each folder, so what is inside it is easier to tell apart.
+- The folder page's own "Device" button is gone; New in the top bar already files into the folder.
+- "Out of reach" no longer breaks over two lines.
+
 ## 0.1.35 - 2026-10-12
 
 - A folder's notes sit at the top of its page, beside what answers from this network.

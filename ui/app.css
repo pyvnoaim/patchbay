@@ -558,6 +558,22 @@ body:not([data-os="macos"]) .tabs {
 :is(.group, .dev) + :is(.group, .dev) {
   margin-top: 2px;
 }
+/* A guide under each ancestor's chevron, so a device reads as inside its folder rather
+   than beside the subfolders. A pseudo-element, because hover and selection set `background`. */
+#tree [style*="--depth"] {
+  position: relative;
+  padding-left: calc(8px + var(--depth) * 16px);
+}
+#tree [style*="--depth"]::before {
+  content: "";
+  position: absolute;
+  left: 13.5px;
+  top: -2px;
+  bottom: 0;
+  width: calc(var(--depth) * 16px);
+  background: repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 16px);
+  pointer-events: none;
+}
 .dev .os {
   display: flex;
   flex: none;
@@ -2213,6 +2229,7 @@ button.danger:hover {
   color: var(--fg);
   font: inherit;
   font-size: 12px;
+  white-space: nowrap;
 }
 .chips button small {
   color: var(--fg-dim);

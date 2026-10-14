@@ -165,7 +165,6 @@ async function detailClick(e) {
   }
   const gact = e.target.closest("[data-gact]")?.dataset.gact;
   if (gact) {
-    if (gact === "new") openJack(null, group);
     if (gact === "rename") renameGroup(group);
     if (gact === "del") removeGroup(group);
     return;

@@ -116,7 +116,7 @@ function renderTree() {
   paintRows();
 }
 
-const indent = (depth) => `style="padding-left:${8 + depth * 13}px"`;
+const indent = (depth) => `style="--depth:${depth}"`;
 const idAttrs = (id) =>
   `data-path="${esc(id.path ?? "")}"${id.vault ? ` data-vault="${esc(id.vault)}"` : ""}`;
 
@@ -589,15 +589,10 @@ function renderGroup() {
     });
   }
 
-  dActs().innerHTML = `
-    <button class="primary" data-gact="new">${icon("plus")}Device</button>
-    ${
-      real
-        ? `<button class="ghost" data-gact="rename" data-tip="Rename folder">${icon("pencil")}</button>
+  dActs().innerHTML = real
+    ? `<button class="ghost" data-gact="rename" data-tip="Rename folder">${icon("pencil")}</button>
     <button class="ghost danger" data-gact="del" data-tip="Delete folder" data-tip-at="right">${icon("trash-2")}</button>`
-        : ""
-    }
-`;
+    : "";
 }
 
 // A team device's host key: what the team has seen, and whether this machine agrees.
