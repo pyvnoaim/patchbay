@@ -608,9 +608,17 @@ pub async fn web_trust_cert(url: String) -> Result<(), String> {
 /// `-s <host>` scopes the trust to this device, so a CA certificate handed out by an
 /// appliance never becomes a trusted root for everything. `-e hostnameMismatch` is
 /// the error being forgiven: an appliance reached by IP has a certificate naming
-/// something else.
+/// something else. The result type has to match the certificate: macOS takes
+/// `trustRoot` only for a self-signed one and `trustAsRoot` only for one that isn't,
+/// and answers the wrong one with errSecParam ("one or more parameters ... not valid").
 #[cfg(target_os = "macos")]
 fn trust_cert(host: &str, der: &[u8]) -> Result<(), String> {
+    use x509_cert::der::Decode as _;
+    let c = x509_cert::Certificate::from_der(der).map_err(|e| e.to_string())?;
+    let result = match c.tbs_certificate.subject == c.tbs_certificate.issuer {
+        true => "trustRoot",
+        false => "trustAsRoot",
+    };
     let path = std::env::temp_dir().join(format!("patchbay-cert-{}.der", std::process::id()));
     std::fs::write(&path, der).map_err(|e| format!("{}: {e}", path.display()))?;
     let keychain = dirs::home_dir()
@@ -620,7 +628,7 @@ fn trust_cert(host: &str, der: &[u8]) -> Result<(), String> {
         .args([
             "add-trusted-cert",
             "-r",
-            "trustAsRoot",
+            result,
             "-p",
             "ssl",
             "-e",

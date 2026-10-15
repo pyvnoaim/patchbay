@@ -8,6 +8,11 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Trusting a device's self-signed certificate works on macOS again, instead of failing with "one or more parameters were not valid".
+- Securepoint and firewall devices get a firewall icon, and a kind like "Router" now matches "RouterOS" too.
+
 ## 0.1.36 - 2026-10-14
 
 - The sidebar draws a guide line under each folder, so what is inside it is easier to tell apart.
