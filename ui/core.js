@@ -237,7 +237,7 @@ function osIcon(os) {
   if (brand) {
     return `<svg class="i brand" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${BRANDS[brand]}"/></svg>`;
   }
-  const fb = Object.keys(BRAND_FALLBACKS).find((b) => k === b);
+  const fb = Object.keys(BRAND_FALLBACKS).find((b) => k.startsWith(b));
   return icon(fb ? BRAND_FALLBACKS[fb] : "server");
 }
 // ── colour ─────────────────────────────────────────────────────────────────

@@ -53,6 +53,9 @@ const FALLBACKS = {
   container: "container",
   printer: "printer",
   camera: "cctv",
+  firewall: "brick-wall-shield",
+  // simple-icons has no Securepoint mark.
+  securepoint: "brick-wall-shield",
   server: "server",
 };
 
@@ -69,6 +72,8 @@ const FALLBACK_LABELS = {
   container: "Container",
   printer: "Printer",
   camera: "Camera",
+  firewall: "Firewall",
+  securepoint: "Securepoint",
   server: "Server",
 };
 

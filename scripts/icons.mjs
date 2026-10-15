@@ -43,6 +43,7 @@ const USED = [
   "container",
   "printer",
   "cctv",
+  "brick-wall-shield", // a firewall, and Securepoint, which has no brand mark
   "rotate-cw", // try that again
   "arrow-up", // up a folder
   "chevron-up", // find in session
