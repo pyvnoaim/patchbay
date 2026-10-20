@@ -27,6 +27,13 @@
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/screenshot-dark.png">
+    <img src="assets/screenshot-light.png" alt="patchbay: folders of devices in the sidebar, and a database behind two jump hosts with its route drawn from this machine" width="880">
+  </picture>
+</p>
+
 ---
 
 Your machines live in one file you can read, hand-edit and keep in a repo: hostnames,
@@ -97,14 +104,14 @@ the first of gnome-terminal, konsole, alacritty, kitty, foot or xterm it finds.
 
 </details>
 
-Already have a list? Settings → Import reads `~/.ssh/config` or a Royal TS `.rtsz`
+Already have a list? Settings ▸ Import reads `~/.ssh/config` or a Royal TS `.rtsz`
 document and shows what it found with tick boxes. Nothing is written until you tick.
 
 ## Config
 
 `~/.config/patchbay/patchbay.toml`, or `%APPDATA%\patchbay\patchbay.toml` on Windows -
 or wherever `$PATCHBAY_CONFIG` points. The window creates it on first run, and
-Settings → Config file opens it in your editor.
+Settings ▸ Config file opens it in your editor.
 
 That one file is the whole list. Grouping is the `folders` list on each device, and a
 folder can carry a note for whoever arrives at that customer next.
@@ -240,7 +247,7 @@ wants a password typed can't be browsed - it needs a key or the agent.
 
 ## In the window
 
-- **Map** beside the list groups devices by the route to them, so a bastion and
+- **Map** draws the selected folder by the route to its devices, so a bastion and
   everything behind it sit together however they are filed. A bastion that isn't
   answering says so once.
 - **Marks.** ⌘-click (Ctrl-click elsewhere) and shift-click pick out several devices; a dock appears to move,
