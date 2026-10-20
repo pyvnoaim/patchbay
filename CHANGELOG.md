@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.38 - 2026-10-20
 
 - An import asks whether the devices go in Mine or Team, instead of landing in whichever was open.
 - With a shared list, Settings ▸ Defaults edits your own defaults too, not only the team's.
