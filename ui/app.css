@@ -617,8 +617,10 @@ body:not([data-os="macos"]) .tabs {
 #side .drag {
   height: 46px;
 }
+/* Off macOS the OS draws a title bar above the window, so there are no traffic lights to
+   clear and the band would only be an empty strip over the tree. */
 body:not([data-os="macos"]) #side .drag {
-  height: 40px;
+  height: 8px;
 }
 
 /* Padded to match #list, so the first folder sits level with the first device. */
@@ -818,7 +820,9 @@ body.dragging * {
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
-  padding: 30px 36px 90px;
+  /* The right padding grows with the window, so the actions float at the content's edge
+     rather than across a wide pane from the name they act on. */
+  padding: 30px max(36px, calc(100% - 1076px)) 90px 36px;
 }
 #wide[hidden] {
   display: none;
@@ -834,11 +838,25 @@ body.dragging * {
   padding: 0;
 }
 #wide .d-name {
+  gap: 12px;
   font-size: 22px;
   line-height: 1.25;
 }
+/* The mark gets a tile of its own colour, so a device is recognisable before it is read. */
+#wide .d-os {
+  justify-content: center;
+  align-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in oklab, currentColor 16%, var(--row));
+}
+#wide .d-os .i {
+  width: 19px;
+  height: 19px;
+}
 #wide .d-desc {
-  margin-top: 2px;
+  margin: 0 0 0 48px;
   min-height: 1.45em;
 }
 #wide .d-cards {
@@ -846,8 +864,7 @@ body.dragging * {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: 12px;
-  max-width: 980px;
-  padding-top: 8px;
+  padding-top: 14px;
 }
 #wide .d-card {
   min-width: 0;
@@ -1300,16 +1317,15 @@ body:not([data-os="macos"]) #detail .drag {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10.5px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fg-faint);
-  margin: 14px 0 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-dim);
+  margin: 14px 0 6px;
 }
 .d-sec .i {
   width: 12px;
   height: 12px;
+  color: var(--fg-faint);
 }
 button {
   display: flex;
@@ -1532,6 +1548,73 @@ button,
   color: var(--fg-faint);
   margin-left: 2px;
   font-size: 11px;
+}
+.route .hop {
+  font-style: normal;
+}
+.route .here .hop {
+  color: var(--fg-dim);
+}
+/* Wide, the route is a cable: a jack per stop, a lead between each and the next, the
+   target lit. Beside a session it stays the list above, which fits a narrow pane. */
+#wide .route {
+  flex-direction: row;
+  gap: 0;
+  padding: 8px 0 2px;
+}
+#wide .route > span {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+#wide .route > .last {
+  flex: 0 1 auto;
+}
+#wide .route .pip {
+  width: 11px;
+  height: 11px;
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--fg-faint);
+}
+#wide .route > span:not(.last)::after {
+  content: "";
+  position: absolute;
+  top: 4.5px;
+  left: 17px;
+  right: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: color-mix(in oklab, var(--fg-faint) 55%, transparent);
+}
+#wide .route .last .pip {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 28%, transparent);
+}
+#wide .route .ok .pip {
+  box-shadow: inset 0 0 0 2px var(--up);
+}
+#wide .route .ok::after {
+  background: var(--up);
+}
+#wide .route .bad .pip {
+  background: var(--down);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--down) 25%, transparent);
+}
+#wide .route .bad::after {
+  background: repeating-linear-gradient(90deg, var(--down) 0 5px, transparent 5px 9px);
+}
+#wide .route .hop {
+  max-width: 100%;
+  padding-right: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#wide .route .arm {
+  margin: -4px 0 0;
 }
 .mono {
   font-family: var(--mono);

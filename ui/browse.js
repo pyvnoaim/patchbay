@@ -165,10 +165,13 @@ const devTail = (j, live) => `
       present.has(j.name)
         ? `<span class="here" data-tip="${esc(hereTip(j.name))}">${icon("users")}</span>`
         : ""
-    }
-    <span class="kind" data-tip="${esc((KIND[j.primary] ?? KIND.ssh)[1])}">${icon(
-      (KIND[j.primary] ?? KIND.ssh)[0],
-    )}</span>`;
+    }${
+      // ssh is what a device is unless it says otherwise, so only the others are marked:
+      // a glyph on every row said nothing and cost the name its last letters.
+      KIND[j.primary] && j.primary !== "ssh"
+        ? `<span class="kind" data-tip="${esc(KIND[j.primary][1])}">${icon(KIND[j.primary][0])}</span>`
+        : ""
+    }`;
 
 // A device in the tree. Selection and marks are painted afterwards (`paintRows`), so
 // a click never rebuilds the row under the pointer.
@@ -728,16 +731,16 @@ function renderJack(j, live) {
     <section class="d-card span">
     <div class="d-sec">${icon("waypoints")}Route</div>
     <div class="route">
-      <span><i class="pip"></i>this machine</span>
+      <span class="here"><i class="pip"></i><em class="hop">this machine</em></span>
       ${stops
         .map((h, i) => {
           // What "Find the break" heard at this stop, if it was asked.
           const heard = breaks.get(j.name)?.steps?.[i];
           const state = heard?.ok === true ? " ok" : heard?.ok === false ? " bad" : "";
           return `<span class="${i === stops.length - 1 ? "last" : ""}${state}">
-        <i class="pip"></i>${esc(h)}${i < stops.length - 1 ? `<i class="arm">jump</i>` : ""}${
-          heard?.said ? `<i class="arm said">${esc(heard.said)}</i>` : ""
-        }</span>`;
+        <i class="pip"></i><em class="hop" data-tip="${esc(h)}">${esc(h)}</em>${
+          i < stops.length - 1 ? `<i class="arm">jump</i>` : ""
+        }${heard?.said ? `<i class="arm said">${esc(heard.said)}</i>` : ""}</span>`;
         })
         .join("")}
     </div>

@@ -42,7 +42,6 @@ Rough, unranked. Most are a `ponytail:` ceiling someone hasn't hit yet.
   `me:<key>`, which is not a name ssh can be given, so the export leaves them out.
 - **More than one team vault.** Two customers on two shares. It is what spaces were,
   so not until someone has two.
-- **Route as a line.** The wide detail still draws the route top to bottom.
 - **A web tab under a sheet or the palette** still goes blank while they are open. A
   snapshot of the page held in its place would hide the gap.
 - **The RDP drive on Windows.** `drive.rs` is unix-only because IronRDP's backend is,

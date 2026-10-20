@@ -8,6 +8,13 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- A device's route is drawn as a line from this machine to it, each jump a stop on the way.
+- The device page has its icon in a tile, and its buttons stay beside the name in a wide window.
+- Section labels are plain words instead of capitals, and only non-ssh devices carry a kind icon in the sidebar.
+- On Windows and Linux the sidebar no longer starts below an empty band.
+
 ## 0.1.38 - 2026-10-20
 
 - An import asks whether the devices go in Mine or Team, instead of landing in whichever was open.
