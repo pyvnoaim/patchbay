@@ -8,6 +8,10 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- An import asks whether the devices go in Mine or Team, instead of landing in whichever was open.
+
 ## 0.1.37 - 2026-10-15
 
 - Trusting a device's self-signed certificate works on macOS again, instead of failing with "one or more parameters were not valid".

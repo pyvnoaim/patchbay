@@ -952,19 +952,38 @@ async function moveAsked(js) {
 }
 
 // ── import sheet ───────────────────────────────────────────────────────────
-let impFound = [];
+let impFound = [],
+  impRead = null;
+
+// The vault ticked in the sheet; undefined with one vault, as `inVault` takes it.
+const impInto = () => (vaults.two ? impForm["imp-vault"].value : undefined);
 
 // `where` names the source in the header: a path for an ssh config, a file name for
 // a document.
-async function openImport(r, where) {
+function openImport(r, where) {
   impErr.hidden = true;
   $("imp-title").textContent = `Import from ${where}`;
   $("imp-find").value = "";
+  // The vault being looked at, the team's when neither is.
+  $("imp-vault").hidden = !vaults.two;
+  impForm["imp-vault"].value = group?.vault ?? "team";
   impWrap.hidden = false;
+  impRead = r;
+  renderImport();
+}
 
+// Picking the other vault redraws, so "already here" means here.
+impForm.addEventListener("change", (e) => {
+  if (e.target.name !== "imp-vault") return;
+  renderImport();
+  $("imp-find").dispatchEvent(new Event("input"));
+});
+
+function renderImport() {
+  const r = impRead;
   // Devices already in the vault this lands in are shown unticked, so running it twice
   // is safe. By the key a file would have, which is what an import writes.
-  const into = vaults.two ? (group?.vault ?? "team") : undefined;
+  const into = impInto();
   impFound = r.hosts.map((h) => ({
     ...h,
     here: all.some((j) => inVault(j, into) && bareKey(j.name) === h.name),
@@ -1152,9 +1171,7 @@ impForm.addEventListener("submit", async (e) => {
           os: h.os ?? null,
           desc: h.desc ?? null,
         },
-        // ponytail: an import lands in the vault being looked at, the team's when
-        // neither is; its own choice in the sheet if people import into both.
-        vault: vaults.two ? (group?.vault ?? "team") : null,
+        vault: impInto() ?? null,
       });
     } catch {
       failed.push(h.name);

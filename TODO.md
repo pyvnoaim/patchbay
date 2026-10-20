@@ -42,8 +42,6 @@ Rough, unranked. Most are a `ponytail:` ceiling someone hasn't hit yet.
   the ones in your own config are read but only hand-edited.
 - **Your own devices in `~/.ssh/patchbay.conf`.** With two vaults they are named
   `me:<key>`, which is not a name ssh can be given, so the export leaves them out.
-- **An import picks its vault.** It lands in the one being looked at, the team's when
-  neither is.
 - **More than one team vault.** Two customers on two shares. It is what spaces were,
   so not until someone has two.
 - **Route as a line.** The wide detail still draws the route top to bottom.

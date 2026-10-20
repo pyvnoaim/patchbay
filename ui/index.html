@@ -486,6 +486,22 @@
       <form class="sheet imp" id="importform" autocomplete="off">
         <div class="sheet-head" id="imp-title">Import</div>
         <div class="imp-top">
+          <!-- As in the jack sheet: with one vault there is nothing to choose. -->
+          <div class="how" id="imp-vault" hidden>
+            <span class="how-q">Who can see them?</span>
+            <div class="how-row">
+              <label class="how-opt"
+                ><input type="radio" name="imp-vault" value="mine" /><span
+                  >Mine · only this machine</span
+                ></label
+              >
+              <label class="how-opt"
+                ><input type="radio" name="imp-vault" value="team" /><span
+                  >Team · everyone on the list</span
+                ></label
+              >
+            </div>
+          </div>
           <p class="imp-note" id="imp-note"></p>
           <input
             id="imp-find"
