@@ -38,8 +38,6 @@ Rough, unranked. Most are a `ponytail:` ceiling someone hasn't hit yet.
   lands on the prompt is no longer what the palette showed.
 - **A snippets pane beside the session**, for the three you use all day. The palette
   is the only picker for now.
-- **Your own `[defaults]` in Settings.** With two vaults, Settings edits the team's;
-  the ones in your own config are read but only hand-edited.
 - **Your own devices in `~/.ssh/patchbay.conf`.** With two vaults they are named
   `me:<key>`, which is not a name ssh can be given, so the export leaves them out.
 - **More than one team vault.** Two customers on two shares. It is what spaces were,

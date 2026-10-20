@@ -11,6 +11,7 @@ it back. Nothing is retyped anywhere.
 ## Unreleased
 
 - An import asks whether the devices go in Mine or Team, instead of landing in whichever was open.
+- With a shared list, Settings ▸ Defaults edits your own defaults too, not only the team's.
 
 ## 0.1.37 - 2026-10-15
 

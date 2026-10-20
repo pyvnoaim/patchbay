@@ -1267,11 +1267,20 @@ async function openSettings(pane) {
   for (const el of setForm.querySelectorAll("input[type=checkbox]")) el.checked = !!prefs[el.name];
   setForm.elements.theme.value = ["light", "dark"].includes(prefs.theme) ? prefs.theme : "system";
   setForm.elements.font_size.value = termFont();
-  // Read fresh: a hand-edit between openings should show up here.
-  const defs = await invoke("defaults").catch(() => ({}));
-  defsStamp = defs.stamp ?? null;
-  for (const k of DEFAULT_KEYS) setForm.elements[`def_${k}`].value = defs[k] ?? "";
-  defsWas = defsState();
+  // Read fresh: a hand-edit between openings should show up here. Each vault on its
+  // own, so a team list that has gone away still leaves yours editable.
+  $("defs-mine").hidden = !vaults.two;
+  $("defs-team-head").textContent = vaults.two
+    ? "Team · every device on the shared list"
+    : "Inherited by every device";
+  await Promise.all(
+    defsVaults().map(async (v) => {
+      const defs = await invoke("defaults", { vault: v.vault }).catch(() => ({}));
+      defsStamp[v.prefix] = defs.stamp ?? null;
+      for (const k of DEFAULT_KEYS) setForm.elements[v.prefix + k].value = defs[k] ?? "";
+      defsWas[v.prefix] = defsState(v.prefix);
+    }),
+  );
   setForm.elements.list.value = prefs.list ?? "";
   setForm.elements.bitwarden_server.value = prefs.bitwarden_server ?? "";
   // Only worth saying while there are two files.
@@ -1335,14 +1344,22 @@ setNav.addEventListener("click", (e) => {
 });
 
 const DEFAULT_KEYS = ["user", "port", "key", "jump"];
+// The fields' prefix per vault. With one vault, `def_` is the one file there is.
+const defsVaults = () =>
+  vaults.two
+    ? [
+        { prefix: "def_", vault: "team" },
+        { prefix: "mine_", vault: "mine" },
+      ]
+    : [{ prefix: "def_", vault: null }];
 // Written only when touched: a save that also points at a team's list must not put
 // this machine's defaults over theirs.
-const defsState = () =>
-  DEFAULT_KEYS.map((k) => setForm.elements[`def_${k}`].value.trim()).join("\n");
-let defsWas = "";
-// What [defaults] hashed to when the sheet opened. A shared list is everyone's, so the
-// same refusal the jack sheet gets applies here.
-let defsStamp = null;
+const defsState = (prefix) =>
+  DEFAULT_KEYS.map((k) => setForm.elements[prefix + k].value.trim()).join("\n");
+const defsWas = {};
+// What each [defaults] hashed to when the sheet opened. A shared list is everyone's, so
+// the same refusal the jack sheet gets applies here.
+const defsStamp = {};
 
 setForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1358,10 +1375,16 @@ setForm.addEventListener("submit", async (e) => {
     return showErr(setErr, "terminal font size has to be between 8 and 32");
   }
 
-  const defs = {};
-  for (const k of DEFAULT_KEYS) defs[k] = setForm.elements[`def_${k}`].value.trim() || null;
-  if (defs.port && !/^\d+$/.test(defs.port)) return showErr(setErr, "ssh port has to be a number");
-  defs.port = defs.port ? +defs.port : null;
+  const defsTouched = [];
+  for (const v of defsVaults()) {
+    if (defsState(v.prefix) === defsWas[v.prefix]) continue;
+    const defs = {};
+    for (const k of DEFAULT_KEYS) defs[k] = setForm.elements[v.prefix + k].value.trim() || null;
+    if (defs.port && !/^\d+$/.test(defs.port))
+      return showErr(setErr, "ssh port has to be a number");
+    defs.port = defs.port ? +defs.port : null;
+    defsTouched.push({ ...v, defs });
+  }
 
   try {
     const wasProbing = prefs.probe !== false;
@@ -1375,7 +1398,11 @@ setForm.addEventListener("submit", async (e) => {
       await invoke("webext_stop").catch(() => {});
       invoke("webext_start").catch(alertish);
     }
-    if (defsState() !== defsWas) await invoke("save_defaults", { next: defs, stamp: defsStamp });
+    for (const v of defsTouched) {
+      await invoke("save_defaults", { next: v.defs, stamp: defsStamp[v.prefix], vault: v.vault });
+      // Saved is the new baseline, so a refusal of the next one doesn't send this twice.
+      defsWas[v.prefix] = defsState(v.prefix);
+    }
     prefs = next;
     listStamp = null;
     closeSettings();
@@ -1395,9 +1422,11 @@ setForm.addEventListener("submit", async (e) => {
     // Refused as someone else's edit: the sheet takes the new stamp, so Save a second
     // time is a decision. The fields stay as typed - they are the change being kept.
     if (String(err).includes("changed by someone else")) {
-      defsStamp = await invoke("defaults")
-        .then((d) => d.stamp ?? null)
-        .catch(() => null);
+      for (const v of defsVaults()) {
+        defsStamp[v.prefix] = await invoke("defaults", { vault: v.vault })
+          .then((d) => d.stamp ?? null)
+          .catch(() => null);
+      }
     }
   }
 });
