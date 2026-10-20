@@ -1,30 +1,65 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
-  <img src="assets/logo-light.svg" alt="patchbay" width="272">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo-light.svg" alt="patchbay" width="272">
+  </picture>
+</p>
 
-**Share the list, not the passwords.**
+<p align="center"><b>Share the list, not the passwords.</b></p>
 
-A connection manager that is a TOML file and a `ssh` exec. No Electron, no sync
-service, no credential store, no crown.
+<p align="center">
+  A connection manager for ssh, remote desktop, VNC, web UIs and files.<br>
+  One TOML file, your own <code>ssh</code>, no Electron, no sync service, no credential store.
+</p>
+
+<p align="center">
+  <a href="https://github.com/pyvnoaim/patchbay/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/pyvnoaim/patchbay?label=release&color=3b82f6"></a>
+  <a href="https://github.com/pyvnoaim/patchbay/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/pyvnoaim/patchbay/ci.yml?branch=main&label=ci"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-555">
+  <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-PolyForm%20Perimeter-555"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/pyvnoaim/patchbay/releases/latest">Download</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#config">Config</a> ·
+  <a href="#a-team">Teams</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
+
+---
 
 Your machines live in one file you can read, hand-edit and keep in a repo: hostnames,
 folders and jump chains, and never a credential, so the file goes on the team drive as
-it is. The window opens them: sessions, remote desktop, a device's web UI and its
-files, all as tabs, under a folder tree. Your `ssh` agent and `~/.ssh/config` hold
-what it doesn't.
+it is. The window opens them as tabs under a folder tree. Your `ssh` agent and
+`~/.ssh/config` hold what it doesn't.
 
-Already have a list? Settings → Import reads `~/.ssh/config` or a Royal TS `.rtsz`
-document and shows what it found with tick boxes. Nothing is written until you tick,
-and passwords never come across.
+## Features
 
+| | |
+| --- | --- |
+| **Sessions in tabs** | Your system `ssh` on a real pty, so the agent, `~/.ssh/config` and host-key prompts all just work. |
+| **Remote desktop** | RDP decoded in-app (IronRDP, pure Rust) with clipboard and a shared folder, or handed to your own client. |
+| **Web UIs and files** | A device's admin page in a tab beside its shell; browse, upload and edit files over `sftp`. |
+| **Jump chains** | `db → web → bastion` resolves to one `ssh -J`, and "Find the break" says which hop stopped answering. |
+| **Mine and Team** | Your own devices beside the team's shared list, on a drive you already have. No server, no account. |
+| **Team host keys** | A first connect is checked against the key a colleague already trusted. |
+| **Broadcast and snippets** | Type into many shells at once; snippets go on the prompt and never press Enter. |
+| **Import** | Reads `~/.ssh/config` or a Royal TS `.rtsz`. Passwords never come across. |
 
 ## Install
 
-Download it from [Releases](https://github.com/pyvnoaim/patchbay/releases) - macOS and
-Linux. There is no Windows build for now; `npm run build` makes one from source.
+| Platform | Download |
+| --- | --- |
+| macOS, Apple Silicon | [patchbay_aarch64.dmg](https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_aarch64.dmg) |
+| macOS, Intel | [patchbay_x64.dmg](https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_x64.dmg) |
+| Debian / Ubuntu | [patchbay_amd64.deb](https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_amd64.deb) |
+| Linux, any | [patchbay_amd64.AppImage](https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_amd64.AppImage) |
 
-Or from a terminal, which lands in the same place and updates itself from then on:
+There is no Windows build for now; `npm run build` makes one from source. Every install
+updates itself from then on.
+
+Or from a terminal:
 
 ```sh
 # macOS, Apple Silicon
@@ -39,6 +74,9 @@ curl -fsSLo /tmp/patchbay.deb https://github.com/pyvnoaim/patchbay/releases/late
 # Linux, anything else
 mkdir -p ~/.local/bin && curl -fsSLo ~/.local/bin/patchbay https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_amd64.AppImage && chmod +x ~/.local/bin/patchbay && echo "installed: ~/.local/bin/patchbay"
 ```
+
+<details>
+<summary>First launch, requirements and platform notes</summary>
 
 The app isn't notarized, so a `.dmg` from the browser is refused on first launch: open
 it once, then System Settings → Privacy & Security → Open Anyway. The `curl` line above
@@ -56,6 +94,11 @@ Set-Service ssh-agent -StartupType Automatic; Start-Service ssh-agent; ssh-add
 The `.deb` wants Ubuntu 22.04 or newer, or anything else with `libwebkit2gtk-4.1`; the
 AppImage carries its own. "Open in Terminal" uses `$TERMINAL` if it is set, otherwise
 the first of gnome-terminal, konsole, alacritty, kitty, foot or xterm it finds.
+
+</details>
+
+Already have a list? Settings → Import reads `~/.ssh/config` or a Royal TS `.rtsz`
+document and shows what it found with tick boxes. Nothing is written until you tick.
 
 ## Config
 
