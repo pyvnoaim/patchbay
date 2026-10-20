@@ -31,6 +31,8 @@ src-tauri/src/
   clipboard.rs     the CLIPRDR backend for rdp_session.rs
   drive.rs         the RDPDR drive for rdp_session.rs (unix only)
   keychain.rs      a remembered RDP password, in the OS keychain
+  hostkeys.rs      host keys the team has seen, beside the shared list
+  presence.rs      who has a session on which team device, with no server
   webext.rs        Bitwarden's extension over web tabs (macOS 15.4+)
   terminal.rs      opening the system terminal, per platform
 ui/                the window: classic scripts sharing one global scope, no bundler
@@ -66,7 +68,8 @@ The full list of non-obvious rules and the reasons behind them is in `CLAUDE.md`
 
 ## Releasing
 
-`npm run bump 0.1.0`, commit, tag `v0.1.0`, push the tag. CI builds every platform
-into a draft release; publishing the draft is the moment installed copies start
+`npm run bump 0.1.0`, commit it as `release 0.1.0` and push `main`; there is no tag
+to push. CI builds macOS and Linux into a draft release, installs each one, and
+publishes it once every leg has passed, which is the moment installed copies start
 offering the update. Release notes are the `## Unreleased` section of `CHANGELOG.md`,
 written for someone about to install.

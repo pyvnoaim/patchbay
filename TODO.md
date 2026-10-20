@@ -5,24 +5,22 @@ then) or when it's decided against (say why in the commit).
 
 ## Next: the paid version
 
-Written and parked in `git stash` as `paid: Lemon Squeezy licence ...`
-(`git stash list`, then `git stash pop`). Blocked on the store, in this order:
+Written and parked in `git stash` as `paid: team licence ...` (`git stash list`, then
+`git stash pop`). Free for one person; a team on a shared list needs a company licence,
+€249 a year, perpetual fallback, checked offline. Blocked on the store, in this order:
 
-1. Open a Lemon Squeezy store and a product with licence keys on, three activations
-   per key, no expiry.
-2. Put the store id and product id into `STORE_ID` / `PRODUCT_ID` in `licence.rs`.
-   At `0` every key is refused as "a different product".
-3. Pick the domain. `patchbay.dev` is a placeholder in `site/index.html` and in the
+1. Open a Lemon Squeezy store with the company licence as a yearly product. Licence
+   keys off: the licence is ours, signed by `npm run licence "Acme GmbH" 2027-10-20`
+   with `~/.tauri/patchbay-licence.key`, and sent by hand while orders are few.
+2. Pick the domain. `patchbay.dev` is a placeholder in `site/index.html` and in the
    Licence pane's note.
-4. Add the checkout link to the Licence pane, the site's Pricing band (now "Start the
-   trial" points at GitHub releases) and the README.
-5. Decide what happens to the public repo. The new LICENSE forbids copying the source,
-   and a public repo with the check in plain sight is a fork away from free.
-6. Activate a real key, deactivate it, let a trial run out with the clock moved
-   forward, then `npm run check`, `npm test`, push and release.
+3. Add the checkout link to the Licence pane, the site's Pricing band and the README.
+4. Have someone who knows licences read `LICENSE`. It is plain words, not a lawyer's.
+5. Sign a real licence, paste it on a shared list, check the sidebar line goes, then
+   `npm run check`, `npm test`, push and release.
 
-Everyone on 0.1.27 starts a 14-day trial the moment they update, so none of this
-ships half done.
+Later, if orders aren't few: a Lemon Squeezy webhook into a function that runs the same
+signing, so a licence arrives with the receipt.
 
 ## Ideas
 
