@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.40 - 2026-10-21
 
 - **Windows is back.** An installer again, `patchbay_x64-setup.exe`; SmartScreen asks once, because it is not signed.
 
