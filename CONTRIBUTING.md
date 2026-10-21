@@ -69,7 +69,7 @@ The full list of non-obvious rules and the reasons behind them is in `CLAUDE.md`
 ## Releasing
 
 `npm run bump 0.1.0`, commit it as `release 0.1.0` and push `main`; there is no tag
-to push. CI builds macOS and Linux into a draft release, installs each one, and
+to push. CI builds macOS, Windows and Linux into a draft release, installs each one, and
 publishes it once every leg has passed, which is the moment installed copies start
 offering the update. Release notes are the `## Unreleased` section of `CHANGELOG.md`,
 written for someone about to install.

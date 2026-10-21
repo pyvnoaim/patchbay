@@ -15,7 +15,7 @@
 <p align="center">
   <a href="https://github.com/pyvnoaim/patchbay/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/pyvnoaim/patchbay?label=release&color=3b82f6"></a>
   <a href="https://github.com/pyvnoaim/patchbay/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/pyvnoaim/patchbay/ci.yml?branch=main&label=ci"></a>
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-555">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-555">
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-PolyForm%20Perimeter-555"></a>
 </p>
 
@@ -60,11 +60,11 @@ it is. The window opens them as tabs under a folder tree. Your `ssh` agent and
 | --- | --- |
 | macOS, Apple Silicon | [patchbay_aarch64.dmg](https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_aarch64.dmg) |
 | macOS, Intel | [patchbay_x64.dmg](https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_x64.dmg) |
+| Windows | [patchbay_x64-setup.exe](https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_x64-setup.exe) |
 | Debian / Ubuntu | [patchbay_amd64.deb](https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_amd64.deb) |
 | Linux, any | [patchbay_amd64.AppImage](https://github.com/pyvnoaim/patchbay/releases/latest/download/patchbay_amd64.AppImage) |
 
-There is no Windows build for now; `npm run build` makes one from source. Every install
-updates itself from then on.
+Every install updates itself from then on.
 
 Or from a terminal:
 

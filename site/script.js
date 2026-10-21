@@ -701,8 +701,7 @@
   var menu = document.querySelector(".dlmenu");
   if (!menu) return;
   var ua = navigator.userAgent || "";
-  // No Windows build is released, so a Windows visitor keeps the releases page.
-  var os = /Mac/.test(ua) ? "mac" : /Linux|X11/.test(ua) ? "deb" : "";
+  var os = /Mac/.test(ua) ? "mac" : /Win/.test(ua) ? "win" : /Linux|X11/.test(ua) ? "deb" : "";
   if (!os) return;
 
   function macArch() {
