@@ -14,7 +14,8 @@ Written and parked in `git stash` as `paid: team licence ...` (`git stash list`,
    with `~/.tauri/patchbay-licence.key`, and sent by hand while orders are few.
 2. Pick the domain. `patchbay.dev` is a placeholder in `site/index.html` and in the
    Licence pane's note.
-3. Add the checkout link to the Licence pane, the site's Pricing band and the README.
+3. Add the checkout link to the Licence pane, the site's Buy button (marked `CHECKOUT`,
+   muted until then; the pricing is already live) and the README.
 4. Have someone who knows licences read `LICENSE`. It is plain words, not a lawyer's.
 5. Sign a real licence, paste it on a shared list, check the sidebar line goes, then
    `npm run check`, `npm test`, push and release.

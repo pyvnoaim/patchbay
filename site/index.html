@@ -56,7 +56,7 @@
           <a class="sm" href="#features">Features</a>
           <a class="sm" href="#team">Team</a>
           <a class="sm" href="#changelog">Changelog</a>
-          <a class="sm" href="#free">Free</a>
+          <a class="sm" href="#free">Pricing</a>
           <div class="dl">
             <a class="btn solid" href="https://github.com/pyvnoaim/patchbay/releases">Download</a>
             <div class="dlmenu">
@@ -1511,38 +1511,137 @@
     <section class="band raise split" id="free">
       <div class="wrap">
         <div class="body">
-          <h2>Free. The app and the shared list.</h2>
+          <h2>Free for you.<br />Paid for your team.</h2>
           <p class="lede">
-            Every protocol, every tab, and the shared list with them, on as many machines as you
-            like. Nobody counts your employees and nothing asks for a key.
+            Every protocol and every tab, free for one person at work or anywhere else. A team
+            sharing one list needs a company licence: €249 a year, any team size.
           </p>
-          <a class="btn line" href="https://polyformproject.org/licenses/perimeter/1.0.1">
+          <a class="btn line" href="https://github.com/pyvnoaim/patchbay/blob/main/LICENSE">
             Read the licence
           </a>
         </div>
-        <div class="sheet full">
-          <p class="hd screen">Small print</p>
-          <dl class="faq">
-            <div>
-              <dt>Which part is the paid one?</dt>
-              <dd>
-                Neither. The shared list is not a tier being held back, and there is nothing to buy
-                for a team.
-              </dd>
+        <div class="full">
+          <div class="prices">
+            <div class="price">
+              <h3>Personal</h3>
+              <p class="amount">Free</p>
+              <p class="per">for one person, at work or at home</p>
+              <ul>
+                <li>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M20 6 9 17l-5-5" /></svg
+                  ><span>Every protocol and every tab</span>
+                </li>
+                <li>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M20 6 9 17l-5-5" /></svg
+                  ><span>Your own devices, on as many machines as you like</span>
+                </li>
+                <li>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M20 6 9 17l-5-5" /></svg
+                  ><span>Every update</span>
+                </li>
+              </ul>
+              <a class="btn line" href="https://github.com/pyvnoaim/patchbay/releases">Download</a>
             </div>
-            <div>
-              <dt>Does it phone home?</dt>
-              <dd>No. The one request patchbay makes is the update check.</dd>
+            <div class="price team">
+              <h3>Team</h3>
+              <p class="amount">&euro;249</p>
+              <p class="per">a year per company, any team size</p>
+              <ul>
+                <li>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M20 6 9 17l-5-5" /></svg
+                  ><span>Everyone on one shared list</span>
+                </li>
+                <li>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M20 6 9 17l-5-5" /></svg
+                  ><span>One signed file beside the list, checked offline</span>
+                </li>
+                <li>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M20 6 9 17l-5-5" /></svg
+                  ><span>Stop paying and the version you have stays licensed</span>
+                </li>
+              </ul>
+              <!-- CHECKOUT: no store yet. Before release, give this an href to the real checkout
+                   and drop aria-disabled; never ship it pointing at a placeholder. -->
+              <a class="btn solid" aria-disabled="true">Buy a team licence</a>
             </div>
-            <div>
-              <dt>Is this open source?</dt>
-              <dd>
-                Public and yours to read, build and fork, but not OSI open source: PolyForm asks
-                that you don't sell a competing product built out of it. Using it at work is not
-                that.
-              </dd>
-            </div>
-          </dl>
+          </div>
+          <div class="sheet">
+            <p class="hd screen">Small print</p>
+            <dl class="faq">
+              <div>
+                <dt>What if we stop paying?</dt>
+                <dd>
+                  The version you have stays licensed for good. A licence covers every version
+                  released while it runs; only newer ones ask for a renewal.
+                </dd>
+              </div>
+              <div>
+                <dt>What happens without one?</dt>
+                <dd>Nothing stops. The shared list works the same, and the sidebar says so.</dd>
+              </div>
+              <div>
+                <dt>Does it phone home?</dt>
+                <dd>
+                  No. A licence is a signed file beside the shared list, checked on each machine.
+                  The one request patchbay makes is the update check.
+                </dd>
+              </div>
+            </dl>
+          </div>
         </div>
       </div>
     </section>
@@ -1615,7 +1714,7 @@
             <dt>Shell</dt>
             <dd>Tauri<small>the system webview, not Electron</small></dd>
             <dt>Licence</dt>
-            <dd>PolyForm<small>free, any size company</small></dd>
+            <dd>Free<small>for one person; €249 a year for a team</small></dd>
           </dl>
         </div>
       </div>

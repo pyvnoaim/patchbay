@@ -2196,12 +2196,92 @@ footer {
   margin-top: 1px;
 }
 
-/* ═══ free ═════════════════════════════════════════════════════════════════
-   Two cards priced against each other used to live here. There is one price now, so what
-   is left is the sentence and the three questions legal always asks, in a card beside it
-   rather than a row under a half-empty band. Scoped under `.sheet` because `.sheet dl`
-   and its mono terms belong to the specification card, and a bare `.faq` loses to them:
-   these are questions and sentences, not a table. */
+/* ═══ pricing ══════════════════════════════════════════════════════════════
+   Two prices side by side, and under them the three questions legal always asks. The team
+   card is the lit one because it is the only one with something to buy. The small print is
+   scoped under `.sheet` because `.sheet dl` and its mono terms belong to the specification
+   card, and a bare `.faq` loses to them: these are questions and sentences, not a table. */
+.prices {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.price {
+  display: flex;
+  flex-direction: column;
+  padding: 26px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--raise-2), var(--raise));
+  box-shadow:
+    inset 0 1px 0 var(--lift),
+    var(--shadow-2);
+}
+.price.team {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--line));
+  box-shadow:
+    inset 0 1px 0 var(--lift),
+    0 18px 48px -18px var(--glow),
+    var(--shadow-2);
+}
+.price h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-dim);
+}
+.price .amount {
+  margin: 14px 0 0;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 46px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+.price .per {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--ink-faint);
+}
+.price ul {
+  list-style: none;
+  margin: 22px 0 26px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14.5px;
+  color: var(--ink-dim);
+}
+.price li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.price li svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--accent);
+  transform: translateY(2px);
+}
+.price .btn {
+  margin-top: auto;
+  justify-content: center;
+}
+/* No store yet: the button is drawn, and goes nowhere until it has a real checkout. */
+.price .btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+@media (max-width: 620px) {
+  .prices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .sheet .faq {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
