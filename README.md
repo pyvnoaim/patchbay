@@ -30,7 +30,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/screenshot-dark.png">
-    <img src="assets/screenshot-light.png" alt="patchbay: folders of devices in the sidebar, and a database behind two jump hosts with its route drawn from this machine" width="880">
+    <img src="assets/screenshot-light.png" alt="patchbay: your devices and the team's in two vaults, and a database behind two jump hosts that a colleague is connected to, with its route drawn from this machine" width="880">
   </picture>
 </p>
 
