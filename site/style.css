@@ -236,6 +236,11 @@ footer {
 .band > .wrap {
   padding-block: var(--band);
 }
+/* The hero keeps its own bottom padding, because it clips and the window's shadow needs the room;
+   the gap is taken out of the section after it instead. */
+.hero + .band > .wrap {
+  padding-top: calc(var(--band) - clamp(40px, 5vw, 68px));
+}
 
 /* Every other section sits on the raised ground, faded at the edges so the change never reads as a seam. */
 .band.raise {
@@ -284,7 +289,7 @@ footer {
   flex-direction: column;
   gap: 26px;
 }
-.log li {
+.log > li {
   display: grid;
   /* Wide enough for a version, and for the word "Unreleased" when the notes come from
      the changelog file rather than a published release. */
@@ -306,6 +311,8 @@ footer {
 .log ul {
   margin: 0;
   padding-left: 17px;
+  /* Inside the releases' own list the default would be hollow circles. */
+  list-style: disc;
   color: var(--ink-dim);
   display: flex;
   flex-direction: column;
@@ -317,7 +324,7 @@ footer {
   color: var(--ink);
 }
 @media (max-width: 620px) {
-  .log li {
+  .log > li {
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
@@ -885,8 +892,8 @@ footer {
 }
 
 /* ═══ the window ═══════════════════════════════════════════════════════════
-   Rebuilt from ui/index.html and ui/app.css: 208 / auto / 272, each column with its own
-   46px strip. */
+   Rebuilt from ui/index.html and ui/app.css: the tree is the list, and the selected device
+   is described wide beside it. */
 .shot {
   overflow-x: auto;
   padding: 26px 44px 76px;
@@ -929,8 +936,8 @@ footer {
 }
 .win-grid {
   display: grid;
-  grid-template-columns: 208px minmax(0, 1fr) 272px;
-  height: 584px;
+  grid-template-columns: 228px minmax(0, 1fr);
+  height: 600px;
 }
 .w-i {
   width: 14px;
@@ -968,25 +975,65 @@ footer {
 .w-light:nth-child(3) {
   background: #28c840;
 }
-.w-tree {
+.w-list {
   flex: 1;
-  padding: 4px 8px 10px;
+  min-height: 0;
+  padding: 0 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
-.w-grp {
+.w-vault {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  column-gap: 8px;
+  align-items: center;
+  padding: 6px 8px 5px;
+}
+.w-vault:not(:first-child) {
+  margin-top: 6px;
+}
+.w-vault .badge {
+  grid-row: span 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--fill-hi);
+  color: var(--ink-dim);
+}
+.w-vault .badge svg {
+  width: 12px;
+  height: 12px;
+}
+.w-vault .vn {
+  font-weight: 600;
+}
+.w-vault .vs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.w-vault .vs .w-dot {
+  width: 5px;
+  height: 5px;
+}
+.w-grp,
+.w-jack {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 8px;
+  padding: 4px 8px 4px calc(8px + var(--d, 0) * 14px);
   border-radius: 6px;
-  color: var(--ink);
   white-space: nowrap;
+  min-width: 0;
 }
-.w-grp[data-cur] {
-  background: var(--fill);
-  font-weight: 550;
+.w-grp {
+  color: var(--ink);
 }
 .w-grp .tw {
   display: flex;
@@ -999,38 +1046,49 @@ footer {
 .w-grp .tw.open {
   transform: rotate(90deg);
 }
-.w-grp .tw.leaf {
-  visibility: hidden;
+.w-grp > .w-i {
+  color: var(--ink-dim);
 }
 .w-grp .label {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.w-grp .gi {
-  display: flex;
-  color: var(--ink-dim);
-}
-.w-grp[data-cur] .gi {
-  color: var(--accent);
-}
 .w-grp .live {
-  margin-left: auto;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: transparent;
   flex: none;
 }
 .w-grp .live.on {
-  background: var(--accent);
+  background: var(--up);
 }
 .w-grp .n {
-  margin-left: 7px;
-  min-width: 2ch;
-  text-align: right;
-  color: var(--ink-dim);
+  margin-left: auto;
+  color: var(--ink-faint);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+/* Under its folder's triangle, the way the app lines a device up with the folder's icon. */
+.w-jack {
+  padding-left: calc(26px + var(--d, 0) * 14px);
+  cursor: pointer;
+}
+.w-jack:not([data-sel]):hover {
+  background: var(--fill-hi);
+}
+.w-jack[data-sel] {
+  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
+  color: #fff;
+  box-shadow: 0 4px 14px -4px var(--glow);
+}
+/* Marks and the dock they raise, the same gesture the app has. */
+.w-jack[data-mark]:not([data-sel]) {
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
+}
+/* Hovering a marked row keeps the mark and brightens it. Ties with the plain hover rule on
+   specificity, so order decides. */
+.w-jack[data-mark]:not([data-sel]):hover {
+  background: color-mix(in oklab, var(--accent) 24%, transparent);
 }
 .w-foot {
   display: flex;
@@ -1048,19 +1106,74 @@ footer {
   margin-left: auto;
 }
 
-.w-mid {
+/* A device that doesn't answer is grey, not red: it is usually a VPN that is off. */
+.w-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--ink-faint);
+}
+.w-dot.up {
+  background: var(--up);
+}
+.w-dot.unknown {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--ink-faint);
+}
+/* The dot keeps its own colour on a selected row: it is the only state in the row.
+   A ring separates it from the accent underneath. */
+.w-jack[data-sel] .w-dot {
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.55);
+}
+.w-os {
+  display: flex;
+  flex: none;
+}
+.w-os svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+.w-jack[data-sel] .w-os {
+  color: rgba(255, 255, 255, 0.92) !important;
+}
+.w-name {
+  font-weight: 450;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Only a device that isn't ssh says what it is. */
+.w-web,
+.w-rdp {
+  display: flex;
+  flex: none;
+  margin-left: auto;
+  color: var(--ink-faint);
+}
+.w-web svg,
+.w-rdp svg {
+  width: 12px;
+  height: 12px;
+}
+.w-jack[data-sel] .w-web,
+.w-jack[data-sel] .w-rdp {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.w-main {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
   background: var(--fill);
   border-left: 1px solid var(--line);
-  border-right: 1px solid var(--line);
 }
 .w-tabs {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   height: 46px;
   flex: none;
   padding: 0 12px;
@@ -1097,22 +1210,9 @@ footer {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.w-tab.on {
-  background: var(--fill-hi);
-  color: var(--ink);
-  font-weight: 550;
-}
 .w-tab svg {
   width: 13px;
   height: 13px;
-}
-.w-tab .n {
-  color: var(--ink-faint);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.w-tab.on .n {
-  color: var(--ink-dim);
 }
 .w-tab .x {
   display: flex;
@@ -1164,34 +1264,10 @@ footer {
   color: var(--ink-dim);
 }
 
-.w-listwrap {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.w-list {
-  flex: 1;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-/* Marks and the dock they raise, the same gesture the app has. */
-.w-jack[data-mark]:not([data-sel]) {
-  background: color-mix(in oklab, var(--accent) 15%, transparent);
-}
-/* Hovering a marked row keeps the mark and brightens it. Ties with the plain hover rule on
-   specificity, so order decides. */
-.w-jack[data-mark]:not([data-sel]):hover {
-  background: color-mix(in oklab, var(--accent) 24%, transparent);
-}
 .w-dock {
   position: absolute;
   left: 50%;
-  bottom: 12px;
+  bottom: 14px;
   transform: translateX(-50%);
   z-index: 2;
   display: flex;
@@ -1250,123 +1326,7 @@ footer {
     transform: translate(-50%, 0);
   }
 }
-.w-jack {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 7px 9px;
-  border-radius: 7px;
-  white-space: nowrap;
-  min-width: 0;
-  cursor: pointer;
-}
-.w-jack:not([data-sel]):hover {
-  background: var(--fill-hi);
-}
-.w-jack[data-sel] {
-  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
-  color: #fff;
-  box-shadow: 0 4px 14px -4px var(--glow);
-}
-.w-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex: none;
-  background: var(--ink-faint);
-  align-self: center;
-}
-.w-dot.up {
-  background: var(--up);
-}
-.w-dot.down {
-  background: var(--down);
-}
-.w-dot.unknown {
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--ink-faint);
-}
-/* The dot keeps its own colour on a selected row: it is the only state in the row.
-   A ring separates it from the accent underneath. */
-.w-jack[data-sel] .w-dot {
-  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.55);
-}
-.w-jack[data-sel] .w-dot.unknown {
-  background: rgba(255, 255, 255, 0.25);
-}
-.w-os {
-  display: flex;
-  flex: none;
-  align-self: center;
-}
-.w-os svg {
-  width: 14px;
-  height: 14px;
-  display: block;
-}
-.w-jack[data-sel] .w-os {
-  color: rgba(255, 255, 255, 0.92) !important;
-}
-.w-name {
-  font-weight: 560;
-  letter-spacing: -0.005em;
-}
-.w-host {
-  color: var(--ink-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.w-jack[data-sel] .w-host {
-  color: rgba(255, 255, 255, 0.84);
-}
-.w-web {
-  display: flex;
-  flex: none;
-  align-self: center;
-  color: var(--ink-faint);
-  margin-left: 6px;
-}
-.w-web svg {
-  width: 12px;
-  height: 12px;
-}
-.w-jack[data-sel] .w-web {
-  color: rgba(255, 255, 255, 0.8);
-}
-.w-folders {
-  margin-left: auto;
-  display: flex;
-  gap: 4px;
-  flex: none;
-}
-.w-folder {
-  background: var(--fill-hi);
-  color: var(--ink-dim);
-  padding: 1px 7px;
-  border-radius: 20px;
-  font-size: 11px;
-}
-.w-jack[data-sel] .w-folder {
-  background: rgba(255, 255, 255, 0.22);
-  color: rgba(255, 255, 255, 0.86);
-}
 
-.w-detail {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  overflow: hidden;
-  background: var(--fill);
-}
-.w-dbar {
-  height: 46px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--line);
-}
 .w-btn {
   display: flex;
   align-items: center;
@@ -1379,6 +1339,7 @@ footer {
   color: var(--ink);
   font-weight: 550;
   font-size: 12.5px;
+  white-space: nowrap;
 }
 .w-btn.primary {
   background: linear-gradient(180deg, var(--accent), var(--accent-deep));
@@ -1393,45 +1354,84 @@ footer {
   height: 14px;
 }
 .w-dbody {
-  padding: 14px 16px 16px;
-  min-width: 0;
+  flex: 1;
+  min-height: 0;
+  padding: 20px 24px;
+}
+.w-dhead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.w-acts {
+  display: flex;
+  gap: 6px;
+  flex: none;
 }
 .w-dname {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 16px;
+  gap: 10px;
+  font-size: 19px;
   font-weight: 650;
   letter-spacing: -0.015em;
 }
-.w-dname svg {
-  width: 15px;
-  height: 15px;
+.w-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--fill-hi);
+  flex: none;
+}
+.w-tile svg {
+  width: 17px;
+  height: 17px;
 }
 .w-ddesc {
   color: var(--ink-dim);
-  margin-bottom: 14px;
+  margin: 2px 0 0 42px;
+}
+.w-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.w-card {
+  min-width: 0;
+  padding: 12px 14px 14px;
+  border-radius: 10px;
+  background: var(--fill);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.w-card.wide {
+  grid-column: 1 / -1;
+}
+.w-card dl {
+  margin: 0;
 }
 .w-sec {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10.5px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin: 14px 0 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  margin-bottom: 7px;
 }
 .w-sec svg {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
+  color: var(--ink-faint);
 }
 .w-row {
   display: flex;
   gap: 10px;
   padding: 2px 0;
-  font-size: 12.5px;
 }
 .w-row dt {
   color: var(--ink-faint);
@@ -1444,28 +1444,53 @@ footer {
   color: var(--ink);
   overflow-wrap: anywhere;
 }
+.w-reach {
+  overflow-wrap: anywhere;
+}
+.w-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+/* The route is a cable: a socket per stop, the lead between them, the target lit. */
 .w-route {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 12.5px;
 }
 .w-route > span {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 2px 7px;
+  position: relative;
+  flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 10px 0 0;
+  overflow-wrap: anywhere;
+}
+.w-route > span.last {
+  flex: 0 1 auto;
+  padding-right: 0;
 }
 .w-route .pip {
-  width: 6px;
-  height: 6px;
+  position: absolute;
+  top: 2px;
+  left: 0;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: var(--ink-faint);
-  flex: none;
+  box-shadow: inset 0 0 0 1.5px var(--ink-faint);
+}
+.w-route > span:not(.last)::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 14px;
+  right: 5px;
+  height: 1.5px;
+  background: var(--line);
 }
 .w-route .last .pip {
   background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 25%, transparent);
 }
 .w-route .arm {
   color: var(--ink-faint);
@@ -1503,15 +1528,192 @@ footer {
   width: 14px;
   height: 14px;
 }
-.w-btns {
-  display: flex;
-  gap: 6px;
-  margin-top: 10px;
+
+.w-tab[data-tab] {
+  cursor: pointer;
 }
-.w-btns .w-btn {
-  flex: none;
+.w-tab[data-tab]:not(.on):hover {
+  background: var(--fill);
+}
+.w-tab.on {
+  background: var(--fill-hi);
+  color: var(--ink);
+  font-weight: 550;
+}
+.w-onnow {
+  display: flex;
+  gap: 18px;
+}
+.w-onnow span {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.w-onnow b {
+  font-weight: 550;
+}
+.w-onnow small {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+#w-on[hidden] {
+  display: none;
+}
+
+.w-term,
+.w-desk {
+  flex: 1;
+  min-height: 0;
+}
+.w-term[hidden],
+.w-desk[hidden],
+.w-dbody[hidden] {
+  display: none;
+}
+.w-term {
+  padding: 14px 18px;
+  background: var(--ground);
+  overflow: hidden;
+}
+.w-term pre {
+  margin: 0;
+  font:
+    12px/1.6 ui-monospace,
+    SFMono-Regular,
+    "SF Mono",
+    Menlo,
+    monospace;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+.w-term .p {
+  color: var(--up);
+}
+.w-term .d {
+  color: var(--accent);
+}
+.w-term .o {
+  color: var(--ink-dim);
+}
+.w-term .cur {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.15em;
+  vertical-align: text-bottom;
+  background: var(--ink);
+  animation: w-blink 1.1s steps(1) infinite;
+}
+@keyframes w-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* The far end's own screen, so it is its colours in either theme, like the traffic lights. */
+.w-desk {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(120% 90% at 30% 20%, #1d5b8f, #0b2742 70%);
+  overflow: hidden;
+}
+.dk-win {
+  margin: 34px auto 0;
+  width: 78%;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f3f3f3;
+  color: #1b1b1b;
+  box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.6);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 11.5px;
+}
+.dk-title {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 12px;
+  background: #fff;
+  border-bottom: 1px solid #e3e3e3;
+}
+.dk-title span {
+  letter-spacing: 0.6em;
+  color: #666;
+}
+.dk-body {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  min-height: 250px;
+}
+.dk-side {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 0;
+  background: #2d2d30;
+  color: #d0d0d0;
+}
+.dk-side span {
+  padding: 5px 12px;
+}
+.dk-side .on {
+  background: #0a64ad;
+  color: #fff;
+}
+.dk-main {
+  padding: 16px 18px;
+}
+.dk-main b {
+  font-size: 15px;
+  font-weight: 400;
+  color: #0a64ad;
+}
+.dk-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 16px;
+}
+.dk-tiles span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+  background: #fff;
+  border-top: 3px solid #0a64ad;
+}
+.dk-tiles i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2e9d48;
+}
+.dk-tiles i.warn {
+  background: #d18a00;
+}
+.dk-tiles small {
+  color: #666;
+}
+.dk-bar {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   height: 30px;
-  padding: 0 14px;
+  padding: 0 12px;
+  background: rgba(10, 20, 35, 0.85);
+  color: #e6e6e6;
+  font:
+    11px "Segoe UI",
+    system-ui,
+    sans-serif;
+}
+.dk-bar i {
+  width: 14px;
+  height: 14px;
+  background:
+    linear-gradient(#4cc2ff, #4cc2ff) 0 0 / 6px 6px no-repeat,
+    linear-gradient(#4cc2ff, #4cc2ff) 8px 0 / 6px 6px no-repeat,
+    linear-gradient(#4cc2ff, #4cc2ff) 0 8px / 6px 6px no-repeat,
+    linear-gradient(#4cc2ff, #4cc2ff) 8px 8px / 6px 6px no-repeat;
 }
 
 /* ═══ the spec table ═══════════════════════════════════════════════════════ */
@@ -1717,73 +1919,177 @@ footer {
   max-width: var(--measure);
 }
 
-/* The team band: three machines, each keeping its own file, patched into one shared
-   list. Boxes, leads and sockets are all in the same SVG, so nothing is positioned
-   against another element's box and a resize can't pull them apart. */
-.tdiag {
-  display: block;
-  width: 100%;
-  height: auto;
+/* The team band: two copies of patchbay on one list, played a step at a time by script.js. */
+.duo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  font:
+    400 12.5px/1.45 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Inter,
+    system-ui,
+    sans-serif;
+  user-select: none;
 }
-.tdiag .tcap {
+.mini {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--ground-2);
+  box-shadow:
+    inset 0 1px 0 var(--lift),
+    var(--shadow-2);
+  overflow: hidden;
+}
+.mini-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+.mini-bar .w-light {
+  width: 9px;
+  height: 9px;
+}
+.mini-bar .who {
+  margin-left: auto;
+  color: var(--ink-dim);
+  font-weight: 550;
+}
+.mini-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px;
+  min-height: 196px;
+}
+.mg {
+  padding: 5px 8px 3px;
+  color: var(--ink-faint);
+  font-size: 11.5px;
+}
+.mj {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 18px;
+  border-radius: 6px;
+  transition: background 0.6s var(--ease);
+}
+.mj[hidden],
+.mini-note[hidden],
+.pres[hidden] {
+  display: none;
+}
+/* What just changed, lit for a moment the way the eye needs to find it. */
+.mj[data-flash] {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  animation: duo-in 0.45s var(--ease) both;
+}
+@keyframes duo-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.mj[data-live] {
+  background: var(--fill-hi);
+  font-weight: 550;
+}
+.pres {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 20px;
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 550;
+  animation: duo-in 0.45s var(--ease) both;
+}
+.mini-note {
+  margin: 0 8px 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--fill-hi);
+  color: var(--ink);
+  font-size: 12px;
+  animation: duo-in 0.45s var(--ease) both;
+}
+.mini-note.warn {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.share {
+  grid-column: 1 / -1;
+  order: 3;
+  justify-self: center;
+  position: relative;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: var(--raise);
   font-family: "IBM Plex Mono", monospace;
   font-size: 12px;
-  letter-spacing: 0.15em;
-  fill: var(--ink-faint);
+  color: var(--ink-faint);
+  transition:
+    color 0.4s var(--ease),
+    border-color 0.4s var(--ease);
 }
-.tdiag .tbox rect {
-  fill: var(--raise);
-  stroke: var(--line);
-  stroke-width: 1.5;
+.share[data-pulse] {
+  color: var(--accent);
+  border-color: var(--accent);
 }
-.tdiag .tlead path {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 2.5;
-  stroke-linecap: round;
-  opacity: 0.45;
+.duo-steps {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 16px;
 }
-.tdiag .tsock circle {
-  fill: var(--ground-2);
-  stroke: var(--ink-faint);
-  stroke-width: 3;
+.duo-cap {
+  margin: 0;
+  color: var(--ink-dim);
+  min-height: 3em;
 }
-.tdiag .tpin circle {
-  fill: var(--accent);
+.duo-dots {
+  display: flex;
+  gap: 6px;
+  flex: none;
 }
-.tdiag .tname text {
-  font-size: 20px;
-  font-weight: 600;
-  fill: var(--ink);
+.duo-dots button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--fill-hi);
+  color: var(--ink-faint);
+  font:
+    600 11px/24px "IBM Plex Mono",
+    monospace;
+  cursor: pointer;
 }
-.tdiag .tpath {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 14px;
-  fill: var(--ink-faint);
+.duo-dots button[aria-current] {
+  background: var(--accent);
+  color: #fff;
 }
-.tdiag .tcode text {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 15px;
-  fill: var(--ink-faint);
+.duo-dots button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
-.tdiag .tcode .c-tbl {
-  fill: var(--ink);
-  font-weight: 500;
-}
-.tdiag .tcode .c-str {
-  fill: var(--ink-dim);
-}
-.tdiag .thair {
-  stroke: var(--hair);
-  stroke-width: 1.5;
-}
-/* Scaled to a phone the labels stop being readable, so it scrolls instead of shrinking. */
-@media (max-width: 640px) {
-  #team .full {
-    overflow-x: auto;
+@media (max-width: 560px) {
+  .duo {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .tdiag {
-    min-width: 520px;
+  .duo-steps {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .share {
+    order: 0;
   }
 }
 .ln .c-cm {

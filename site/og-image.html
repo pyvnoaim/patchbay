@@ -56,42 +56,34 @@
         color: #f3f4f8;
       }
       h1 {
-        margin-top: 92px;
+        margin-top: 64px;
         font-family:
           "Bricolage Grotesque",
           -apple-system,
           sans-serif;
         font-weight: 800;
-        font-size: 76px;
+        font-size: 56px;
         line-height: 1.04;
         letter-spacing: -0.03em;
         color: #f3f4f8;
-        max-width: 920px;
+        max-width: 540px;
       }
       p {
         margin-top: 26px;
-        font-size: 25px;
+        font-size: 22px;
         line-height: 1.55;
         color: #9498a8;
-        max-width: 720px;
+        max-width: 470px;
       }
-      .tag {
+      /* The README's screenshot, run off the corner so it reads as the window, not a picture of it. */
+      .shot {
         position: absolute;
-        right: 84px;
-        bottom: 78px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-family: ui-monospace, "SF Mono", Menlo, monospace;
-        font-size: 17px;
-        color: #6d7280;
-      }
-      .tag i {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #3ecf8e;
-        box-shadow: 0 0 10px 1px #3ecf8e;
+        left: 640px;
+        top: 150px;
+        width: 760px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.8);
       }
     </style>
   </head>
@@ -116,10 +108,10 @@
       </div>
       <h1>Share the list,<br />not the passwords.</h1>
       <p>
-        A connection manager that is a TOML file and an ssh exec.<br />No Electron, no sync service,
-        no credential store.
+        One TOML file on the team drive, and the window that opens it. The keys stay in your ssh
+        agent.
       </p>
-      <div class="tag"><i></i>up &middot; ssh -J bastion,web root@10.0.0.5</div>
+      <img class="shot" src="../assets/screenshot-dark.png" alt="" />
     </div>
   </body>
 </html>

@@ -297,6 +297,20 @@
   });
 })();
 
+// The window is drawn at 1000px; narrower than that it shrinks whole instead of being cut off.
+// Without the script it scrolls sideways in its frame, which is the same window.
+(function () {
+  var win = document.querySelector(".win");
+  var shot = win && win.parentElement;
+  if (!shot || !("zoom" in win.style)) return;
+  function fit() {
+    var room = shot.clientWidth - parseFloat(getComputedStyle(shot).paddingLeft) * 2;
+    win.style.zoom = room < 1000 ? String(room / 1000) : "";
+  }
+  window.addEventListener("resize", fit);
+  fit();
+})();
+
 // Click a row and the detail pane follows. The one interaction in the mock window that is wired up.
 (function () {
   var list = document.querySelector(".w-list");
@@ -308,6 +322,70 @@
   var reach = document.getElementById("w-reach");
   var cmdtext = document.getElementById("w-cmdtext");
   if (!list || !dname) return;
+  var onnow = document.getElementById("w-on");
+  var dbody = document.getElementById("w-dbody");
+  var term = document.getElementById("w-term");
+  var desk = document.getElementById("w-desk");
+  var tabs = [].slice.call(document.querySelectorAll(".w-tab[data-tab]"));
+
+  // The tabs: a session to watch, a desktop to look at. A click in the tree is how you get
+  // back, as in the app.
+  function show(which) {
+    dbody.hidden = !!which;
+    term.hidden = which !== "term";
+    desk.hidden = which !== "desk";
+    tabs.forEach(function (t) {
+      t.classList.toggle("on", t.dataset.tab === which);
+    });
+    if (which === "term") play();
+  }
+  tabs.forEach(function (t) {
+    t.addEventListener("click", function () {
+      show(t.dataset.tab);
+    });
+  });
+
+  // Typed once, the first time the tab is opened; with reduced motion it is simply there.
+  var SESSION = [
+    ["uptime", " 09:14:02 up 41 days,  3:12,  2 users,  load average: 0.08, 0.11, 0.09"],
+    ["systemctl is-active nginx postgresql", "active\nactive"],
+    ["df -h /srv | tail -1", "/dev/sda2        98G   31G   63G  33% /srv"],
+  ];
+  var PROMPT = '<span class="p">deploy@web</span>:<span class="d">~</span>$ ';
+  var played = false;
+  function play() {
+    if (played) return;
+    played = true;
+    var pre = term.querySelector("pre");
+    var done = "";
+    var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var cursor = '<span class="cur"></span>';
+    if (still) {
+      SESSION.forEach(function (s) {
+        done += PROMPT + s[0] + "\n" + '<span class="o">' + s[1] + "</span>\n";
+      });
+      pre.innerHTML = done + PROMPT + cursor;
+      return;
+    }
+    var line = 0;
+    (function next() {
+      if (line === SESSION.length) {
+        pre.innerHTML = done + PROMPT + cursor;
+        return;
+      }
+      var cmd = SESSION[line][0],
+        at = 0;
+      (function type() {
+        pre.innerHTML = done + PROMPT + cmd.slice(0, at) + cursor;
+        if (at++ < cmd.length) return setTimeout(type, 38 + Math.random() * 50);
+        setTimeout(function () {
+          done += PROMPT + cmd + "\n" + '<span class="o">' + SESSION[line][1] + "</span>\n";
+          line++;
+          setTimeout(next, 500);
+        }, 260);
+      })();
+    })();
+  }
 
   function row(host, user, ...more) {
     var rows = [["host", host]];
@@ -346,6 +424,7 @@
       cmd: "ssh -J bastion.example:2222 deploy@10.0.0.4",
     },
     db: {
+      on: true,
       desc: "primary, replicas behind it",
       target: row("10.0.0.5", "root"),
       route: hops(["bastion.example:2222", "deploy@10.0.0.4"], "root@10.0.0.5"),
@@ -353,29 +432,13 @@
       reach: { ok: true, via: "bastion.example:2222", ms: 24 },
       cmd: "ssh -J bastion.example:2222,deploy@10.0.0.4 -L 5432:localhost:5432 root@10.0.0.5",
     },
-    "web-us": {
-      desc: "webserver, us",
-      target: row("10.1.0.4", "deploy"),
-      route: hops([], "deploy@10.1.0.4"),
-      fwd: null,
-      reach: { ok: true, via: "this machine", ms: 61 },
-      cmd: "ssh deploy@10.1.0.4",
-    },
-    "db-us": {
-      desc: "replica, us",
-      target: row("10.1.0.5", "root"),
-      route: hops([], "root@10.1.0.5"),
-      fwd: null,
-      reach: { down: true },
-      cmd: "ssh root@10.1.0.5",
-    },
     "staging-web": {
       desc: "staging",
-      target: row("10.2.0.4", "deploy"),
-      route: hops([], "deploy@10.2.0.4"),
+      target: row("10.0.0.60", "deploy"),
+      route: hops([], "deploy@10.0.0.60"),
       fwd: null,
       reach: { unknown: true },
-      cmd: "ssh deploy@10.2.0.4",
+      cmd: "ssh deploy@10.0.0.60",
     },
     nas: {
       desc: "Synology, backups land here",
@@ -429,7 +492,8 @@
 
   function reachHtml(r) {
     if (r.unknown) return '<span style="color:var(--ink-faint)">not probed yet</span>';
-    if (r.down) return '<span style="color:var(--down)">down</span> &middot; timed out';
+    if (r.down)
+      return '<span style="color:var(--ink-faint)">out of reach</span> &middot; timed out';
     return '<span style="color:var(--up)">up</span> &middot; ' + r.via + " &middot; " + r.ms + "ms";
   }
 
@@ -455,7 +519,7 @@
     }
     // Only the ones patchbay would actually open a shell on, the way the app counts.
     var ssh = marks.filter(function (r) {
-      return !r.querySelector(".w-web");
+      return !r.querySelector(".w-web, .w-rdp");
     }).length;
     dock.innerHTML =
       '<span class="count"><b>' +
@@ -513,8 +577,8 @@
     jack.setAttribute("data-sel", "");
 
     var os = jack.querySelector(".w-os");
-    dname.innerHTML = os.innerHTML.replace('class="w-i"', "") + name;
-    dname.querySelector("svg").style.color = os.style.color || "";
+    dname.innerHTML = '<span class="w-tile">' + os.innerHTML + "</span>" + name;
+    dname.firstChild.style.color = os.style.color || "";
     ddesc.textContent = d.desc;
     target.innerHTML = d.target;
     route.innerHTML = d.route;
@@ -527,6 +591,8 @@
         .join("");
     reach.innerHTML = reachHtml(d.reach);
     cmdtext.textContent = d.cmd;
+    onnow.hidden = !d.on;
+    show(null);
   });
 })();
 
@@ -690,7 +756,8 @@
     });
   }
 
-  // The shape the app parses: bullets that wrap, and `words` in backticks. Escaped first.
+  // The shape the app parses: bullets that wrap, `words` in backticks and **a lead** in
+  // bold. Escaped first, so neither can carry markup of its own.
   function bullets(body) {
     var items = [];
     (body || "").split("\n").forEach(function (raw) {
@@ -702,7 +769,13 @@
     });
     return items
       .map(function (t) {
-        return "<li>" + esc(t).replace(/`([^`]+)`/g, "<code>$1</code>") + "</li>";
+        return (
+          "<li>" +
+          esc(t)
+            .replace(/`([^`]+)`/g, "<code>$1</code>")
+            .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>") +
+          "</li>"
+        );
       })
       .join("");
   }
@@ -723,7 +796,10 @@
         at.body += line + "\n";
       }
     });
-    return out;
+    // An `## Unreleased` with nothing under it yet would spend one of the three rows.
+    return out.filter(function (r) {
+      return /^[-*] /m.test(r.body);
+    });
   }
 
   var when = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "long", year: "numeric" });
@@ -733,7 +809,7 @@
       .filter(function (r) {
         return !r.draft;
       })
-      .slice(0, 12);
+      .slice(0, 3);
     if (!rows.length) throw new Error("nothing published yet");
     list.innerHTML = rows
       .map(function (r) {
@@ -760,7 +836,7 @@
       if (!entries[0].isIntersecting || asked) return;
       asked = true;
       self.disconnect();
-      fetch("https://api.github.com/repos/pyvnoaim/patchbay/releases?per_page=12")
+      fetch("https://api.github.com/repos/pyvnoaim/patchbay/releases?per_page=4")
         .then(function (r) {
           return r.ok ? r.json() : Promise.reject(r.status);
         })
@@ -1058,4 +1134,106 @@
     },
     { threshold: 0.25 },
   ).observe(panel);
+})();
+
+// The team band: one list, two copies of patchbay. Each step is drawn from scratch by apply(),
+// so a click on any step lands in the same state the loop would have reached.
+(function () {
+  var duo = document.getElementById("duo");
+  var cap = document.getElementById("duo-cap");
+  if (!duo || !cap || !window.IntersectionObserver) return;
+  var you = duo.querySelector('[data-who="you"]');
+  var anna = duo.querySelector('[data-who="anna"]');
+  var share = duo.querySelector(".share");
+
+  var STEPS = [
+    "Two copies of patchbay, one list on the team drive.",
+    "Anna adds acme-db to the team's list.",
+    "It turns up in your window on its own. Nobody pressed sync.",
+    "She connects to bastion, and your list says she is on it.",
+    "You both edit gateway. Hers was saved first, so yours is refused once instead of quietly replacing it.",
+  ];
+
+  function jack(win, k) {
+    return win.querySelector('[data-k="' + k + '"]');
+  }
+  function note(win, text, warn) {
+    var n = win.querySelector(".mini-note");
+    n.hidden = !text;
+    n.textContent = text || "";
+    n.classList.toggle("warn", !!warn);
+  }
+  function flash(el, on) {
+    if (on) el.setAttribute("data-flash", "");
+    else el.removeAttribute("data-flash");
+  }
+
+  function apply(n) {
+    jack(anna, "acme-db").hidden = n < 1;
+    flash(jack(anna, "acme-db"), n === 1);
+    jack(you, "acme-db").hidden = n < 2;
+    flash(jack(you, "acme-db"), n === 2);
+    share.toggleAttribute("data-pulse", n === 1 || n === 2);
+    jack(anna, "bastion").toggleAttribute("data-live", n >= 3);
+    jack(you, "bastion").querySelector(".pres").hidden = n < 3;
+    var hers = jack(anna, "bastion").querySelector(".pres");
+    hers.textContent = "session open";
+    hers.hidden = n < 3;
+    note(anna, n === 4 ? "Saved gateway." : "");
+    note(
+      you,
+      n === 4
+        ? '"gateway" was changed by someone else since you opened it. Save again to replace it.'
+        : "",
+      true,
+    );
+    cap.textContent = STEPS[n];
+    dots.forEach(function (d, i) {
+      if (i === n) d.setAttribute("aria-current", "step");
+      else d.removeAttribute("aria-current");
+    });
+  }
+
+  var box = document.createElement("div");
+  box.className = "duo-dots";
+  var dots = STEPS.map(function (_, i) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = String(i + 1);
+    b.setAttribute("aria-label", "Step " + (i + 1));
+    b.addEventListener("click", function () {
+      stop();
+      at = i;
+      apply(i);
+    });
+    box.appendChild(b);
+    return b;
+  });
+  cap.parentNode.insertBefore(box, cap);
+
+  // Plays only while on screen, and not at all with reduced motion: the numbers still work.
+  var at = 0,
+    timer = null;
+  function stop() {
+    clearInterval(timer);
+    timer = null;
+  }
+  function play() {
+    if (timer || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    timer = setInterval(function () {
+      at = (at + 1) % STEPS.length;
+      apply(at);
+    }, 3400);
+  }
+  var touched = false;
+  dots.forEach(function (d) {
+    d.addEventListener("click", function () {
+      touched = true;
+    });
+  });
+  new IntersectionObserver(function (entries) {
+    if (entries[0].isIntersecting && !touched) play();
+    else stop();
+  }).observe(duo);
+  apply(0);
 })();
