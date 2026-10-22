@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.52 - 2026-10-22
 
 - The remote desktop sign-in no longer repeats your saved username in a wide bar under the field; other saved accounts show as small chips.
 
