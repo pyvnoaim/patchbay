@@ -673,6 +673,9 @@ body:not([data-os="macos"]) #side .drag {
   font-size: 12px;
   white-space: nowrap;
 }
+#tabs .tab.lifted {
+  opacity: 0.6;
+}
 body.dragging,
 body.dragging * {
   cursor: grabbing !important;

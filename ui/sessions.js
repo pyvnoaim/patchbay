@@ -1170,6 +1170,63 @@ tabsEl.addEventListener("click", (e) => {
   renderTabs();
 });
 
+// Drag a tab along the strip to reorder it. Pointer events for dragFrom's reason. The
+// chip moves in the DOM as it goes and the drop rewrites `sessions` in that order,
+// which is the order every render, ⌘[ / ⌘] and the reopened tabs read.
+let tabDragged = false; // the click that ends a drag is not a click
+tabsEl.addEventListener("pointerdown", (e) => {
+  const chip = e.target.closest(".tab");
+  if (!chip || e.button !== 0 || e.target.closest(".x, button")) return;
+  const x0 = e.clientX;
+  let lifted = false;
+  const onMove = (ev) => {
+    if (!lifted) {
+      if (Math.abs(ev.clientX - x0) < 6) return;
+      lifted = true;
+      tabsEl.setPointerCapture(e.pointerId);
+      document.body.classList.add("dragging");
+      chip.classList.add("lifted");
+    }
+    // The strip's middle, so a pointer drifting up or down still finds a tab.
+    const r = tabsEl.getBoundingClientRect();
+    const over = document.elementFromPoint(ev.clientX, r.top + r.height / 2)?.closest(".tab");
+    if (!over || over === chip) return;
+    const b = over.getBoundingClientRect();
+    if (ev.clientX < b.left + b.width / 2) over.before(chip);
+    else over.after(chip);
+  };
+  const end = () => {
+    tabsEl.removeEventListener("pointermove", onMove);
+    tabsEl.removeEventListener("pointerup", end);
+    tabsEl.removeEventListener("lostpointercapture", end);
+    if (!lifted) return;
+    document.body.classList.remove("dragging");
+    tabDragged = true;
+    setTimeout(() => (tabDragged = false), 0);
+    const was = [...sessions.values()];
+    const order = [...tabsEl.querySelectorAll(".tab")].flatMap((t) =>
+      was.filter((s) => (t.dataset.gid ? s.bcast?.gid === +t.dataset.gid : s.id === +t.dataset.id)),
+    );
+    // A session opened mid-drag has no chip in the order yet; it goes last.
+    for (const s of was) if (!order.includes(s)) order.push(s);
+    sessions.clear();
+    for (const s of order) sessions.set(s.id, s);
+    renderTabs();
+  };
+  tabsEl.addEventListener("pointermove", onMove);
+  tabsEl.addEventListener("pointerup", end);
+  tabsEl.addEventListener("lostpointercapture", end);
+});
+tabsEl.addEventListener(
+  "click",
+  (e) => {
+    if (!tabDragged) return;
+    tabDragged = false;
+    e.stopImmediatePropagation();
+  },
+  true,
+);
+
 function toggleBroadcast(gid) {
   const s = [...sessions.values()].find((x) => x.bcast?.gid === gid);
   if (!s) return;
