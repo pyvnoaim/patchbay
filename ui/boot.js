@@ -282,7 +282,8 @@ document.addEventListener("keydown", (e) => {
   }
   // An open context menu is modal like a sheet.
   if (!ctxEl.hidden) {
-    const rows = [...ctxEl.querySelectorAll(".ctx-item")];
+    // Only what is showing: a submenu's rows join while its row is hovered or on.
+    const rows = [...ctxEl.querySelectorAll(".ctx-item")].filter((r) => r.offsetParent);
     const at = rows.findIndex((r) => r.classList.contains("on"));
     if (e.key === "Escape") {
       e.preventDefault();

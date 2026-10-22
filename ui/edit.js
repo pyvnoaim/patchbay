@@ -14,15 +14,7 @@ function showCtx(x, y, head, items, os) {
   ctxEl.innerHTML =
     (head
       ? `<div class="ctx-head">${mark}<span class="ctx-name">${esc(head)}</span></div><div class="ctx-sep"></div>`
-      : "") +
-    items
-      .map((it, i) => {
-        if (it === "-") return `<div class="ctx-sep"></div>`;
-        actions.set(String(i), it.run);
-        const key = it.key ? `<kbd>${esc(it.key)}</kbd>` : "";
-        return `<div class="ctx-item ${it.danger ? "danger" : ""}" data-a="${i}">${icon(it.icon)}${esc(it.label)}${key}</div>`;
-      })
-      .join("");
+      : "") + ctxRows(items, "");
   // Asked before the menu is up, because once it is the page counts as covered.
   const web = webViewRect();
   ctxEl.hidden = false;
@@ -34,6 +26,31 @@ function showCtx(x, y, head, items, os) {
   if (web && x < web.left) left = Math.max(4, Math.min(left, web.left - r.width - 4));
   ctxEl.style.left = `${left}px`;
   ctxEl.style.top = `${Math.min(y, innerHeight - r.height - 8)}px`;
+  // A submenu flies out to the right unless that runs off the window or over a web tab,
+  // and is lifted to stay above the bottom edge. Measured here because hidden it has no box.
+  for (const sub of ctxEl.querySelectorAll(".ctx-sub")) {
+    sub.style.display = "block";
+    const s = sub.getBoundingClientRect();
+    const item = sub.parentElement.getBoundingClientRect();
+    sub.style.display = "";
+    const edge = web && x < web.left ? web.left : innerWidth;
+    sub.classList.toggle("flip", item.right + s.width > edge - 4);
+    sub.style.top = `${Math.min(-6, innerHeight - 8 - item.top - s.height)}px`;
+  }
+}
+function ctxRows(items, at) {
+  return items
+    .map((it, i) => {
+      if (it === "-") return `<div class="ctx-sep"></div>`;
+      const id = at + i;
+      if (it.sub) {
+        return `<div class="ctx-item has-sub">${icon(it.icon)}${esc(it.label)}<span class="ctx-more">${icon("chevron-right")}</span><div class="ctx-sub">${ctxRows(it.sub, `${id}.`)}</div></div>`;
+      }
+      actions.set(id, it.run);
+      const key = it.key ? `<kbd>${esc(it.key)}</kbd>` : "";
+      return `<div class="ctx-item ${it.danger ? "danger" : ""}" data-a="${id}">${icon(it.icon)}${esc(it.label)}${key}</div>`;
+    })
+    .join("");
 }
 function copyItems(j) {
   const copy = (text) => () => navigator.clipboard.writeText(text).catch(alertish);
@@ -59,6 +76,7 @@ ctxEl.addEventListener("mouseover", () => {
 
 ctxEl.addEventListener("click", (e) => {
   const a = e.target.closest("[data-a]")?.dataset.a;
+  if (a === undefined && e.target.closest(".has-sub")) return;
   hideCtx();
   actions.get(a)?.();
 });
@@ -176,12 +194,7 @@ document.addEventListener("contextmenu", (e) => {
               { icon: "key-round", label: "Install my key", run: () => openSession(j.name, "key") },
             ]
           : []),
-        // ponytail: drills in rather than flying out, a hover submenu when there is a second one
-        {
-          icon: "copy",
-          label: "Copy…",
-          run: () => showCtx(e.clientX, e.clientY, `Copy from ${j.label}`, copyItems(j)),
-        },
+        { icon: "copy", label: "Copy", sub: copyItems(j) },
         "-",
         { icon: "plug", label: "Ping", run: () => openSession(j.name, "ping") },
         { icon: "waypoints", label: "Trace route", run: () => openSession(j.name, "trace") },
