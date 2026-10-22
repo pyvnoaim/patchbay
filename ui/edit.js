@@ -35,6 +35,19 @@ function showCtx(x, y, head, items, os) {
   ctxEl.style.left = `${left}px`;
   ctxEl.style.top = `${Math.min(y, innerHeight - r.height - 8)}px`;
 }
+function copyItems(j) {
+  const copy = (text) => () => navigator.clipboard.writeText(text).catch(alertish);
+  return [
+    ...(j.host ? [{ icon: "copy", label: j.host, run: copy(j.host) }] : []),
+    ...(j.user
+      ? [{ icon: "copy", label: `${j.user}@${j.host}`, run: copy(`${j.user}@${j.host}`) }]
+      : []),
+    ...(j.url ? [{ icon: "copy", label: "Web UI address", run: copy(j.url) }] : []),
+    ...(j.mac ? [{ icon: "copy", label: j.mac, run: copy(j.mac) }] : []),
+    { icon: "copy", label: "ssh command", run: copy(j.command) },
+  ];
+}
+
 const hideCtx = () => {
   ctxEl.hidden = true;
 };
@@ -163,10 +176,11 @@ document.addEventListener("contextmenu", (e) => {
               { icon: "key-round", label: "Install my key", run: () => openSession(j.name, "key") },
             ]
           : []),
+        // ponytail: drills in rather than flying out, a hover submenu when there is a second one
         {
           icon: "copy",
-          label: "Copy ssh command",
-          run: () => navigator.clipboard.writeText(j.command).catch(alertish),
+          label: "Copy…",
+          run: () => showCtx(e.clientX, e.clientY, `Copy from ${j.label}`, copyItems(j)),
         },
         "-",
         { icon: "plug", label: "Ping", run: () => openSession(j.name, "ping") },
