@@ -503,8 +503,11 @@ function reachSaid(js) {
 function tileHtml(t) {
   const n = t.js.length;
   const [dot, say, up] = reachSaid(t.js);
+  const tint = t.name && osColor(t.js[0].os);
   return `<button type="button" class="tile" ${t.name ? `data-name="${esc(t.name)}"` : idAttrs(t.id)}>
-    <span class="tile-top"><b>${esc(t.label)}</b><small>${esc(t.kind)}</small></span>
+    <span class="tile-top"><span class="os"${tint ? ` style="color:${esc(tint)}"` : ""}>${
+      t.name ? osIcon(t.js[0].os) : icon("folder")
+    }</span><b>${esc(t.label)}</b><small>${esc(t.kind)}</small></span>
     ${n > 1 && prefs.probe !== false ? `<span class="meter"><i style="width:${(up / n) * 100}%"></i></span>` : ""}
     <span class="tile-say"><i class="dot ${dot}"></i>${say}</span>
   </button>`;

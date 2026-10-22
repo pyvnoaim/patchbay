@@ -2372,7 +2372,7 @@ button.danger:hover {
 }
 .tile-top {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }
@@ -2391,6 +2391,11 @@ button.danger:hover {
 }
 .tile-top small {
   flex: none;
+}
+.tile-top .os {
+  display: flex;
+  flex: none;
+  color: var(--fg-dim);
 }
 .tile-say {
   display: flex;

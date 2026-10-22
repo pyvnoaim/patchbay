@@ -8,6 +8,10 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- The devices and folders in a folder's overview carry their icon, the same one the sidebar shows.
+
 ## 0.1.48 - 2026-10-22
 
 - A folder's pane sets the user, port, key and jump host for every device in it, and its right-click menu goes straight there.
