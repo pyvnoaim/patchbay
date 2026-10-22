@@ -191,6 +191,8 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
+    # A mirror that stops answering hangs apt-get update for GitHub's six-hour default.
+    timeout-minutes: 15
     # A draft is invisible to a token that can't write to the repo.
     permissions:
       contents: write
