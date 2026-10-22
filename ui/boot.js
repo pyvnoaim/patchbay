@@ -41,12 +41,6 @@ function devClick(e, row) {
 
 treeEl.addEventListener("click", (e) => {
   if (e.target.closest("[data-retry]")) return load();
-  // A one-device folder is a device row everywhere but on its triangle.
-  const solo = e.target.closest(".solo .twist");
-  if (solo) {
-    toggleGroup(gkey(idOf(solo.parentElement)));
-    return render();
-  }
   const dev = e.target.closest(".jack[data-i]");
   if (dev) return devClick(e, dev);
   const el = e.target.closest(".group");

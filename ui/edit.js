@@ -192,25 +192,6 @@ document.addEventListener("contextmenu", (e) => {
         { icon: "folder-input", label: "Move to folder…", run: () => moveAsked([j]) },
         ...vaultMoves([j]),
         { icon: "trash-2", label: "Delete", key: "⌫", danger: true, run: () => removeJack(j) },
-        // A folder drawn as its one device is still a folder to rename or remove.
-        ...(jackRow.classList.contains("solo")
-          ? [
-              "-",
-              // Its note: the row itself opens the device.
-              {
-                icon: "folder-open",
-                label: "Folder details",
-                run: () => pickGroup(idOf(jackRow), false),
-              },
-              { icon: "pencil", label: "Rename folder…", run: () => renameGroup(idOf(jackRow)) },
-              {
-                icon: "trash-2",
-                label: "Delete folder",
-                danger: true,
-                run: () => removeGroup(idOf(jackRow)),
-              },
-            ]
-          : []),
       ],
       j.os ?? null,
     );

@@ -81,12 +81,6 @@ function renderTree() {
       for (const node of [...level.values()].sort((a, b) => collate(a.name, b.name))) {
         const id = { path: node.path, vault };
         const here = js.filter((j) => j.folders.some((f) => normPath(f) === node.path));
-        // A folder that is one device: opening it would cost a click for one row. Its
-        // triangle still unfolds it, and then it is drawn like any other folder.
-        if (!node.children.size && here.length === 1 && !expanded.has(gkey(id))) {
-          rows.push(soloRow(node, id, depth, here[0], place(here[0], id), live));
-          continue;
-        }
         rows.push(row(node, depth, live, id));
         if (!expanded.has(gkey(id))) continue;
         walk(node.children, depth + 1);
@@ -207,20 +201,6 @@ function devRow(j, i, depth, live, id) {
       tint ? ` style="color:${esc(tint)}"` : ""
     }>${osIcon(j.os)}</span>
     <span class="label">${esc(j.label)}</span>${devTail(j, live)}
-  </div>`;
-}
-
-// The folder and its one device as a single row: it selects and opens the device, and
-// still takes a drop and a right-click as the folder it is. Named for the device, since
-// that is what a click gives you; the folder's name is in the tooltip, and it would
-// push the device's off the end of a narrow sidebar anyway.
-function soloRow(node, id, depth, j, i, live) {
-  return `<div class="group jack dev solo" data-i="${i}" ${idAttrs(id)} data-group="1"
-       data-has-kids="false" ${indent(depth)}>
-    <span class="twist">${icon("chevron-right")}</span>
-    <span class="gi">${icon("folder")}</span>
-    <span class="label" data-tip="${esc(`The only device in ${node.name}`)}">${esc(j.label)}</span>
-    <span class="dot ${dotState(j.name)}"></span>${devTail(j, live)}
   </div>`;
 }
 
@@ -448,7 +428,7 @@ const tallyOf = (js) => {
 };
 
 // What is directly in the folder being looked at: its folders, each with how much of it
-// answers, then its own devices. A folder that is one device is that device, as in the tree.
+// answers, then its own devices.
 function groupTiles(members) {
   const path = group?.path ?? null;
   const kids = new Map();
@@ -474,11 +454,12 @@ function groupTiles(members) {
   return [
     ...[...kids.values()]
       .sort((a, b) => collate(a.name, b.name))
-      .map((k) =>
-        k.js.size === 1
-          ? dev([...k.js][0])
-          : { js: [...k.js], id: k.id, label: k.name, kind: `${k.js.size} devices` },
-      ),
+      .map((k) => ({
+        js: [...k.js],
+        id: k.id,
+        label: k.name,
+        kind: `${k.js.size} device${k.js.size === 1 ? "" : "s"}`,
+      })),
     ...direct.map(dev),
   ];
 }
@@ -934,7 +915,7 @@ function paintRows() {
     el.setAttribute("aria-selected", detailMode === "jack" && +el.dataset.i === sel);
     el.classList.toggle("marked", marked.has(j?.name));
   }
-  for (const el of treeEl.querySelectorAll(".group:not(.solo)")) {
+  for (const el of treeEl.querySelectorAll(".group")) {
     const k = gkey(idOf(el));
     el.setAttribute("aria-current", detailMode === "group" && !!group && k === gkey(group));
     el.classList.toggle("marked", markedFolders.has(k));
@@ -1033,7 +1014,7 @@ function markFolder(id) {
 }
 function markFolderRange(id) {
   marked.clear();
-  const rows = [...treeEl.querySelectorAll('.group[data-group="1"]:not(.vault):not(.solo)')]
+  const rows = [...treeEl.querySelectorAll('.group[data-group="1"]:not(.vault)')]
     .map(idOf)
     .filter((r) => r.vault === id.vault);
   const keys = rows.map(gkey);
@@ -1076,7 +1057,7 @@ function stepTree(d) {
     if (d < 0 && group) pickGroup(group, false);
     return;
   }
-  const rows = [...treeEl.querySelectorAll(".group:not(.solo)")];
+  const rows = [...treeEl.querySelectorAll(".group")];
   const at = rows.findIndex((r) => r.getAttribute("aria-current") === "true");
   const cur = rows[at];
   const id = cur ? idOf(cur) : null;
