@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.46 - 2026-10-22
 
 - A web tab that is slow to load, like a NAS waking up, says it is opening instead of showing a blank white pane.
 - Showing who is connected no longer leaves a file in a synced share's bin every time patchbay quits.
