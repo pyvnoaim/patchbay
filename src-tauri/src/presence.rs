@@ -54,12 +54,15 @@ fn me() -> String {
     .clone()
 }
 
+/// One name per account and machine, kept for good: single-instance means one copy per
+/// machine, and a file deleted on a synced share goes to its bin (Google Drive's shows
+/// in Finder's), so a name with the pid in it left one there every run.
 fn my_file(dir: &std::path::Path) -> PathBuf {
     let safe: String = me()
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
-    dir.join(format!("{safe}-{}", std::process::id()))
+    dir.join(safe)
 }
 
 /// The file's text: who, a number that moves with every write, then a device per line.
@@ -125,15 +128,18 @@ pub fn set(names: &[String]) {
 }
 
 /// Called with no sessions left, and on exit so a closed window is not "connected" for
-/// another two minutes. Nothing is asked of the share unless a file was written, and
-/// then only for a moment: a share that went away must not hold the window open.
+/// another two minutes. The file is emptied of devices rather than removed, which
+/// `read` takes as nobody, so nothing lands in a sync client's bin. Nothing is asked of
+/// the share unless a file was written, and then only for a moment: a share that went
+/// away must not hold the window open.
 pub fn clear() {
     let Some((file, _)) = SAID.lock().unwrap().take() else {
         return;
     };
     let (tx, rx) = std::sync::mpsc::channel();
+    let text = written(&me(), BEATS.fetch_add(1, Relaxed), &[]);
     std::thread::spawn(move || {
-        let _ = std::fs::remove_file(file);
+        let _ = std::fs::write(file, text);
         let _ = tx.send(());
     });
     let _ = rx.recv_timeout(Duration::from_secs(1));
