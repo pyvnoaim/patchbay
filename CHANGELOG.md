@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.49 - 2026-10-22
 
 - The devices and folders in a folder's overview carry their icon, the same one the sidebar shows.
 
