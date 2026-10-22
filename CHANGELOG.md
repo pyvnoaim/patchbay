@@ -8,6 +8,13 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Trust it now works for a device whose certificate has expired. Until now the tab stayed blank however often you trusted it.
+- The trust question shows the certificate's name, issuer, expiry and fingerprint as tidy rows, and an expired one in red.
+- A web tab that is still loading shows the device and its address in the middle of the pane, not a line of text in the corner.
+- Copy on a device's menu opens its submenu when you hover over it.
+
 ## 0.1.50 - 2026-10-22
 
 - A folder with one device in it shows as a folder, in the sidebar and the overview, so its name is no longer hidden behind the device's.

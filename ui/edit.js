@@ -376,6 +376,7 @@ function ask(
 ) {
   const confirming = value === null;
   $("ask-title").textContent = title;
+  $("ask-facts").hidden = true;
   askBody.hidden = confirming;
   askInput.type = type;
   askInput.value = confirming ? "" : value;
@@ -403,6 +404,16 @@ function ask(
     askInput.select();
   }
   return new Promise((res) => (askResolve = res));
+}
+// A yes/no with rows to read first: [label, value, extra class] each.
+function askFacts(title, note, rows, okLabel) {
+  const answer = ask(title, null, okLabel);
+  const facts = $("ask-facts");
+  facts.innerHTML =
+    (note ? `<p class="ask-note">${esc(note)}</p>` : "") +
+    rows.map(([k, v, cls]) => `<dt>${esc(k)}</dt><dd class="${cls ?? ""}">${esc(v)}</dd>`).join("");
+  facts.hidden = false;
+  return answer;
 }
 function closeAsk(v) {
   askWrap.hidden = true;

@@ -657,6 +657,9 @@ function showWebFailure(s) {
   placeWebViews();
 }
 
+// "EMAIL=it@x,CN=nas,OU=IT,..." reads as "nas"; a certificate without one reads whole.
+const commonName = (dn) => /(?:^|,)\s*CN=([^,]+)/.exec(dn)?.[1] ?? dn;
+
 termsEl.addEventListener("click", async (e) => {
   const open = e.target.closest("[data-web-browser]");
   if (open) return invoke("open_url", { name: open.dataset.webBrowser }).catch(alertish);
@@ -678,12 +681,22 @@ termsEl.addEventListener("click", async (e) => {
       // answer than the one certificate the page is serving today.
       const scope = c.ca
         ? `This is the device's own signing certificate, not the one it is serving ` +
-          `today - trusting it covers the certificates it issues for this device.\n\n`
-        : "";
-      const ok = await ask(
-        `Trust this certificate?\n\n${scope}${c.subject}\nissued by ${c.issuer}\n` +
-          `expires ${c.expires}\nSHA-256 ${c.fingerprint}`,
-        null,
+          `today - trusting it covers the certificates it issues for this device.`
+        : null;
+      const ends = new Date(c.expires);
+      const expired = ends < new Date();
+      const ok = await askFacts(
+        `Trust ${commonName(c.subject)}?`,
+        scope,
+        [
+          ["Issued by", commonName(c.issuer)],
+          [
+            expired ? "Expired" : "Expires",
+            isNaN(ends) ? c.expires : ends.toLocaleDateString(),
+            expired ? "bad" : "",
+          ],
+          ["SHA-256", c.fingerprint, "mono"],
+        ],
         "Trust it",
       );
       if (!ok) return;
@@ -1023,7 +1036,8 @@ async function openWebSession(name) {
   termsEl.append(host);
 
   const s = { id, name, kind: "web", key, host, dead: false, loaded: false, unlisten: [] };
-  host.innerHTML = `<p class="loading">Opening ${esc(name)}…</p>`;
+  host.innerHTML = `<div class="webwait">${icon("globe")}<b>${esc(labelOf(name))}</b>
+    <span>${esc(key.slice(`web:${name}:`.length))}</span></div>`;
   sessions.set(id, s);
   activeId = id;
   showTab();

@@ -606,9 +606,11 @@ pub async fn web_trust_cert(url: String) -> Result<(), String> {
 /// Hand the certificate to macOS the way the browser's "Always trust" does. `security`
 /// raises the system's own password prompt; we never write trust settings ourselves.
 /// `-s <host>` scopes the trust to this device, so a CA certificate handed out by an
-/// appliance never becomes a trusted root for everything. `-e hostnameMismatch` is
-/// the error being forgiven: an appliance reached by IP has a certificate naming
-/// something else. The result type has to match the certificate: macOS takes
+/// appliance never becomes a trusted root for everything. Two errors are forgiven, one
+/// `-e` each (macOS keeps them as two constraints): `hostnameMismatch`, because an
+/// appliance reached by IP has a certificate naming something else, and `certExpired`,
+/// because nobody renews one - without it Trust it succeeds and the tab stays blank.
+/// The result type has to match the certificate: macOS takes
 /// `trustRoot` only for a self-signed one and `trustAsRoot` only for one that isn't,
 /// and answers the wrong one with errSecParam ("one or more parameters ... not valid").
 #[cfg(target_os = "macos")]
@@ -633,6 +635,8 @@ fn trust_cert(host: &str, der: &[u8]) -> Result<(), String> {
             "ssl",
             "-e",
             "hostnameMismatch",
+            "-e",
+            "certExpired",
         ])
         .args(["-s", host, "-k"])
         .arg(&keychain)
