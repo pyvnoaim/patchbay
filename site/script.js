@@ -609,13 +609,13 @@
   };
 
   function read() {
-    var j = { defaults: {}, bastion: {}, web: {}, db: {} };
+    var j = { acme: {}, bastion: {}, web: {}, db: {} };
     fields.forEach(function (el) {
       var parts = el.dataset.f.split(".");
       j[parts[0]][parts[1]] = unquote(el.textContent);
     });
     ["bastion", "web", "db"].forEach(function (n) {
-      if (!j[n].user) j[n].user = j.defaults.user; // [defaults] inheritance
+      if (!j[n].user) j[n].user = j.acme.user; // [folder.acme], lent to all three
     });
     return j;
   }

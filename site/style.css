@@ -2358,6 +2358,10 @@ footer a svg {
 footer .push {
   margin-left: auto;
 }
+footer .tm {
+  flex-basis: 100%;
+  font-size: 12px;
+}
 
 /* Sections arrive rather than appear. `data-rise` is set from script.js and never in the markup,
    so with no JS the page is simply already there. Two profiles: text rises a short distance,

@@ -1153,21 +1153,24 @@ host = "10.0.1.2"
     fn the_config_on_the_website_still_resolves_to_the_argv_it_shows() {
         let j = jacks_of(
             r#"
-[defaults]
+[folder.acme]
 user = "root"
 
 [jack.bastion]
 host = "bastion.example"
 port = 2222
+folders = ["acme"]
 
 [jack.web]
 host = "10.0.0.4"
 user = "deploy"
 jump = "bastion"
+folders = ["acme"]
 
 [jack.db]
 host = "10.0.0.5"
 jump = "web"
+folders = ["acme"]
 forward = ["5432:localhost:5432"]
 "#,
         )
