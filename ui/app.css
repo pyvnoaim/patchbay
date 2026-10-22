@@ -3264,12 +3264,14 @@ button:disabled {
   margin: -2px 0 2px;
 }
 .crumb[data-saved] {
-  padding-right: 9px;
+  flex: none;
+  padding: 3px 10px;
+  font-weight: 500;
   border: 0;
   font-family: inherit;
   cursor: pointer;
 }
-.crumbs:empty {
+.crumbs:not(:has(> :not([hidden]))) {
   display: none;
 }
 .crumb {

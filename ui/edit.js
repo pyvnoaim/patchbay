@@ -352,6 +352,9 @@ const askIsSaved = () =>
   askSaved.some((u) => u.toLowerCase() === askUser.value.trim().toLowerCase());
 function askHint() {
   const saved = askIsSaved();
+  // A chip for the account already typed only repeats the field.
+  const typed = askUser.value.trim().toLowerCase();
+  for (const b of $("ask-saved").children) b.hidden = b.dataset.saved.toLowerCase() === typed;
   askInput.placeholder = saved ? "saved on this machine" : "";
   // Typed over a saved one, the new password replaces it rather than forgetting it.
   $("ask-remember").checked = saved;
