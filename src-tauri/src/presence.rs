@@ -96,8 +96,44 @@ fn write_now() {
     let said = SAID.lock().unwrap().clone();
     if let Some((file, names)) = said {
         let text = written(&me(), BEATS.fetch_add(1, Relaxed), &names);
-        let _ = std::fs::write(file, text);
+        let _ = write_own(&file, &text);
     }
+}
+
+/// Write this copy's file in place, never through a link. The folder is anyone's on the
+/// share and the name is predictable, so a colleague could put a symlink there that
+/// points into this machine's home, and `fs::write` would follow it. Checked before the
+/// open, so a dangling link creates nothing, and on unix again after it, so a link
+/// swapped in between is caught before the truncate. In place rather than temp + rename:
+/// a file replaced on a synced share is one more in its bin, which is what this file
+/// stopped doing.
+fn write_own(file: &std::path::Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let refused = || std::io::Error::other("not a plain file");
+    let before = match std::fs::symlink_metadata(file) {
+        Ok(m) if !m.is_file() => return Err(refused()),
+        other => other.ok(),
+    };
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        // Only once the file is known to be ours: `set_len` below.
+        .truncate(false)
+        .open(file)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        let now = std::fs::symlink_metadata(file)?;
+        let opened = f.metadata()?;
+        let moved = before.is_some_and(|b| b.ino() != now.ino());
+        if !now.is_file() || moved || (now.dev(), now.ino()) != (opened.dev(), opened.ino()) {
+            return Err(refused());
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = before;
+    f.set_len(0)?;
+    f.write_all(text.as_bytes())
 }
 
 /// Say which team devices this copy has a session on, or take the file away when it
@@ -139,7 +175,7 @@ pub fn clear() {
     let (tx, rx) = std::sync::mpsc::channel();
     let text = written(&me(), BEATS.fetch_add(1, Relaxed), &[]);
     std::thread::spawn(move || {
-        let _ = std::fs::write(file, text);
+        let _ = write_own(&file, &text);
         let _ = tx.send(());
     });
     let _ = rx.recv_timeout(Duration::from_secs(1));
@@ -206,5 +242,34 @@ mod tests {
         assert!(read("maya\nweb\ndb\n").is_none());
         let long = "x".repeat(500);
         assert_eq!(read(&format!("{long}\n1\nweb\n")).unwrap().0.len(), 64);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_planted_where_my_file_goes_is_never_written_through() {
+        let dir = std::env::temp_dir().join(format!("patchbay-presence-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mine = dir.join("me-on-mbp");
+        let precious = dir.join("authorized_keys");
+        std::fs::write(&precious, "ssh-ed25519 AAAA\n").unwrap();
+        std::os::unix::fs::symlink(&precious, &mine).unwrap();
+        assert!(write_own(&mine, "me\n1\nweb\n").is_err());
+        assert_eq!(
+            std::fs::read_to_string(&precious).unwrap(),
+            "ssh-ed25519 AAAA\n"
+        );
+        // Nor one pointing at nothing, which an open would have created.
+        let gone = dir.join("LaunchAgent.plist");
+        std::fs::remove_file(&mine).unwrap();
+        std::os::unix::fs::symlink(&gone, &mine).unwrap();
+        assert!(write_own(&mine, "x").is_err());
+        assert!(!gone.exists());
+        // A plain file is rewritten in place, shorter text and all.
+        std::fs::remove_file(&mine).unwrap();
+        write_own(&mine, "me\n1\nweb\ndb\n").unwrap();
+        write_own(&mine, "me\n2\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&mine).unwrap(), "me\n2\n");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
