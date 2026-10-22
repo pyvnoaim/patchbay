@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.51 - 2026-10-22
 
 - Trust it now works for a device whose certificate has expired. Until now the tab stayed blank however often you trusted it.
 - The trust question shows the certificate's name, issuer, expiry and fingerprint as tidy rows, and an expired one in red.
