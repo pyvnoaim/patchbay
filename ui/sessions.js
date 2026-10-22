@@ -20,8 +20,10 @@ const theme = () => {
     ansi[`bright${name[0].toUpperCase()}${name.slice(1)}`] = v(`--a-bright-${name}`);
   }
   return {
-    // The pane behind it is the app's own surface, so the terminal paints no ground.
-    background: "rgba(0,0,0,0)",
+    // The pane behind it is the app's own surface, so the terminal paints no ground. Still
+    // --bg at zero alpha, not black: xterm blends the selection over this colour and draws
+    // inverse text in it opaque, so black made both dark-on-dark in light mode.
+    background: `${v("--bg")}00`,
     foreground: v("--fg"),
     cursor: v("--accent"),
     cursorAccent: v("--bg"),
