@@ -120,16 +120,30 @@ const indent = (depth) => `style="--depth:${depth}"`;
 const idAttrs = (id) =>
   `data-path="${esc(id.path ?? "")}"${id.vault ? ` data-vault="${esc(id.vault)}"` : ""}`;
 
+// The drive the shared list is on, for a row too narrow for its path; the header and the
+// tooltip have the path. A shared drive or a mounted volume by its own name, a sync
+// client's folder by the client ("GoogleDrive-me@acme.com" is "Google Drive"), and
+// anything else by the folder the list is in.
+function driveName(path) {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  // The part after `word`, as long as it is a folder and not the list file itself.
+  const after = (word) => {
+    const i = parts.indexOf(word);
+    return i >= 0 && i < parts.length - 2 ? parts[i + 1] : null;
+  };
+  const client = after("CloudStorage")?.replace(/-.*/, "").replace("GoogleDrive", "Google Drive");
+  return after("Shared drives") ?? client ?? after("Volumes") ?? parts.at(-2) ?? path;
+}
+
 // A vault's own row: who can see what is under it, and for the team's, where it is.
 function vaultRow(vault, n) {
   const [glyph, name] = VAULTS[vault];
-  const where = (vaults.team ?? "").replace(/[\\/][^\\/]*$/, "");
   const sub =
     vault === "mine"
       ? "Only on this machine"
       : vaults.away
         ? `<span class="dot down"></span>Not there`
-        : `<span class="dot up"></span>${esc(where)}`;
+        : `<span class="dot up"></span><span data-tip="${esc(vaults.team ?? "")}">${esc(driveName(vaults.team ?? ""))}</span>`;
   return `<div class="group vault ${vault}${vault === "team" && vaults.away ? " away" : ""}"
        data-vault="${vault}" data-path="" data-group="1" data-has-kids="false">
     <span class="badge">${icon(glyph)}</span>
