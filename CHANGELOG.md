@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.41 - 2026-10-22
 
 - In the light theme, selected text and highlighted text (a paste, for one) in a session are readable again instead of dark on dark.
 
