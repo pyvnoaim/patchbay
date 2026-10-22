@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.43 - 2026-10-22
 
 - The Team row in the sidebar names the drive the shared list is on, such as "Systemhaus" or "Google Drive", instead of a path cut off halfway. Hover it for the path.
 
