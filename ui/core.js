@@ -111,6 +111,7 @@ let editStamp = null; // the table as it was when the sheet opened, sent back wi
 let pending = new Map(); // gkey -> { path }
 let notes = new Map(); // folder path -> the note hung on it
 let noteStamps = new Map(); // folder path -> the folder's table as read, for the save
+let folderDefs = new Map(); // folder path -> the user, port, key and jump it lends its devices
 let seeded = false; // the tree's initial expansion is a one-off
 let lastProbe = 0; // epoch ms of the last sweep, for the throttle below
 // A press in flight, so a render doesn't replace the button under it. WebKit fires

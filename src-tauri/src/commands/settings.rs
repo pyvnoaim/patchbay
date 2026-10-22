@@ -1,6 +1,6 @@
 //! `[settings]`, `[defaults]`, `[colors]`, the theme, and the config file itself.
 
-use super::{blocking, file_of, list_file, os_open, ssh_dir};
+use super::{blocking, list_file, os_open, ssh_dir};
 use crate::{config, patchbay};
 
 #[tauri::command]
@@ -49,39 +49,6 @@ pub async fn save_settings(next: config::Settings) -> Result<(), String> {
         Ok(())
     })
     .await
-}
-
-/// `[defaults]` is part of the list: a shared `user` there is everyone's, so it carries
-/// a stamp the way a device does.
-#[derive(serde::Serialize)]
-pub struct DefaultsView {
-    #[serde(flatten)]
-    defaults: config::Defaults,
-    stamp: String,
-}
-
-/// `vault` is the window's word, as everywhere: each file has its own `[defaults]`, and
-/// nothing inherits across.
-#[tauri::command]
-pub async fn defaults(vault: Option<String>) -> Result<DefaultsView, String> {
-    blocking(move || {
-        let path = file_of(vault.as_deref())?;
-        Ok(DefaultsView {
-            defaults: config::load_defaults_at(&path),
-            stamp: config::defaults_stamp_at(&path),
-        })
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn save_defaults(
-    next: config::Defaults,
-    stamp: Option<String>,
-    vault: Option<String>,
-) -> Result<(), String> {
-    blocking(move || config::save_defaults_at(&file_of(vault.as_deref())?, &next, stamp.as_deref()))
-        .await
 }
 
 #[tauri::command]

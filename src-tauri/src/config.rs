@@ -61,17 +61,6 @@ pub fn stamps(src: &str, under: &str) -> std::collections::HashMap<String, Strin
         .unwrap_or_default()
 }
 
-/// The `[defaults]` table as read. A table that isn't there stamps as the empty string,
-/// which is what `stale` sees for a missing one - so a colleague *adding* defaults while
-/// this sheet was open is refused too.
-pub fn defaults_stamp_at(file: &Path) -> String {
-    std::fs::read_to_string(file)
-        .ok()
-        .and_then(|s| s.parse::<DocumentMut>().ok())
-        .and_then(|doc| doc.get("defaults").map(stamp_of))
-        .unwrap_or_default()
-}
-
 /// The `[snippet]` table as read, stamped the way `[defaults]` is: missing is empty.
 pub fn snippets_stamp_at(file: &Path) -> String {
     std::fs::read_to_string(file)
@@ -929,53 +918,6 @@ impl Default for Settings {
     }
 }
 
-/// The four `[defaults]` keys the sheet edits. Any other key written by hand is left alone.
-#[derive(Debug, Default, Deserialize, Serialize)]
-pub struct Defaults {
-    pub user: Option<String>,
-    pub port: Option<u16>,
-    pub key: Option<String>,
-    pub jump: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct RawDefaults {
-    #[serde(default)]
-    defaults: Defaults,
-}
-
-/// Never fails: the sheet has to open even when the file it is about to fix is broken.
-pub fn load_defaults_at(file: &Path) -> Defaults {
-    std::fs::read_to_string(file)
-        .ok()
-        .and_then(|s| toml::from_str::<RawDefaults>(&s).ok())
-        .map(|r| r.defaults)
-        .unwrap_or_default()
-}
-
-pub fn save_defaults_at(file: &Path, d: &Defaults, stamp: Option<&str>) -> Result<(), String> {
-    let (mut doc, was) = read_doc(file)?;
-    stale("defaults", stamp, doc.get("defaults"))?;
-    let empty = {
-        let t = doc
-            .entry("defaults")
-            .or_insert_with(|| Item::Table(Table::new()))
-            .as_table_mut()
-            .ok_or("`defaults` in the config isn't a table")?;
-        set_str(t, "user", d.user.as_deref());
-        set_str(t, "key", d.key.as_deref());
-        set_str(t, "jump", d.jump.as_deref());
-        set_num(t, "port", d.port);
-        t.is_empty()
-    };
-    // An empty `[defaults]` is removed; a hand-written key keeps the table alive.
-    if empty {
-        let orphan = orphan_comments(doc.as_table_mut(), "defaults");
-        rehome_comments(&mut doc, orphan);
-    }
-    write_doc(file, &doc, was.as_deref())
-}
-
 #[derive(Debug, Default, Deserialize)]
 struct RawSettings {
     #[serde(default)]
@@ -1430,41 +1372,8 @@ folders = ["prod/eu/web"]
     }
 
     #[test]
-    fn defaults_round_trip_and_vanish_once_nothing_is_set() {
-        let p = scratch("defaults");
-        let d = Defaults {
-            user: Some("ops".into()),
-            port: Some(2222),
-            key: None,
-            jump: None,
-        };
-        save_defaults_at(&p, &d, None).unwrap();
-
-        let back = load_defaults_at(&p);
-        assert_eq!(back.user.as_deref(), Some("ops"));
-        assert_eq!(back.port, Some(2222));
-        assert!(read(&p).contains("keep this comment"));
-
-        // Clearing every field takes the section with it.
-        save_defaults_at(&p, &Defaults::default(), None).unwrap();
-        assert!(!read(&p).contains("[defaults]"), "got {}", read(&p));
-    }
-
-    #[test]
     fn comments_outlive_the_table_they_sat_above() {
         let p = scratch("comments");
-        save_defaults_at(&p, &Defaults::default(), None).unwrap();
-        let out = read(&p);
-        assert!(!out.contains("[defaults]"), "got {out}");
-        assert!(
-            out.contains("# my hosts"),
-            "the file header went with it:\n{out}"
-        );
-        assert!(
-            out.find("# my hosts") < out.find("[jack.bastion]"),
-            "the header should still be on top:\n{out}"
-        );
-
         delete_jack_at(&p, "bastion", None).unwrap();
         let out = read(&p);
         assert!(out.contains("# my hosts"), "got {out}");
@@ -1491,18 +1400,6 @@ folders = ["prod/eu/web"]
             out.find("# the way in") < out.find("[jack.gateway]"),
             "got {out}"
         );
-    }
-
-    #[test]
-    fn a_hand_written_default_the_sheet_cannot_edit_survives() {
-        let p = scratch("defaults-extra");
-        std::fs::write(&p, "[defaults]\nuser = \"root\"\nos = \"debian\"\n").unwrap();
-
-        save_defaults_at(&p, &Defaults::default(), None).unwrap();
-
-        let out = read(&p);
-        assert!(out.contains("os = \"debian\""), "got {out}");
-        assert!(!out.contains("user"), "got {out}");
     }
 
     #[test]
@@ -2131,29 +2028,6 @@ folders = ["prod/eu/web"]
         let now = stamps_at(&p, "jack")["web"].clone();
         delete_jack_at(&p, "web", Some(&now)).unwrap();
         assert!(!read(&p).contains("[jack.web]"));
-        std::fs::remove_file(&p).unwrap();
-    }
-
-    #[test]
-    fn defaults_saved_over_someone_elses_are_refused() {
-        let p = scratch("defaults-stamp");
-        let before = defaults_stamp_at(&p);
-        let theirs = Defaults {
-            user: Some("theirs".into()),
-            ..Defaults::default()
-        };
-        save_defaults_at(&p, &theirs, None).unwrap();
-        let mine = Defaults {
-            user: Some("mine".into()),
-            ..Defaults::default()
-        };
-        let err = save_defaults_at(&p, &mine, Some(&before)).unwrap_err();
-        assert!(err.contains("changed by someone else"), "{err}");
-        assert_eq!(load_defaults_at(&p).user.as_deref(), Some("theirs"));
-        // A table that was not there stamps as empty, so an addition is caught too.
-        let now = defaults_stamp_at(&p);
-        save_defaults_at(&p, &mine, Some(&now)).unwrap();
-        assert_eq!(load_defaults_at(&p).user.as_deref(), Some("mine"));
         std::fs::remove_file(&p).unwrap();
     }
 

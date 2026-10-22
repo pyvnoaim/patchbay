@@ -116,8 +116,6 @@ fn main() {
             settings::set_theme,
             settings::colors,
             settings::save_color,
-            settings::defaults,
-            settings::save_defaults,
             settings::ssh_keys,
             settings::ssh_leftovers,
             settings::clean_ssh_leftovers,

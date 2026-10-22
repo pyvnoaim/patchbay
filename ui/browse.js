@@ -125,14 +125,24 @@ const idAttrs = (id) =>
 // client's folder by the client ("GoogleDrive-me@acme.com" is "Google Drive"), and
 // anything else by the folder the list is in.
 function driveName(path) {
+  return driveOf(path).name;
+}
+// The drive, and the folders from it down to the list: what Settings shows under a path
+// too long for its field.
+function driveOf(path) {
   const parts = path.split(/[\\/]/).filter(Boolean);
-  // The part after `word`, as long as it is a folder and not the list file itself.
-  const after = (word) => {
+  // The folder after `word`, as long as it is a folder and not the list file itself.
+  const at = (word) => {
     const i = parts.indexOf(word);
-    return i >= 0 && i < parts.length - 2 ? parts[i + 1] : null;
+    return i >= 0 && i < parts.length - 2 ? i + 1 : -1;
   };
-  const client = after("CloudStorage")?.replace(/-.*/, "").replace("GoogleDrive", "Google Drive");
-  return after("Shared drives") ?? client ?? after("Volumes") ?? parts.at(-2) ?? path;
+  const root = [at("Shared drives"), at("CloudStorage"), at("Volumes")].find((i) => i >= 0);
+  if (root === undefined) return { name: parts.at(-2) ?? path, rest: parts.slice(-1) };
+  const name =
+    parts[root - 1] === "CloudStorage"
+      ? parts[root].replace(/-.*/, "").replace("GoogleDrive", "Google Drive")
+      : parts[root];
+  return { name, rest: parts.slice(root + 1) };
 }
 
 // A vault's own row: who can see what is under it, and for the team's, where it is.
@@ -257,7 +267,6 @@ function render() {
   $("viewmode").innerHTML = listMode === "map" ? `${icon("x")}Close map` : `${icon("share-2")}Map`;
   $("viewmode").dataset.tip =
     listMode === "map" ? "Back to the detail" : "Draw this folder by the route to each device";
-  $("newjack").innerHTML = `${icon("plus")}New<kbd>${chord("n")}</kbd>`;
   $("newgroup").innerHTML = icon("folder-plus");
   $("newgroup").dataset.tip = "New folder";
   $("editcfg").innerHTML = icon("file-pen-line");
@@ -557,7 +566,16 @@ function renderGroup() {
       real
         ? `<section class="d-card d-notes"><div class="d-sec">${icon("file-pen-line")}Notes</div>
       <textarea class="d-note" id="gnote" rows="4" spellcheck="false"
-        placeholder="What somebody arriving here needs to know."></textarea></section>`
+        placeholder="What somebody arriving here needs to know."></textarea></section>
+      <section class="d-card"><div class="d-sec">${icon("settings")}For every device in here</div>
+      <p class="page-note">Used by any device in this folder that doesn't set its own. A
+        nearer folder wins.</p>
+      <div class="grid2" id="gdefs">
+        <label class="f"><span>User</span><input data-k="user" spellcheck="false" placeholder="none" /></label>
+        <label class="f"><span>SSH port</span><input data-k="port" inputmode="numeric" placeholder="22" /></label>
+        <label class="f"><span>Private key file</span><input data-k="key" spellcheck="false" list="sshkeys" placeholder="none" /></label>
+        <label class="f"><span>Jump host</span><input data-k="jump" spellcheck="false" list="jacknames" placeholder="none" /></label>
+      </div></section>`
         : ""
     }
     ${
@@ -582,6 +600,38 @@ function renderGroup() {
     let saving = Promise.resolve();
     const queue = (work) => (saving = saving.then(work).catch(alertish));
     const vault = group.vault ?? null;
+
+    // Values set rather than interpolated, like the note: a colleague wrote them.
+    const lent = folderDefs.get(gk) ?? {};
+    const fields = [...$("gdefs").querySelectorAll("input")];
+    for (const f of fields) f.value = lent[f.dataset.k] ?? "";
+    // On change, which is a blur for a text field: each save rewrites the whole file.
+    $("gdefs").addEventListener("change", () => {
+      const path = group.path;
+      const next = Object.fromEntries(fields.map((f) => [f.dataset.k, f.value.trim() || null]));
+      if (next.port !== null) {
+        const port = Number(next.port);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+          return alertish(`"${next.port}" isn't a port`);
+        }
+        next.port = port;
+      }
+      queue(async () => {
+        try {
+          await invoke("save_folder_defaults", {
+            path,
+            defaults: next,
+            stamp: noteStamps.get(gk) ?? null,
+            vault,
+          });
+        } catch (e) {
+          alertish(e);
+        }
+        // Either way: a refusal means someone else's values, and they belong in the
+        // fields before the next change saves over them.
+        await load();
+      });
+    });
 
     const box = $("gnote");
     box.value = notes.get(gk) ?? "";

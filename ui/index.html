@@ -31,9 +31,9 @@
             <!-- Bitwarden, with no device in it: shown only while the extension is running. -->
             <button class="chip" id="vault" hidden></button>
             <button class="chip" id="viewmode"></button>
+            <button class="chip" id="snipbtn" hidden></button>
             <button class="chip" id="details" hidden></button>
             <button class="chip" id="searchbtn"></button>
-            <button class="chip" id="newjack"></button>
           </div>
         </div>
         <div class="pane" id="browse">
@@ -126,8 +126,7 @@
             ><span>Host</span><input name="host" spellcheck="false" placeholder="10.0.0.4"
           /></label>
           <label class="f" data-need="ssh sftp rdp vnc"
-            ><span>User</span
-            ><input name="user" spellcheck="false" placeholder="inherits [defaults]"
+            ><span>User</span><input name="user" spellcheck="false" placeholder="from its folder"
           /></label>
           <label class="f" data-need="ssh sftp"
             ><span>SSH port</span><input name="port" inputmode="numeric" placeholder="22"
@@ -217,7 +216,6 @@
         <div class="sheet-body">
           <nav class="setnav" id="setnav">
             <button type="button" data-pane="devices" data-icon="server">Devices</button>
-            <button type="button" data-pane="defaults" data-icon="layers">Defaults</button>
             <button type="button" data-pane="snippets" data-icon="text-cursor-input">
               Snippets
             </button>
@@ -275,59 +273,16 @@
               </div>
             </section>
 
-            <section class="pane" data-pane="defaults" hidden>
-              <div class="d-sec" id="defs-team-head">Inherited by every device</div>
-              <p class="page-note">
-                Left empty, nothing is inherited and each device stands on its own. Anything set
-                here applies to every device that doesn't override it - and your
-                <code>~/.ssh/config</code> still applies underneath either way.
-              </p>
-              <div class="grid2">
-                <label class="f"
-                  ><span>User</span><input name="def_user" spellcheck="false" placeholder="none"
-                /></label>
-                <label class="f"
-                  ><span>SSH port</span><input name="def_port" inputmode="numeric" placeholder="22"
-                /></label>
-                <label class="f"
-                  ><span>Private key file</span
-                  ><input name="def_key" spellcheck="false" list="sshkeys" placeholder="none"
-                /></label>
-                <label class="f"
-                  ><span>Jump host</span
-                  ><input name="def_jump" spellcheck="false" list="jacknames" placeholder="none"
-                /></label>
-              </div>
-              <!-- Only with a shared list set: your own file has its own [defaults]. -->
-              <div id="defs-mine" hidden>
-                <div class="d-sec">Mine · only your own devices</div>
-                <div class="grid2">
-                  <label class="f"
-                    ><span>User</span><input name="mine_user" spellcheck="false" placeholder="none"
-                  /></label>
-                  <label class="f"
-                    ><span>SSH port</span
-                    ><input name="mine_port" inputmode="numeric" placeholder="22"
-                  /></label>
-                  <label class="f"
-                    ><span>Private key file</span
-                    ><input name="mine_key" spellcheck="false" list="sshkeys" placeholder="none"
-                  /></label>
-                  <label class="f"
-                    ><span>Jump host</span
-                    ><input name="mine_jump" spellcheck="false" list="jacknames" placeholder="none"
-                  /></label>
-                </div>
-              </div>
-            </section>
-
             <section class="pane" data-pane="snippets" hidden>
               <div class="d-sec">Snippets</div>
               <div id="snip-rows"></div>
               <button type="button" class="ghost" id="snip-add"></button>
               <p class="page-note">
-                A line of text, typed at the prompt of the shell in front when you pick it in
-                Search. It never presses Enter: you do.
+                A line of text, typed at the prompt of the shell in front when you pick it from
+                Snippets on the toolbar or in Search. It never presses Enter: you do.
+                <code>{host}</code>, <code>{user}</code>, <code>{port}</code> and
+                <code>{name}</code> are filled in from the device, so
+                <code>scp file {user}@{host}:</code> works on every one.
               </p>
             </section>
 
@@ -341,6 +296,7 @@
                 <button type="button" class="ghost" id="new-list"></button>
                 <button type="button" class="ghost" id="pick-list"></button>
               </div>
+              <p class="page-note list-where" id="list-where" hidden></p>
               <p class="page-note">
                 New… starts one, Open… joins one. No passwords in it. Colleagues see what you are
                 connected to.

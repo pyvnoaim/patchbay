@@ -4,6 +4,7 @@
 // ── events ─────────────────────────────────────────────────────────────────
 searchBtn.addEventListener("click", () => openPalette());
 $("vault").addEventListener("click", (e) => bitwardenKey(e.currentTarget, true));
+$("snipbtn").addEventListener("click", (e) => snippetMenu(e.currentTarget));
 $("viewmode").addEventListener("click", () => {
   listMode = listMode === "map" ? "list" : "map";
   browse();
@@ -19,7 +20,6 @@ $("details").addEventListener("click", () => {
     placeWebViews();
   });
 });
-$("newjack").addEventListener("click", () => openJack(null, group));
 $("newgroup").addEventListener("click", () => newGroup({ path: null, vault: group?.vault }));
 $("editcfg").addEventListener("click", () => invoke("open_config").catch(alertish));
 // Called, not passed: the event would arrive as the pane name and match nothing.
@@ -466,6 +466,7 @@ async function load() {
     const at = (n) => gkey({ path: n.path, vault: n.vault ?? undefined });
     notes = new Map(noteRows.map((n) => [at(n), n.note]));
     noteStamps = new Map(noteRows.map((n) => [at(n), n.stamp]));
+    folderDefs = new Map(noteRows.map((n) => [at(n), n.defaults ?? {}]));
     loadErr = "";
     // Last session's open folders, on the first load only: a focus would re-open
     // what has been closed since. Nothing remembered means everything folded.

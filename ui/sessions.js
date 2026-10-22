@@ -266,8 +266,9 @@ async function openSession(name, task = null, bcast = null, waiting = false) {
       }
       return;
     }
-    // Broadcast on: every live sibling gets the keystroke. Off: only the focused pane.
-    if (s.bcast?.on) {
+    // Broadcast on: every live sibling gets the keystroke. Off: only the focused pane,
+    // and a snippet filled in per pane is already in each of them.
+    if (s.bcast?.on && !soloPaste) {
       for (const other of s.bcast.live) {
         invoke("write_session", { id: other, data: d }).catch(() => {});
       }
@@ -437,12 +438,32 @@ function shellInFront() {
 // pasted text. It is never followed by Enter. It stops at the shell's screen like
 // everything else that sends bytes: in an editor the text would be commands, and in
 // a broadcast one pane in an editor stops it for all of them.
+//
+// `{host}`, `{user}`, `{port}` and `{name}` are the device's own, so one snippet serves
+// every machine, and in a broadcast each pane gets its own. Filled in before the check,
+// not after: a host is a colleague's text too, and must not be the thing that presses
+// Enter.
+let soloPaste = false; // set while each broadcast pane takes its own copy
+function fillSnippet(text, name) {
+  const j = all.find((x) => x.name === name);
+  const said = {
+    host: j?.host,
+    user: j?.user,
+    port: String(j?.port ?? 22),
+    name: j?.label ?? name,
+  };
+  const missing = [];
+  const out = text.replace(/\{(host|user|port|name)\}/g, (m, k) => {
+    if (said[k]) return said[k];
+    missing.push(k);
+    return m;
+  });
+  if (missing.length) throw `"${labelOf(name)}" has no ${missing[0]} to fill in`;
+  return out;
+}
 function typeSnippet(sn) {
   const s = sessions.get(activeId);
   if (!shellInFront()) return alertish("a snippet needs a shell in front to be typed into");
-  if (!snippetOk(sn.text)) {
-    return alertish(`"${sn.name}" isn't one plain line, so nothing was typed`);
-  }
   const panes = s.bcast?.on ? [...s.bcast.live].map((id) => sessions.get(id)).filter(Boolean) : [s];
   const busy = panes.find((p) => p.term.buffer.active.type !== "normal");
   if (busy) {
@@ -450,9 +471,43 @@ function typeSnippet(sn) {
       `nothing was typed: "${labelOf(busy.name)}" is in an editor, where the text would be commands`,
     );
   }
-  s.term.paste(sn.text);
+  let filled;
+  try {
+    filled = panes.map((p) => fillSnippet(sn.text, p.name));
+  } catch (e) {
+    return alertish(`nothing was typed: ${e}`);
+  }
+  if (!filled.every(snippetOk)) {
+    return alertish(`"${sn.name}" isn't one plain line, so nothing was typed`);
+  }
+  // xterm's paste fires `onData` before it returns, so the flag covers exactly these.
+  soloPaste = true;
+  try {
+    panes.forEach((p, i) => p.term.paste(filled[i]));
+  } finally {
+    soloPaste = false;
+  }
   s.term.focus();
   flash(`Typed "${sn.name}". Enter runs it.`);
+}
+
+// The toolbar's way in, for whoever never finds them in Search: every snippet, and
+// the way to write one.
+function snippetMenu(btn) {
+  const r = btn.getBoundingClientRect();
+  showCtx(r.left, r.bottom + 4, null, [
+    ...snips.map((sn) => ({
+      icon: "text-cursor-input",
+      label: sn.name,
+      run: () => typeSnippet(sn),
+    })),
+    ...(snips.length ? ["-"] : []),
+    {
+      icon: snips.length ? "pencil" : "plus",
+      label: snips.length ? "Edit snippets…" : "Add a snippet…",
+      run: () => openSettings("snippets"),
+    },
+  ]);
 }
 
 // Whether something of ours has to be drawn where the page is. Sheets and the palette
@@ -1073,6 +1128,10 @@ function renderTabs() {
   // The map is of the tree's selection; over a session it would be a button for a
   // view that is not on screen. The pane beside a session is the other way round.
   $("viewmode").hidden = !!live;
+  const snipBtn = $("snipbtn");
+  snipBtn.hidden = !shellInFront();
+  snipBtn.innerHTML = `${icon("text-cursor-input")}Snippets`;
+  snipBtn.dataset.tip = "Type a snippet at this prompt";
   const details = $("details");
   details.hidden = !live;
   details.innerHTML = `${icon("panel-right")}Details`;

@@ -8,6 +8,16 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- A folder's pane sets the user, port, key and jump host for every device in it, and its right-click menu goes straight there.
+- Settings ▸ Defaults is gone: folders do that job. A `[defaults]` already in a file still applies.
+- The New button left the toolbar; ⌘N and the folder menu still add a device.
+- Snippets can say `{host}`, `{user}`, `{port}` and `{name}`, filled in from each device, and a Snippets button on a shell tab lists them.
+- Settings ▸ Team shows where the shared list is, drive first, instead of a path cut off before the file.
+- The file that shows who is connected is never written through a linked folder either.
+- A device's pane sits in the middle of a wide window instead of against the sidebar.
+
 ## 0.1.47 - 2026-10-22
 
 - The file that shows who is connected is never written through a link someone else put on the share.

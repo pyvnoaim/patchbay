@@ -823,9 +823,9 @@ body.dragging * {
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
-  /* The right padding grows with the window, so the actions float at the content's edge
-     rather than across a wide pane from the name they act on. */
-  padding: 30px max(36px, calc(100% - 1076px)) 90px 36px;
+  /* Held to 1040px and centred: wider, the actions would float across the pane from the
+     name they act on, and pinned left a wide window was an empty band on one side. */
+  padding: 30px max(36px, calc((100% - 1040px) / 2)) 90px;
 }
 #wide[hidden] {
   display: none;
@@ -889,7 +889,7 @@ body.dragging * {
 /* A folder's overview fills the pane: its tiles are a grid, not a column to read, and it
    has no actions to keep near the name, so the growing right padding above has no job. */
 #wide:has(.d-cards.full) {
-  padding-right: 36px;
+  padding-inline: 36px;
 }
 /* A snippet in Settings: its name, the line it types, where it is kept. */
 .snip-row {
@@ -2552,6 +2552,21 @@ button:disabled {
 }
 .flist .btns {
   padding: 0 14px;
+}
+.list-where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  margin-top: 6px;
+}
+.list-where .i {
+  width: 12px;
+  height: 12px;
+  color: var(--fg-faint);
+}
+.list-where span:last-child {
+  color: var(--fg);
 }
 .files .loading,
 .webhost .loading {

@@ -32,11 +32,7 @@ Rough, unranked. Most are a `ponytail:` ceiling someone hasn't hit yet.
 - **Offer to share a host key after a first connect**, not only from the device's
   detail, where few will look.
 - **A fill-in blank in a snippet** (`journalctl -u {?} -f`), if ending the text where
-  the variable goes turns out not to be enough. Not `{host}` or `{user}`: the shell is
-  already on that machine, and a value from the file inside a command line means what
-  lands on the prompt is no longer what the palette showed.
-- **A snippets pane beside the session**, for the three you use all day. The palette
-  is the only picker for now.
+  the variable goes turns out not to be enough.
 - **Your own devices in `~/.ssh/patchbay.conf`.** With two vaults they are named
   `me:<key>`, which is not a name ssh can be given, so the export leaves them out.
 - **More than one team vault.** Two customers on two shares. It is what spaces were,
