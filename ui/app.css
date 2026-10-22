@@ -883,9 +883,10 @@ body.dragging * {
 #wide .d-notes .d-note {
   flex: 1;
 }
-/* A folder's overview fills the pane: its tiles are a grid, not a column to read. */
-#wide .d-cards.full {
-  max-width: none;
+/* A folder's overview fills the pane: its tiles are a grid, not a column to read, and it
+   has no actions to keep near the name, so the growing right padding above has no job. */
+#wide:has(.d-cards.full) {
+  padding-right: 36px;
 }
 /* A snippet in Settings: its name, the line it types, where it is kept. */
 .snip-row {
