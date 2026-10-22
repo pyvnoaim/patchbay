@@ -198,7 +198,8 @@ const taskLabel = (task) => (task === "ping-on" ? "ping ∞" : task);
 // A terminal tab. `task` ("ping", "ping-on" or "trace") runs a check instead of a shell,
 // on the jump host when there is one; "key" installs this machine's key over the chain.
 // `bcast` joins the session to a broadcast group.
-async function openSession(name, task = null, bcast = null) {
+// `waiting` is a redial from "r": a failed one goes back to waiting rather than stopping.
+async function openSession(name, task = null, bcast = null, waiting = false) {
   // A broadcast pane never counts as "already open": two grids are two grids.
   const key = bcast ? `bcast:${bcast.gid}:${name}` : `term:${task ?? ""}:${name}`;
   if (!bcast && showOpen(key)) return;
@@ -249,6 +250,15 @@ async function openSession(name, task = null, bcast = null) {
   term.onData((d) => {
     // A dead tab keeps the keyboard: Enter dials the same device again.
     if (s.dead) {
+      if (s.wait) {
+        // A focus or mouse report the far end left switched on is not a key.
+        if (d.startsWith("\x1b[")) return;
+        clearInterval(s.wait);
+        s.wait = null;
+        term.write("\x1b[2m── stopped waiting ──\x1b[0m\r\n");
+        return;
+      }
+      if (d === "r" && !task) return waitForIt(s);
       const again = d === "\r" ? task : d === "c" && task === "ping" ? "ping-on" : undefined;
       if (again !== undefined) {
         dropTab(id);
@@ -286,9 +296,12 @@ async function openSession(name, task = null, bcast = null) {
       await listen(`pty-exit:${id}`, (e) => {
         s.dead = true;
         s.bcast?.live.delete(id);
-        term.write(
-          `\r\n\x1b[2m── ${task ? taskLabel(task) : "ssh"} exited (${e.payload}) · ⏎ to ${task ? "run it again" : "reconnect"}${task === "ping" ? " · c to ping until ^C" : ""} · ${chord("w")} to close ──\x1b[0m\r\n`,
-        );
+        // 255 is ssh failing to get there or losing the box: the redial was too early.
+        if (waiting && String(e.payload) === "255") waitForIt(s);
+        else
+          term.write(
+            `\r\n\x1b[2m── ${task ? taskLabel(task) : "ssh"} exited (${e.payload}) · ⏎ to ${task ? "run it again" : "reconnect"}${task === "ping" ? " · c to ping until ^C" : task ? "" : " · r to reconnect when it's back"} · ${chord("w")} to close ──\x1b[0m\r\n`,
+          );
         renderTabs();
         renderTree();
       }),
@@ -313,6 +326,21 @@ async function openSession(name, task = null, bcast = null) {
   }
   renderTabs();
   term.focus();
+}
+
+// A reboot: dial again once the device takes a connection. Any key stops it.
+function waitForIt(s) {
+  s.term.write(`\r\n\x1b[2m── waiting for ${labelOf(s.name)} · any key to stop ──\x1b[0m\r\n`);
+  let asking = false;
+  s.wait = setInterval(async () => {
+    if (asking) return;
+    asking = true;
+    const up = await invoke("reachable", { name: s.name }).catch(() => false);
+    asking = false;
+    if (!up || !s.wait || !sessions.has(s.id)) return;
+    dropTab(s.id);
+    openSession(s.name, null, s.bcast, true);
+  }, 3000);
 }
 
 // A live tab: a connected shell or desktop. Closing one is not asked about - it is

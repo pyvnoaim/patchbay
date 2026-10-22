@@ -318,6 +318,18 @@ pub async fn probe() -> Result<Vec<Probe>, String> {
     .await
 }
 
+/// Whether one device's entry point takes a TCP connection: what a dead tab waits on
+/// before it dials again. Behind a bastion that is the bastion, so the redial itself
+/// is the real answer there.
+#[tauri::command]
+pub async fn reachable(name: String) -> Result<bool, String> {
+    blocking(move || {
+        let (host, port) = patchbay::entry(&name, &load_jacks()?)?;
+        Ok(connect_ms(&host, port).is_some())
+    })
+    .await
+}
+
 /// One stop of a route after it was asked: `ok` is absent for the ones past the break,
 /// which nobody could ask.
 #[derive(Serialize)]

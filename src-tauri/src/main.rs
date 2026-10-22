@@ -90,6 +90,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             jacks::jacks,
             jacks::probe,
+            jacks::reachable,
             jacks::save_jack,
             jacks::move_jack,
             jacks::remove_copies,
