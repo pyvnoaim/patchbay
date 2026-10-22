@@ -470,7 +470,9 @@ function placeWebViews() {
   for (const s of sessions.values()) {
     if (s.kind !== "web") continue;
     const r = s.host.getBoundingClientRect();
-    const shown = s.id === activeId && !covered(r) && !s.failed && r.width > 0;
+    // Held back until the first page finishes: before that WebKit paints a white
+    // pane, and a NAS waking its disks can sit on one for half a minute.
+    const shown = s.id === activeId && !covered(r) && !s.failed && s.loaded && r.width > 0;
     invoke("place_web_view", {
       id: s.id,
       x: shown ? r.left : 0,
@@ -526,7 +528,8 @@ function webLoaded(s) {
   // A check still in flight resolves after this and would arm the silence timer over a
   // page that is up; it reads this rather than a timer that has already fired.
   s.painted = true;
-  if (!s.failed) return;
+  if (s.loaded && !s.failed) return;
+  s.loaded = true;
   s.failed = s.failedUrl = null;
   s.dead = false;
   s.host.innerHTML = "";
@@ -964,12 +967,38 @@ async function openWebSession(name) {
   host.className = "termhost webhost";
   termsEl.append(host);
 
-  const s = { id, name, kind: "web", key, host, dead: false, unlisten: [] };
+  const s = { id, name, kind: "web", key, host, dead: false, loaded: false, unlisten: [] };
+  host.innerHTML = `<p class="loading">Opening ${esc(name)}…</p>`;
   sessions.set(id, s);
   activeId = id;
   showTab();
   renderTabs();
   renderTree();
+
+  // Follow redirects: a Synology's http port redirects to https in JavaScript, so the
+  // certificate that blanks the tab belongs to a url no http client would see.
+  try {
+    s.unlisten.push(
+      await listen(`web-nav:${id}`, (e) => {
+        // Each navigation is a fresh page to be patient with; the one that paints
+        // cancels the check for all of them. Except one on the origin that just
+        // painted: wry reports every frame's navigation but only the main frame's
+        // `web-load`, so a Proxmox console or a DSM widget iframe (or a `#v1:...`
+        // fragment) re-armed into Trust it again with nothing to cancel it. A
+        // certificate belongs to the origin, and that one was just accepted.
+        if (s.painted && sameOrigin(e.payload, s.checkUrl)) return;
+        armWebCheck(s, e.payload);
+      }),
+    );
+    // Before the view exists: a page quicker than the round trip back from
+    // `open_web_view` would otherwise finish unheard and stay behind the note.
+    s.unlisten.push(await listen(`web-load:${id}`, () => webLoaded(s)));
+  } catch {
+    // No capability means no redirect notice and no load notice, not a broken tab:
+    // show the page now rather than wait for an event that can't arrive.
+    s.loaded = true;
+    s.host.innerHTML = "";
+  }
 
   // The rect only exists once the host is laid out and visible.
   await new Promise((r) => requestAnimationFrame(r));
@@ -988,26 +1017,6 @@ async function openWebSession(name) {
     // Nothing was shown, so there is no tab worth keeping.
     dropTab(id);
     return alertish(e);
-  }
-
-  // Follow redirects: a Synology's http port redirects to https in JavaScript, so the
-  // certificate that blanks the tab belongs to a url no http client would see.
-  try {
-    s.unlisten.push(
-      await listen(`web-nav:${id}`, (e) => {
-        // Each navigation is a fresh page to be patient with; the one that paints
-        // cancels the check for all of them. Except one on the origin that just
-        // painted: wry reports every frame's navigation but only the main frame's
-        // `web-load`, so a Proxmox console or a DSM widget iframe (or a `#v1:...`
-        // fragment) re-armed into Trust it again with nothing to cancel it. A
-        // certificate belongs to the origin, and that one was just accepted.
-        if (s.painted && sameOrigin(e.payload, s.checkUrl)) return;
-        armWebCheck(s, e.payload);
-      }),
-    );
-    s.unlisten.push(await listen(`web-load:${id}`, () => webLoaded(s)));
-  } catch {
-    /* no capability means no redirect notice, not a broken tab */
   }
 
   armWebCheck(s, url);

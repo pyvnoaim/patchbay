@@ -2553,7 +2553,8 @@ button:disabled {
 .flist .btns {
   padding: 0 14px;
 }
-.files .loading {
+.files .loading,
+.webhost .loading {
   padding: 18px 14px;
   color: var(--fg-dim);
   font-size: 12.5px;
