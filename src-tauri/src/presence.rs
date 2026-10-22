@@ -106,10 +106,22 @@ fn write_now() {
 /// open, so a dangling link creates nothing, and on unix again after it, so a link
 /// swapped in between is caught before the truncate. In place rather than temp + rename:
 /// a file replaced on a synced share is one more in its bin, which is what this file
-/// stopped doing.
+/// stopped doing. The folder is checked the same way: linked, it puts this file, a line
+/// per device key the list's author chose, wherever it points - `~/.ssh/config.d` reads
+/// that as ssh config.
+///
+/// ponytail: a swap landing between a check and the open can still create an empty file
+/// through the link, never fill one; `openat` with `O_NOFOLLOW` closes that if it matters.
 fn write_own(file: &std::path::Path, text: &str) -> std::io::Result<()> {
     use std::io::Write as _;
     let refused = || std::io::Error::other("not a plain file");
+    let linked = |p: &std::path::Path| {
+        p.parent()
+            .is_none_or(|d| std::fs::symlink_metadata(d).map_or(true, |m| !m.is_dir()))
+    };
+    if linked(file) {
+        return Err(refused());
+    }
     let before = match std::fs::symlink_metadata(file) {
         Ok(m) if !m.is_file() => return Err(refused()),
         other => other.ok(),
@@ -126,7 +138,11 @@ fn write_own(file: &std::path::Path, text: &str) -> std::io::Result<()> {
         let now = std::fs::symlink_metadata(file)?;
         let opened = f.metadata()?;
         let moved = before.is_some_and(|b| b.ino() != now.ino());
-        if !now.is_file() || moved || (now.dev(), now.ino()) != (opened.dev(), opened.ino()) {
+        if linked(file)
+            || !now.is_file()
+            || moved
+            || (now.dev(), now.ino()) != (opened.dev(), opened.ino())
+        {
             return Err(refused());
         }
     }
@@ -270,6 +286,13 @@ mod tests {
         write_own(&mine, "me\n1\nweb\ndb\n").unwrap();
         write_own(&mine, "me\n2\n").unwrap();
         assert_eq!(std::fs::read_to_string(&mine).unwrap(), "me\n2\n");
+        // A linked folder is the same trick one level up.
+        let elsewhere = dir.join("elsewhere");
+        std::fs::create_dir(&elsewhere).unwrap();
+        let folder = dir.join(".patchbay-presence");
+        std::os::unix::fs::symlink(&elsewhere, &folder).unwrap();
+        assert!(write_own(&folder.join("me-on-mbp"), "x").is_err());
+        assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
