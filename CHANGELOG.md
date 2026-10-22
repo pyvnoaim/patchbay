@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.48 - 2026-10-22
 
 - A folder's pane sets the user, port, key and jump host for every device in it, and its right-click menu goes straight there.
 - Settings ▸ Defaults is gone: folders do that job. A `[defaults]` already in a file still applies.
