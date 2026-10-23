@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.53 - 2026-10-23
 
 - The Copy submenu is solid now, so a terminal behind it no longer shows through.
 
