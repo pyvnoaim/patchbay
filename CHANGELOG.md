@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.55 - 2026-10-23
 
 - A snippet can leave a blank, `{?}` or `{?unit}`, that you are asked to fill in when you pick it: `journalctl -u {?unit} -f`.
 - The first time you connect to a team device, patchbay offers to share its host key with the team.
