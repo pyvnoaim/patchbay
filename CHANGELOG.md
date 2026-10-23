@@ -11,6 +11,7 @@ it back. Nothing is retyped anywhere.
 ## Unreleased
 
 - Older Windows servers (2008 R2) that refuse the built-in remote desktop now open in your Remote Desktop app instead of failing with "connection reset by peer".
+- Retrying a remote desktop that failed replaces its dead tab instead of opening a second one.
 
 ## 0.1.53 - 2026-10-23
 

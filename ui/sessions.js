@@ -1565,6 +1565,9 @@ async function openRdpSession(name) {
 
   let creds = rdpCreds.get(name) ?? (await rdpSaved(name, j));
   if (!creds) return;
+  // A dead desktop is a black canvas with nothing to read back, so a retry takes its
+  // place rather than lining up beside it.
+  for (const d of sessions.values()) if (d.key === key && d.dead) dropTab(d.id);
 
   const id = nextId++;
   const host = document.createElement("div");
