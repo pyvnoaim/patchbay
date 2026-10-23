@@ -1872,11 +1872,14 @@ button.flat:hover {
   padding-left: 16px;
   opacity: 0.6;
 }
+/* #ctx's own backdrop-filter makes it the backdrop root, so a nested blur sees nothing and
+   the page shows straight through the wash: the panel goes over the opaque background. */
 .ctx-sub {
   display: none;
   position: absolute;
   left: 100%;
   color: var(--fg);
+  background: linear-gradient(var(--panel), var(--panel)), var(--bg);
 }
 .ctx-sub.flip {
   left: auto;
