@@ -162,9 +162,9 @@ jobs:
           # Still needed with the id: a draft's asset urls say `untagged-...`, and
           # this is what latest.json's urls are rewritten to.
           tagName: ${{ needs.version.outputs.tag }}
-          # The manifest the app fetches. Each runner merges its platform into the
-          # one already on the release, so the matrix ends with a single latest.json.
-          includeUpdaterJson: true
+          # Not here: each leg merged its platform into the latest.json already on
+          # the release, and two legs finishing together lost one. `publish` writes it.
+          includeUpdaterJson: false
           args: ${{ matrix.args }}
           # Its default is `npm run tauri`, a script package.json doesn't have.
           tauriScript: npx tauri
@@ -251,13 +251,34 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TAG: ${{ needs.version.outputs.tag }}
     steps:
-      # Each build leg merges its platform into latest.json; one that signed nothing
-      # leaves a platform the updater would answer with an error.
+      # latest.json, written once from the signatures on the draft. One missing
+      # leaves a platform the updater would answer with an error, so it stops here.
       - run: |
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p latest.json
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p '*.sig'
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body > notes.md
           node -e '
-            const p = require("./latest.json").platforms ?? {};
-            const want = ["darwin-aarch64", "darwin-x86_64", "windows-x86_64", "linux-x86_64"];
-            const bad = want.filter((k) => !p[k]?.signature || !p[k]?.url);
-            if (bad.length) { console.error("latest.json has no signed " + bad.join(", ")); process.exit(1); }'
+            const fs = require("fs");
+            const [tag, repo] = process.argv.slice(1);
+            const v = tag.slice(1);
+            const url = (f) => `https://github.com/${repo}/releases/download/${tag}/${f}`;
+            const files = {
+              "darwin-aarch64": "patchbay_aarch64.app.tar.gz",
+              "darwin-aarch64-app": "patchbay_aarch64.app.tar.gz",
+              "darwin-x86_64": "patchbay_x64.app.tar.gz",
+              "darwin-x86_64-app": "patchbay_x64.app.tar.gz",
+              "windows-x86_64": `patchbay_${v}_x64-setup.exe`,
+              "windows-x86_64-nsis": `patchbay_${v}_x64-setup.exe`,
+              "linux-x86_64": `patchbay_${v}_amd64.AppImage`,
+              "linux-x86_64-appimage": `patchbay_${v}_amd64.AppImage`,
+              "linux-x86_64-deb": `patchbay_${v}_amd64.deb`,
+            };
+            const bad = Object.values(files).filter((f) => !fs.existsSync(f + ".sig"));
+            if (bad.length) { console.error("no signature for " + [...new Set(bad)].join(", ")); process.exit(1); }
+            const platforms = Object.fromEntries(Object.entries(files).map(([k, f]) =>
+              [k, { signature: fs.readFileSync(f + ".sig", "utf8"), url: url(f) }]));
+            const notes = fs.readFileSync("notes.md", "utf8");
+            fs.writeFileSync("latest.json", JSON.stringify(
+              { version: v, notes, pub_date: new Date().toISOString(), platforms }, null, 2));
+          ' "$TAG" "$GITHUB_REPOSITORY"
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" latest.json --clobber
       - run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
