@@ -7,7 +7,6 @@
 mod clipboard;
 mod commands;
 mod config;
-mod drive;
 mod hostkeys;
 mod import;
 mod keychain;
@@ -152,7 +151,6 @@ fn main() {
             remote::rdp_forget,
             remote::close_rdp_session,
             remote::rdp_input,
-            remote::rdp_drop,
             remote::open_vnc,
             remote::open_forwards,
             remote::tunnels,

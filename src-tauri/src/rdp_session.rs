@@ -692,25 +692,6 @@ fn drain(
     Ok(false)
 }
 
-#[cfg(unix)]
-fn with_drive(connector: connector::ClientConnector) -> connector::ClientConnector {
-    connector
-        .with_static_channel(ironrdp_rdpsnd::client::Rdpsnd::new(Box::new(
-            ironrdp_rdpsnd::client::NoopRdpsndBackend,
-        )))
-        .with_static_channel(
-            ironrdp_rdpdr::Rdpdr::new(Box::new(crate::drive::Folder::new()), "patchbay".into())
-                .with_drives(Some(vec![(1, crate::drive::DRIVE.into())])),
-        )
-}
-
-// ponytail: the backend is unix-only, so a Windows copy shares no folder; its own
-// mstsc handoff does.
-#[cfg(not(unix))]
-fn with_drive(connector: connector::ClientConnector) -> connector::ClientConnector {
-    connector
-}
-
 fn connect(
     host: &str,
     port: u16,
@@ -734,7 +715,7 @@ fn connect(
     let socket = stream.try_clone().map_err(|e| e.to_string())?;
 
     let mut framed = ironrdp_blocking::Framed::new(stream);
-    let connector = connector::ClientConnector::new(config, client_addr)
+    let mut connector = connector::ClientConnector::new(config, client_addr)
         .with_static_channel(CliprdrClient::new(Box::new(clipboard)))
         // The Display Control channel is the only way the desktop follows the window;
         // nothing is sent when the capabilities arrive, the first resize does that.
@@ -742,7 +723,6 @@ fn connect(
             DrdynvcClient::new()
                 .with_dynamic_channel(DisplayControlClient::new(|_| Ok(Vec::new()))),
         );
-    let mut connector = with_drive(connector);
     let should_upgrade = ironrdp_blocking::connect_begin(&mut framed, &mut connector)
         .map_err(|e| format!("{host}: {e}"))?;
 

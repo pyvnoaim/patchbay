@@ -1004,9 +1004,6 @@ async function watchDrops() {
       const s = sessions.get(activeId);
       const paths = e.payload?.paths ?? [];
       if (!paths.length) return;
-      // A remote desktop sees one folder of ours as a drive; a drop lands there.
-      if (s?.kind === "rdp")
-        return invoke("rdp_drop", { paths }).then((said) => flash(said), alertish);
       if (s?.kind !== "sftp") return;
       fileNote(s, `Uploading ${paths.length} file${paths.length === 1 ? "" : "s"}…`);
       let failed = null;

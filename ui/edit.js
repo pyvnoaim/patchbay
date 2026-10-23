@@ -1279,7 +1279,6 @@ function keysHtml() {
       [
         // ⌘ is the Windows key there, so the far end's own paste is Ctrl.
         ["Paste what this machine copied, files too", ["Ctrl+V"]],
-        ["Hand it files, found there as \\\\tsclient\\transfer", ["Drop on the tab"]],
       ],
     ],
   ];
