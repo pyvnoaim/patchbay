@@ -8,6 +8,10 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Older Windows servers (2008 R2) that refuse the built-in remote desktop now open in your Remote Desktop app instead of failing with "connection reset by peer".
+
 ## 0.1.53 - 2026-10-23
 
 - The Copy submenu is solid now, so a terminal behind it no longer shows through.

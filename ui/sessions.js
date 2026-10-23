@@ -1717,6 +1717,13 @@ async function openRdpSession(name) {
     // Rejected credentials must not be remembered, or the next attempt reuses them.
     rdpCreds.delete(name);
     renderTabs();
+    // A server too old for the built-in session (Server 2008 R2) still takes the
+    // desktop's own client, so it goes there rather than ending at an error.
+    if (String(err).includes("older encryption")) {
+      dropTab(id);
+      flash(`${j.name} only speaks older encryption, so it is opening in the Remote Desktop app`);
+      return handOffRdp(name);
+    }
     // A changed certificate is refused before the password is sent, so the sign-in
     // is kept for the retry. The fingerprint is the one the refusal named: trusting it
     // lets in that certificate and not whatever the host serves by the time we ask.

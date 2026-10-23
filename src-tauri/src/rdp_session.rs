@@ -767,6 +767,28 @@ fn connect(
     Ok((result, upgraded_framed))
 }
 
+/// Matched by the window, which hands the device to the desktop's own RDP client.
+const OLD_TLS: &str = "the server only offers older encryption than the built-in session speaks";
+
+/// A handshake the server walked out of. rustls offers only ECDHE with an AEAD cipher,
+/// and Windows Server 2008 R2 has none of those: Schannel resets the socket rather than
+/// sending an alert. mstsc and FreeRDP still speak its CBC and DHE suites, so the
+/// handoff gets in where this can't.
+fn too_old(e: &std::io::Error) -> bool {
+    use rustls::{AlertDescription as A, Error as R};
+    match e.get_ref().and_then(|i| i.downcast_ref::<R>()) {
+        Some(R::AlertReceived(
+            A::HandshakeFailure | A::ProtocolVersion | A::InsufficientSecurity,
+        ))
+        | Some(R::PeerIncompatible(_)) => true,
+        Some(_) => false,
+        None => matches!(
+            e.kind(),
+            std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::UnexpectedEof
+        ),
+    }
+}
+
 /// `pin` is the device's own `host:port`, which the certificate is remembered under:
 /// `host` is `127.0.0.1` for every device behind a bastion.
 fn tls(stream: TcpStream, host: &str, pin: &str) -> Result<(Upgraded, Vec<u8>), String> {
@@ -785,7 +807,13 @@ fn tls(stream: TcpStream, host: &str, pin: &str) -> Result<(Upgraded, Vec<u8>), 
         .map_err(|e| e.to_string())?;
     let mut tls_stream = rustls::StreamOwned::new(client, stream);
     // Without a flush the handshake hasn't moved far enough for a peer certificate.
-    tls_stream.flush().map_err(|e| format!("{host}: {e}"))?;
+    tls_stream.flush().map_err(|e| {
+        if too_old(&e) {
+            format!("{pin}: {OLD_TLS}")
+        } else {
+            format!("{host}: {e}")
+        }
+    })?;
 
     let cert = tls_stream
         .conn
@@ -1057,6 +1085,16 @@ pub struct Screen {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_walked_out_handshake_is_old_encryption() {
+        use std::io::{Error, ErrorKind};
+        let alert = |a| Error::new(ErrorKind::InvalidData, rustls::Error::AlertReceived(a));
+        assert!(too_old(&Error::from(ErrorKind::ConnectionReset)));
+        assert!(too_old(&alert(rustls::AlertDescription::HandshakeFailure)));
+        assert!(!too_old(&alert(rustls::AlertDescription::BadCertificate)));
+        assert!(!too_old(&Error::from(ErrorKind::TimedOut)));
+    }
 
     /// Whether `crop` lifts the right pixels. Needs a real host, writes `rdp-frame.ppm`:
     /// `RDP_HOST=10.0.0.5 RDP_USER=you RDP_PASS=… cargo test -- --ignored --nocapture`
