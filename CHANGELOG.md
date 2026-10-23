@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.54 - 2026-10-23
 
 - Older Windows servers (2008 R2) that refuse the built-in remote desktop now open in your Remote Desktop app instead of failing with "connection reset by peer".
 - Retrying a remote desktop that failed replaces its dead tab instead of opening a second one.
