@@ -29,7 +29,6 @@ src-tauri/src/
   rdp.rs           remote desktop by handoff (.rdp file) and the ssh tunnels
   rdp_session.rs   remote desktop in a tab (IronRDP to a canvas)
   clipboard.rs     the CLIPRDR backend for rdp_session.rs
-  drive.rs         the RDPDR drive for rdp_session.rs (unix only)
   keychain.rs      a remembered RDP password, in the OS keychain
   hostkeys.rs      host keys the team has seen, beside the shared list
   presence.rs      who has a session on which team device, with no server

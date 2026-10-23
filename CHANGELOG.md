@@ -8,6 +8,15 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- A snippet can leave a blank, `{?}` or `{?unit}`, that you are asked to fill in when you pick it: `journalctl -u {?unit} -f`.
+- The first time you connect to a team device, patchbay offers to share its host key with the team.
+- Adding your devices to your ssh config can now add your own (Mine) instead of the team's, picked in Settings ▸ Devices.
+- The sidebar's folders no longer draw vertical guide lines; the indent alone shows what is inside.
+- Dropping files on a remote desktop tab is gone; copy and paste moves files both ways, on every platform.
+- A submenu with no room on either side of the menu now opens over it instead of off the window.
+
 ## 0.1.54 - 2026-10-23
 
 - Older Windows servers (2008 R2) that refuse the built-in remote desktop now open in your Remote Desktop app instead of failing with "connection reset by peer".

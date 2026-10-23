@@ -30,17 +30,5 @@ Rough, unranked. Most are a `ponytail:` ceiling someone hasn't hit yet.
 
 - **Shared host keys for the bastions.** ssh applies the option to the last hop only,
   so a jump host is still asked about the old way.
-- **Offer to share a host key after a first connect**, not only from the device's
-  detail, where few will look.
-- **A fill-in blank in a snippet** (`journalctl -u {?} -f`), if ending the text where
-  the variable goes turns out not to be enough.
-- **Your own devices in `~/.ssh/patchbay.conf`.** With two vaults they are named
-  `me:<key>`, which is not a name ssh can be given, so the export leaves them out.
 - **More than one team vault.** Two customers on two shares. It is what spaces were,
   so not until someone has two.
-- **A web tab under a sheet or the palette** still goes blank while they are open. A
-  snapshot of the page held in its place would hide the gap.
-- **The RDP drive on Windows.** `drive.rs` is unix-only because IronRDP's backend is,
-  so a Windows copy shares no folder in-app.
-- **The trial file** beside the config restarts the trial when deleted. Move it to
-  the keychain if that turns out to be common (paid version only).

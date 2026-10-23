@@ -46,12 +46,12 @@ it is. The window opens them as tabs under a folder tree. Your `ssh` agent and
 | | |
 | --- | --- |
 | **Sessions in tabs** | Your system `ssh` on a real pty, so the agent, `~/.ssh/config` and host-key prompts all just work. |
-| **Remote desktop** | RDP decoded in-app (IronRDP, pure Rust) with clipboard and a shared folder, or handed to your own client. |
+| **Remote desktop** | RDP decoded in-app (IronRDP, pure Rust) with a clipboard that carries files too, or handed to your own client. |
 | **Web UIs and files** | A device's admin page in a tab beside its shell; browse, upload and edit files over `sftp`. |
 | **Jump chains** | `db → web → bastion` resolves to one `ssh -J`, and "Find the break" says which hop stopped answering. |
 | **Mine and Team** | Your own devices beside the team's shared list, on a drive you already have. No server, no account. |
-| **Team host keys** | A first connect is checked against the key a colleague already trusted. |
-| **Broadcast and snippets** | Type into many shells at once; snippets go on the prompt and never press Enter. |
+| **Team host keys** | A first connect is checked against the key a colleague already trusted, and yours is offered to them. |
+| **Broadcast and snippets** | Type into many shells at once; snippets fill in `{host}`, ask for a `{?}` blank, and never press Enter. |
 | **Import** | Reads `~/.ssh/config` or a Royal TS `.rtsz`. Passwords never come across. |
 
 ## Install
@@ -152,7 +152,8 @@ point at the same path. Everyone sees the same devices and folder notes, and `gr
 still reads it. Nothing to install and no server in the middle, and since the file
 holds no credentials, sharing it shares hostnames and nothing more.
 
-`[settings]` and colours stay in your own file. `[defaults]` goes with the list, so a
+Your own devices stay in your own file, shown beside the team's as **Mine**; moving one
+across is a right-click. `[settings]` and colours stay there too. `[defaults]` goes with the list, so a
 `user` or `key` there is for a *shared* account (`root@nas`, `~/.ssh/acme`; `~`
 expands per machine). A personal account on a shared server goes in your
 `~/.ssh/config`, which supplies what the list leaves out.
@@ -193,7 +194,7 @@ the context menu when you'd rather have your own terminal.
 
 ## The rest of your machine
 
-Settings ▸ Devices can write your list to `~/.ssh/patchbay.conf` and add one `Include`
+Settings ▸ Devices can write your devices, or the team's, to `~/.ssh/patchbay.conf` and add one `Include`
 line to `~/.ssh/config`. Then `ssh web-01` works in any terminal, and so do `scp`,
 `rsync`, Ansible and VS Code Remote - with the jump chains patchbay resolved, as
 `ProxyJump`. Your own config is never rewritten: one line goes in at the top, a name
@@ -283,17 +284,17 @@ are and what to run - the running is someone else's job.
 
 ## Licence
 
-**Free, all of it** - every protocol, every tab, the shared list included, on as many
-machines as you like, at a company of any size. [PolyForm
+**Free, all of it, for now** - every protocol, every tab, the shared list included, on
+as many machines as you like, at a company of any size. [PolyForm
 Perimeter](https://polyformproject.org/licenses/perimeter/1.0.1) is the licence: the one
 thing it asks is that you don't turn it into a product that competes with this one.
 
 Nothing is sent anywhere and there is no account: patchbay makes no outbound request
-except the update check.
+except the update check, and Bitwarden's own if you turn that on.
 
 - **Can we change the code?** Yes, and you never have to publish what you changed.
-- **Which part is the paid one?** Neither. The shared list is not a tier being held
-  back for a team plan, and there is nothing to buy.
+- **Is a paid version coming?** A company licence for teams on a shared list is
+  planned. One person stays free, and a team's list keeps working without one.
 - **Is this open source?** The source is public and yours to read, build and fork, but it
   is not OSI open source: PolyForm asks that you don't sell a competing product built
   out of it. Using it, at work or anywhere else, is not that.
