@@ -27,14 +27,21 @@ function showCtx(x, y, head, items, os) {
   ctxEl.style.left = `${left}px`;
   ctxEl.style.top = `${Math.min(y, innerHeight - r.height - 8)}px`;
   // A submenu flies out to the right unless that runs off the window or over a web tab,
-  // and is lifted to stay above the bottom edge. Measured here because hidden it has no box.
+  // then to the left, and with room on neither side it lies over the menu, against the
+  // edge. Lifted to stay above the bottom edge. Measured here because hidden it has no box.
   for (const sub of ctxEl.querySelectorAll(".ctx-sub")) {
     sub.style.display = "block";
     const s = sub.getBoundingClientRect();
     const item = sub.parentElement.getBoundingClientRect();
     sub.style.display = "";
     const edge = web && x < web.left ? web.left : innerWidth;
-    sub.classList.toggle("flip", item.right + s.width > edge - 4);
+    const at =
+      item.right + s.width <= edge - 4
+        ? item.right
+        : item.left - s.width >= 4
+          ? item.left - s.width
+          : Math.max(4, edge - 4 - s.width);
+    sub.style.left = `${at - item.left}px`;
     sub.style.top = `${Math.min(-6, innerHeight - 8 - item.top - s.height)}px`;
   }
 }

@@ -1868,10 +1868,6 @@ button.flat:hover {
   color: var(--fg);
   background: linear-gradient(var(--panel), var(--panel)), var(--bg);
 }
-.ctx-sub.flip {
-  left: auto;
-  right: 100%;
-}
 .has-sub:is(:hover, .on, :has(.on)) > .ctx-sub {
   display: block;
 }
