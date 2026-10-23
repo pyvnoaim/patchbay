@@ -138,21 +138,18 @@ pub struct SshHosts {
 /// than in every writer because a hand-edit changes the list without any writer running.
 /// Quiet on failure: an unwritable home directory is no reason to fail the list.
 fn sync_ssh_config(jacks: &patchbay::Jacks) {
-    if !config::load_settings().write_ssh_config {
+    let settings = config::load_settings();
+    if !settings.write_ssh_config {
         return;
     }
+    // With one file there is no `me:` to tell the vaults apart, and every device goes.
+    let mine = settings.ssh_config_vault == "mine" && patchbay::list().is_some();
     let Some(dir) = ssh_dir() else { return };
     let theirs = std::fs::read_to_string(dir.join("config"))
         .map(|s| import::host_names(&s))
         .unwrap_or_default();
-    // ponytail: only the team's. One of yours is `me:<key>` here, which ssh would read
-    // as a host and a port; under their bare keys once someone wants them exported.
-    let named: patchbay::Jacks = jacks
-        .iter()
-        .filter(|(k, _)| !k.starts_with(patchbay::MINE))
-        .map(|(k, j)| (k.clone(), j.clone()))
-        .collect();
-    let _ = config::write_ssh_include(&dir, &import::to_ssh_config(&named, &theirs));
+    let (named, left_out) = import::one_vault(jacks, mine);
+    let _ = config::write_ssh_include(&dir, &import::to_ssh_config(&named, &theirs, left_out));
 }
 
 #[tauri::command]

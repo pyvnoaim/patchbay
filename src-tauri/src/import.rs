@@ -255,14 +255,46 @@ fn host_block(name: &str, j: &Jack) -> Option<String> {
     Some(out)
 }
 
+/// One vault's devices under the names ssh will be given. Yours lose the `me:`, which
+/// ssh would read as a host and a port, and so do jumps between them. One of yours that
+/// jumps through a team device is left out: that hop isn't in this file, and ssh would
+/// take its name for a hostname.
+pub fn one_vault(jacks: &Jacks, mine: bool) -> (Jacks, Vec<String>) {
+    let mut out = Jacks::new();
+    let mut left_out = Vec::new();
+    for (k, j) in jacks {
+        let Some(key) = (match mine {
+            true => k.strip_prefix(patchbay::MINE),
+            false => (!k.starts_with(patchbay::MINE)).then_some(k.as_str()),
+        }) else {
+            continue;
+        };
+        let mut j = j.clone();
+        if mine {
+            match j.jump.as_deref() {
+                Some(h) if h.starts_with(patchbay::MINE) => {
+                    j.jump = Some(h[patchbay::MINE.len()..].to_string());
+                }
+                Some(h) if jacks.contains_key(h) => {
+                    left_out.push(format!("{key} (it jumps through the team's \"{h}\")"));
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        out.insert(key.to_string(), j);
+    }
+    (out, left_out)
+}
+
 /// The list as ssh reads it. Names in `theirs` (their own config's `Host` lines) are
 /// left out with a reason written into the file, never silently shadowed.
-pub fn to_ssh_config(jacks: &Jacks, theirs: &HashSet<String>) -> String {
+pub fn to_ssh_config(jacks: &Jacks, theirs: &HashSet<String>, left_out: Vec<String>) -> String {
     let mut out = String::from(
         "# Written by patchbay. Edits here are lost the next time it writes - change\n\
          # the device in the window instead, or turn this off in Settings > Devices.\n",
     );
-    let mut skipped: Vec<String> = Vec::new();
+    let mut skipped = left_out;
     let mut blocks = String::new();
 
     for (name, j) in jacks {
@@ -684,7 +716,7 @@ Match host *.internal
         )
         .unwrap()
         .0;
-        let out = to_ssh_config(&jacks, &HashSet::new());
+        let out = to_ssh_config(&jacks, &HashSet::new(), vec![]);
 
         assert!(out.contains("Host db\n"), "{out}");
         assert!(out.contains("    HostName db.internal\n"));
@@ -702,6 +734,36 @@ Match host *.internal
     }
 
     #[test]
+    fn either_vault_goes_out_under_the_names_ssh_can_be_given() {
+        let team = patchbay::parse_all(
+            "[jack.bastion]\nhost = \"10.0.0.1\"\n[jack.web]\nhost = \"10.0.0.2\"\n",
+        )
+        .unwrap()
+        .0;
+        let mine = patchbay::parse_all(
+            "[jack.hop]\nhost = \"10.0.0.3\"\n\
+             [jack.box]\nhost = \"10.0.0.4\"\njump = \"hop\"\n\
+             [jack.far]\nhost = \"10.0.0.5\"\njump = \"bastion\"\n",
+        )
+        .unwrap()
+        .0;
+        let jacks = patchbay::merge(Some(team), mine);
+
+        let (ours, left) = one_vault(&jacks, true);
+        assert_eq!(ours.keys().collect::<Vec<_>>(), ["hop", "box"]);
+        assert_eq!(ours["box"].jump.as_deref(), Some("hop"));
+        let out = to_ssh_config(&ours, &HashSet::new(), left);
+        assert!(out.contains("Host box\n    HostName 10.0.0.4\n"), "{out}");
+        assert!(out.contains("    ProxyJump hop\n"), "{out}");
+        assert!(out.contains("# left out: far (it jumps through the team's \"bastion\")"));
+        assert!(!out.contains("me:"), "{out}");
+
+        let (theirs, left) = one_vault(&jacks, false);
+        assert_eq!(theirs.keys().collect::<Vec<_>>(), ["bastion", "web"]);
+        assert!(left.is_empty());
+    }
+
+    #[test]
     fn a_name_their_own_config_defines_is_left_to_them() {
         let jacks = patchbay::parse_all(
             "[jack.web]\nhost = \"10.0.0.4\"\n[jack.db]\nhost = \"10.0.0.5\"\n",
@@ -711,7 +773,7 @@ Match host *.internal
         let theirs =
             host_names("Host web\n  HostName elsewhere\nHost *\n  ServerAliveInterval 60\n");
         assert!(theirs.contains("web"));
-        let out = to_ssh_config(&jacks, &theirs);
+        let out = to_ssh_config(&jacks, &theirs, vec![]);
         assert!(!out.contains("Host web\n"), "{out}");
         assert!(out.contains("# left out: web (your own config already defines it)"));
         assert!(out.contains("Host db\n"), "{out}");
@@ -740,7 +802,7 @@ Match host *.internal
         )
         .unwrap()
         .0;
-        let out = to_ssh_config(&jacks, &HashSet::new());
+        let out = to_ssh_config(&jacks, &HashSet::new(), vec![]);
         assert!(!out.contains("ProxyCommand"), "{out}");
         assert!(out.contains("Host ok\n"), "{out}");
     }

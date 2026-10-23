@@ -850,6 +850,10 @@ pub struct Settings {
     /// Off by default: it writes outside patchbay's own directory.
     #[serde(default)]
     pub write_ssh_config: bool,
+    /// Which vault that file is written from, with two: "team" or "mine". ssh has one
+    /// namespace and both vaults can have a `web`, so it is one or the other, not both.
+    #[serde(default = "team")]
+    pub ssh_config_vault: String,
     /// Tint a device's icon by its `os`, using the brand colour unless `[colors]` overrides it.
     #[serde(default = "yes")]
     pub os_colors: bool,
@@ -887,6 +891,10 @@ fn yes() -> bool {
     true
 }
 
+fn team() -> String {
+    "team".into()
+}
+
 fn system() -> String {
     "system".into()
 }
@@ -905,6 +913,7 @@ impl Default for Settings {
             probe: true,
             connect_in_terminal: false,
             write_ssh_config: false,
+            ssh_config_vault: team(),
             os_colors: true,
             check_updates: true,
             log_sessions: false,
@@ -962,6 +971,10 @@ pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
     t["check_updates"] = value(s.check_updates);
     t["log_sessions"] = value(s.log_sessions);
     t["write_ssh_config"] = value(s.write_ssh_config);
+    t["ssh_config_vault"] = value(match s.ssh_config_vault.as_str() {
+        "mine" => "mine",
+        _ => "team",
+    });
     // Read straight back by the window (root element, xterm), so narrowed here.
     t["theme"] = value(match s.theme.as_str() {
         "light" => "light",

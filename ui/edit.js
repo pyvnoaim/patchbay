@@ -1303,6 +1303,8 @@ async function openSettings(pane) {
   for (const el of setForm.querySelectorAll("input[type=checkbox]")) el.checked = !!prefs[el.name];
   setForm.elements.theme.value = ["light", "dark"].includes(prefs.theme) ? prefs.theme : "system";
   setForm.elements.font_size.value = termFont();
+  setForm.elements.ssh_config_vault.value = prefs.ssh_config_vault === "mine" ? "mine" : "team";
+  $("ssh-vault-field").hidden = !vaults.two;
   setForm.elements.list.value = prefs.list ?? "";
   showListWhere();
   setForm.elements.bitwarden_server.value = prefs.bitwarden_server ?? "";
@@ -1390,6 +1392,7 @@ setForm.addEventListener("submit", async (e) => {
   const next = { ...prefs };
   for (const el of setForm.querySelectorAll("input[type=checkbox]")) next[el.name] = el.checked;
   next.theme = setForm.elements.theme.value;
+  next.ssh_config_vault = setForm.elements.ssh_config_vault.value;
   next.font_size = parseFloat(setForm.elements.font_size.value);
   next.list = setForm.elements.list.value.trim() || null;
   next.bitwarden_server = setForm.elements.bitwarden_server.value.trim() || null;

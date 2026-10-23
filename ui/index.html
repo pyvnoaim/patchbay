@@ -254,6 +254,14 @@
                   alone.</span
                 ></label
               >
+              <!-- ssh has one namespace and both vaults can have a "web", so one or the other. -->
+              <label class="f" id="ssh-vault-field" hidden
+                ><span>Devices to add</span
+                ><select name="ssh_config_vault">
+                  <option value="team">Team</option>
+                  <option value="mine">Mine</option>
+                </select></label
+              >
               <label class="opt"
                 ><input type="checkbox" name="log_sessions" />
                 <span
