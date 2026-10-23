@@ -282,7 +282,9 @@
                 Snippets on the toolbar or in Search. It never presses Enter: you do.
                 <code>{host}</code>, <code>{user}</code>, <code>{port}</code> and
                 <code>{name}</code> are filled in from the device, so
-                <code>scp file {user}@{host}:</code> works on every one.
+                <code>scp file {user}@{host}:</code> works on every one. <code>{?}</code> is a blank
+                you are asked for when you pick it, <code>{?unit}</code> one that says what goes
+                there: <code>journalctl -u {?unit} -f</code>.
               </p>
             </section>
 

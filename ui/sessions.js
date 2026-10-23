@@ -476,6 +476,9 @@ function shellInFront() {
 // every machine, and in a broadcast each pane gets its own. Filled in before the check,
 // not after: a host is a colleague's text too, and must not be the thing that presses
 // Enter.
+//
+// `{?}` is a blank, asked for when the snippet is picked, once for every pane of a
+// broadcast; `{?unit}` says what goes there. Asked in order, and a cancel types nothing.
 let soloPaste = false; // set while each broadcast pane takes its own copy
 function fillSnippet(text, name) {
   const j = all.find((x) => x.name === name);
@@ -494,7 +497,17 @@ function fillSnippet(text, name) {
   if (missing.length) throw `"${labelOf(name)}" has no ${missing[0]} to fill in`;
   return out;
 }
-function typeSnippet(sn) {
+async function typeSnippet(sn) {
+  if (!shellInFront()) return alertish("a snippet needs a shell in front to be typed into");
+  // Asked before the panes are looked at: the far end can open an editor, or a pane
+  // close, while the question is up. One pass, so an answer with a {?} in it stays text.
+  const answers = [];
+  for (const [, what] of sn.text.matchAll(/\{\?([^}]*)\}/g)) {
+    const v = await ask(`${sn.name}: ${what.trim() || "fill in the blank"}`, "", "Type");
+    if (v === null) return sessions.get(activeId)?.term.focus();
+    answers.push(v);
+  }
+  const text = sn.text.replace(/\{\?([^}]*)\}/g, () => answers.shift());
   const s = sessions.get(activeId);
   if (!shellInFront()) return alertish("a snippet needs a shell in front to be typed into");
   const panes = s.bcast?.on ? [...s.bcast.live].map((id) => sessions.get(id)).filter(Boolean) : [s];
@@ -506,7 +519,7 @@ function typeSnippet(sn) {
   }
   let filled;
   try {
-    filled = panes.map((p) => fillSnippet(sn.text, p.name));
+    filled = panes.map((p) => fillSnippet(text, p.name));
   } catch (e) {
     return alertish(`nothing was typed: ${e}`);
   }
