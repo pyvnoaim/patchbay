@@ -214,16 +214,7 @@ async function detailClick(e) {
     }
     renderDetail();
   }
-  if (act === "vouch") {
-    try {
-      await invoke("share_host_key", { name: j.name });
-      hostKeys.delete(j.name);
-      flash(`The team now checks "${j.label}" against the key this machine has.`);
-    } catch (err) {
-      alertish(err);
-    }
-    renderDetail();
-  }
+  if (act === "vouch") await shareHostKey(j);
   if (act === "copy") {
     const btn = e.target.closest("[data-act]");
     try {

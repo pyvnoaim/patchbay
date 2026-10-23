@@ -291,6 +291,7 @@ async function openSession(name, task = null, bcast = null, waiting = false) {
           term.write("\x1b[2J\x1b[3J\x1b[H");
         }
         term.write(e.payload);
+        offerHostKey(s, e.payload);
       }),
     );
     s.unlisten.push(
@@ -425,8 +426,40 @@ function webViewRect() {
   return r.width > 0 ? r : null;
 }
 
-// A child webview is an OS view above the page and ignores CSS, so it is either sized
-// exactly over its host div or sized to nothing.
+// ssh says this once, on the first connect to a host it didn't know, and for a team
+// device that is the moment its key is worth sharing: the button in the detail is
+// where few look. Asked of the files rather than trusted from the text, which could
+// be anything the far end printed, or a bastion on the way being added.
+// Not settled by the first line: through a jump host, that one is the bastion's.
+function offerHostKey(s, chunk) {
+  if (s.keyDone || s.keyAsking || s.task || !String(chunk).includes("Permanently added")) return;
+  const j = all.find((x) => x.name === s.name);
+  if (j?.vault !== "team") return;
+  s.keyAsking = true;
+  invoke("host_key", { name: j.name })
+    .then((k) => {
+      if (!k.mine.length) return;
+      s.keyDone = true;
+      if (k.team.length) return;
+      flash(`First connect to "${j.label}". Share its host key with the team?`, false, {
+        label: "Share",
+        run: () => shareHostKey(j),
+      });
+    })
+    .catch(() => {})
+    .finally(() => (s.keyAsking = false));
+}
+async function shareHostKey(j) {
+  try {
+    await invoke("share_host_key", { name: j.name });
+    hostKeys.delete(j.name);
+    flash(`The team now checks "${j.label}" against the key this machine has.`);
+  } catch (err) {
+    alertish(err);
+  }
+  renderDetail();
+}
+
 // A live shell is the tab in front: the only place a snippet has a prompt to go to.
 function shellInFront() {
   const s = sessions.get(activeId);
