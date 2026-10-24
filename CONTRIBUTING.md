@@ -28,6 +28,7 @@ src-tauri/src/
   sftp.rs          the file browser, by running /usr/bin/sftp
   rdp.rs           remote desktop by handoff (.rdp file) and the ssh tunnels
   rdp_session.rs   remote desktop in a tab (IronRDP to a canvas)
+  h264.rs          H.264 for it, by the OS's decoder (VideoToolbox, Media Foundation)
   clipboard.rs     the CLIPRDR backend for rdp_session.rs
   keychain.rs      a remembered RDP password, in the OS keychain
   hostkeys.rs      host keys the team has seen, beside the shared list

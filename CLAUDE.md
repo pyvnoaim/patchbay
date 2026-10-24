@@ -71,7 +71,7 @@ the *only* time anything is committed:
 3. **Run `npm run check` and `npm test`** - the whole crate, not one module's `#[cfg(test)]`.
 4. **Clean → commit and push.** Sensible commit messages, split into separate commits when the changes are unrelated.
 5. **Then release.** If `## Unreleased` in `CHANGELOG.md` has entries, `npm run bump` (next patch), commit `release x.y.z` as the last commit and push `main`; there is no tag to push. CI builds macOS, Windows and Linux and publishes, and every installed copy offers the update on its next check. A push with nothing someone would notice releases nothing: an update that changes nothing still costs everyone a restart.
-6. **Not clean → stop and tell me what you found.** Don't push and don't fix it silently; a behaviour change is my call. Trivial nits (a typo, dead code, a stale comment) you can just fix, mention, and carry on.
+6. **Not clean → fix it, then push.** Fix what the review turns up in the same pass and rerun step 3; stopping to hand the findings back only buys a round trip. List every finding and what was done about it, one line each, so nothing is fixed silently. A finding that would change behaviour someone relies on is still my call: name it and leave it.
 
 Findings first, one line each. Don't push a "probably fine".
 
@@ -196,11 +196,12 @@ via IronRDP and paints it on a canvas. Read the objection precisely before calli
 that a reversal - the Royal TS failure mode was bundling *FreeRDP*, a C graphics
 stack with its own toolkit, window handling and CVE feed. IronRDP is pure Rust, no C
 dependency, and the pixels land in the webview we already ship. So the rule that
-stands is: **never embed an ssh protocol implementation, never link FreeRDP.**
+stands is: **never embed an ssh protocol implementation, never link FreeRDP**, and no
+H.264 library either: the OS decodes it (`h264.rs`).
 `rdp.rs` keeps the handoff to mstsc / Windows App / xfreerdp, and it stays - an
 in-window session is the default, not the only way. Watch memory per session; xterm
 scrollback is capped at 5000 lines on purpose, and an RDP session holds a full
-framebuffer.
+framebuffer, plus the graphics pipeline's surfaces and cache beside it.
 
 The Bitwarden host reads like the credential store this app refuses, and isn't: the
 vault, the master password and the sign-in are Bitwarden's own code in Bitwarden's own

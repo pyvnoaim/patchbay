@@ -46,7 +46,7 @@ it is. The window opens them as tabs under a folder tree. Your `ssh` agent and
 | | |
 | --- | --- |
 | **Sessions in tabs** | Your system `ssh` on a real pty, so the agent, `~/.ssh/config` and host-key prompts all just work. |
-| **Remote desktop** | RDP decoded in-app (IronRDP, pure Rust) with a clipboard that carries files too, or handed to your own client. |
+| **Remote desktop** | RDP decoded in-app (IronRDP, pure Rust) through RDP's graphics pipeline, H.264 on your Mac's video hardware, and a clipboard that carries files too; or handed to your own client. |
 | **Web UIs and files** | A device's admin page in a tab beside its shell; browse, upload and edit files over `sftp`. |
 | **Jump chains** | `db → web → bastion` resolves to one `ssh -J`, and "Find the break" says which hop stopped answering. |
 | **Mine and Team** | Your own devices beside the team's shared list, on a drive you already have. No server, no account. |
@@ -269,8 +269,10 @@ here and never will be: a session is `/usr/bin/ssh` on a pty, in a tab.
 
 Remote desktop is a tab too. That one decodes RDP itself - IronRDP, pure Rust,
 painted onto a canvas - so there is still no FreeRDP and no embedded graphics
-toolkit, which was always the actual objection. "Remote desktop in system client"
-hands a `.rdp` file to mstsc, Windows App or xfreerdp if you'd rather.
+toolkit, which was always the actual objection. H.264 goes to the system's own decoder
+(VideoToolbox on macOS, Media Foundation on Windows), so no codec library is linked
+either. "Remote desktop in system client" hands a `.rdp` file to mstsc, Windows App or
+xfreerdp if you'd rather.
 
 VNC is a handoff and only a handoff: `vnc = 5900` opens `vnc://` with whatever viewer
 the machine already has - Screen Sharing on macOS, Remmina on most Linux desktops, and
