@@ -29,6 +29,7 @@ pub fn decoder() -> Option<Box<dyn H264Decoder>> {
 /// ends the walk rather than reading past it. Which framing it is can only be guessed: an
 /// AVC stream whose first unit is 1 or 256-511 bytes long opens like a start code. Windows
 /// and xrdp both send Annex B, which is what the guess favours.
+#[cfg(any(target_os = "macos", test))]
 pub fn nal_units(data: &[u8]) -> Vec<&[u8]> {
     let annex_b = data.starts_with(&[0, 0, 1]) || data.starts_with(&[0, 0, 0, 1]);
     let mut units = Vec::new();
