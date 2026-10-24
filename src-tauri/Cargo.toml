@@ -1,6 +1,6 @@
 [package]
 name = "patchbay-app"
-version = "0.1.55"
+version = "0.1.56"
 edition = "2021"
 license-file = "../LICENSE"   # PolyForm Perimeter 1.0.1, not an SPDX id
 rust-version = "1.94"   # ironrdp main (in-app RDP) needs it
