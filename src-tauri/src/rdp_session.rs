@@ -15,9 +15,10 @@ use ironrdp::pdu::geometry::InclusiveRectangle;
 use ironrdp::pdu::rdp::capability_sets::MajorPlatformType;
 use ironrdp::pdu::rdp::client_info::PerformanceFlags;
 use ironrdp::session::image::DecodedImage;
-use ironrdp::session::{fast_path, ActiveStage, ActiveStageBuilder, ActiveStageOutput};
+use ironrdp::session::{ActiveStage, ActiveStageBuilder, ActiveStageOutput};
 use ironrdp_cliprdr::backend::ClipboardMessage;
 use ironrdp_cliprdr::CliprdrClient;
+use ironrdp_egfx::client::GraphicsPipelineClient;
 use std::io::Write as _;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -108,6 +109,8 @@ pub struct Session {
     /// Builds the sequence a Server Deactivate All has to be answered with, which is
     /// how a resize takes effect. Invariant for the life of the connection.
     activation: ConnectionActivationFactory,
+    /// Graphics pipelines alive, see [`Gfx`].
+    pipelines: Pipelines,
     pub width: u16,
     pub height: u16,
 }
@@ -127,13 +130,18 @@ fn config(
         // one with `security_layer=tls` rejects a CredSSP-only client.
         enable_tls: true,
         enable_credssp: true,
-        keyboard_type: KeyboardType::IbmEnhanced,
+        enable_standard_rdp_security: false,
+        keyboard_type: KeyboardType::IBM_ENHANCED,
         keyboard_subtype: 0,
         keyboard_layout: 0,
         keyboard_functional_keys_count: 12,
         ime_file_name: String::new(),
         dig_product_id: String::new(),
         desktop_size: connector::DesktopSize { width, height },
+        monitor_layout: None,
+        connection_type: ironrdp::pdu::gcc::ConnectionType::Lan,
+        remote_application_mode: false,
+        rail_support_level: ironrdp::pdu::rdp::capability_sets::RailSupportLevel::empty(),
         bitmap: None,
         client_build: 0,
         client_name: "patchbay".to_owned(),
@@ -150,9 +158,11 @@ fn config(
         request_data: None,
         autologon: false,
         enable_audio_playback: false,
+        enable_audio_capture: false,
         compression_type: None,
         pointer_software_rendering: true,
         multitransport_flags: None,
+        support_dyn_vc_gfx_protocol: true,
         // A wallpaper is a photo, and the bitmap updates a Windows host sends outside
         // the graphics pipeline compress one badly: closing a maximised window revealed
         // it as hundreds of pieces over a second. What mstsc drops below a LAN link.
@@ -186,12 +196,14 @@ pub fn open(
 ) -> Result<Session, String> {
     let (to_session, clipboard) = std::sync::mpsc::channel();
     let last_seen = crate::clipboard::last_seen();
+    let pipelines = Pipelines::default();
     let (result, framed) = connect(
         host,
         port,
         pin,
         config(username, password, domain, width, height, scale),
         crate::clipboard::Backend::new(to_session, std::sync::Arc::clone(&last_seen)),
+        &pipelines,
     )?;
 
     let image = DecodedImage::new(
@@ -220,6 +232,7 @@ pub fn open(
         clipboard,
         last_seen,
         activation: result.activation_factory,
+        pipelines,
         width: result.desktop_size.width,
         height: result.desktop_size.height,
     })
@@ -242,13 +255,17 @@ pub fn pump(
         clipboard,
         last_seen,
         activation,
+        pipelines,
         ..
     } = session;
     let mut keys = ironrdp_input::Database::new();
     // Polled: no desktop delivers a clipboard change event to a process that isn't
     // focused. The OS change counter makes each tick one integer where it has one.
     let mut poll = ClipboardPoll::default();
-    let mut pending = Pending::default();
+    let mut pending = Pending {
+        size: (image.width(), image.height()),
+        ..Pending::default()
+    };
     // Kept across passes until it is sent: the Display Control channel opens a moment
     // after the desktop appears, and a size asked for before then was lost for good.
     let mut resize = None;
@@ -313,7 +330,7 @@ pub fn pump(
         let quiet = match framed.read_pdu() {
             Ok((action, payload)) => {
                 let outputs = stage
-                    .process(&mut image, action, &payload)
+                    .process(&mut image, action, &payload, framed.last_read_at())
                     .map_err(|e| e.to_string())?;
                 if drain(
                     outputs,
@@ -332,6 +349,11 @@ pub fn pump(
             Err(e) if waiting(&e) => true,
             Err(e) => return Err(format!("{host}: {e}")),
         };
+        if pipelines.load(std::sync::atomic::Ordering::Relaxed) > MAX_PIPELINES {
+            return Err(format!(
+                "\"{host}\" opened its graphics channel more times than a desktop needs"
+            ));
+        }
 
         if let Some(frame) = pending.take(&image, quiet) {
             on_frame(frame);
@@ -362,6 +384,9 @@ const RESIZED: u16 = u16::MAX;
 struct Pending {
     dirty: Vec<InclusiveRectangle>,
     resized: Option<(u16, u16)>,
+    /// The desktop size the window was last told, so a change it hasn't heard of goes
+    /// ahead of the pixels drawn at the new size.
+    size: (u16, u16),
     /// When the oldest change still waiting was made.
     since: Option<std::time::Instant>,
     /// The window acknowledged the last frame; at most one is ever in flight.
@@ -374,6 +399,7 @@ impl Default for Pending {
         Self {
             dirty: Vec::new(),
             resized: None,
+            size: (0, 0),
             since: None,
             painted: true,
             sent: std::time::Instant::now(),
@@ -424,9 +450,19 @@ impl Pending {
 
     /// A new desktop: whatever was dirty belonged to the old framebuffer.
     fn resize(&mut self, width: u16, height: u16) {
+        self.size = (width, height);
         self.dirty.clear();
         self.resized = Some((width, height));
         self.since.get_or_insert_with(std::time::Instant::now);
+    }
+
+    /// The framebuffer is `width` by `height` now. The graphics pipeline resizes it in
+    /// place (a Windows host answers a resize with ResetGraphics, not a reactivation), so
+    /// the size is checked with every update rather than only when the session rebuilds.
+    fn follow(&mut self, width: u16, height: u16) {
+        if self.size != (width, height) {
+            self.resize(width, height);
+        }
     }
 
     /// The next frame, once the server has finished drawing it (`quiet`) or it has
@@ -490,24 +526,24 @@ fn reactivate(
             share_id,
             enable_server_pointer,
             pointer_software_rendering,
+            static_channel_chunk_size,
+            ..
         } = sequence.connection_activation_state()
         {
-            stage.set_share_id(share_id);
-            stage.set_enable_server_pointer(enable_server_pointer);
-            // The frame acknowledgements carry the share id, so the fast path processor
-            // is rebuilt rather than left answering for the share that just went away.
-            stage.set_fastpath_processor(
-                fast_path::ProcessorBuilder {
-                    io_channel_id: activation.io_channel_id(),
-                    user_channel_id: activation.user_channel_id(),
-                    share_id,
-                    enable_server_pointer,
-                    pointer_software_rendering,
-                    // `config` never advertises compression, so none was negotiated.
-                    bulk_decompressor: None,
-                }
-                .build(),
-            );
+            // The frame acknowledgements carry the share id, so the processors are rebuilt
+            // rather than left answering for the share that just went away.
+            if !stage.reactivate(
+                activation.io_channel_id(),
+                activation.user_channel_id(),
+                share_id,
+                enable_server_pointer,
+                pointer_software_rendering,
+                static_channel_chunk_size,
+            ) {
+                return Err(format!(
+                    "{host}: the server asked for an invalid channel chunk size"
+                ));
+            }
             // ponytail: the framebuffer starts blank and the server repaints after a
             // reactivation; a RefreshRectangle request if one ever doesn't.
             *image = DecodedImage::new(
@@ -534,7 +570,7 @@ fn reactivate(
                         Err(e) => return Err(format!("{host}: {e}")),
                     }
                 };
-                sequence.step(&pdu, &mut buf)
+                sequence.step(&pdu, framed.last_read_at(), &mut buf)
             }
             None => sequence.step_no_input(&mut buf),
         }
@@ -678,7 +714,10 @@ fn drain(
                     .write_all(&frame)
                     .map_err(|e| format!("{host}: {e}"))?;
             }
-            ActiveStageOutput::GraphicsUpdate(region) => pending.mark(region),
+            ActiveStageOutput::GraphicsUpdate(region) => {
+                pending.follow(image.width(), image.height());
+                pending.mark(region);
+            }
             ActiveStageOutput::Terminate(_) => return Ok(true),
             // The server rebuilt the session: a resize taking effect, or the logon
             // desktop handing over. Follow it, and tell the window the new size.
@@ -698,6 +737,7 @@ fn connect(
     pin: &str,
     config: connector::Config,
     clipboard: crate::clipboard::Backend,
+    pipelines: &Pipelines,
 ) -> Result<(ConnectionResult, ironrdp_blocking::Framed<Upgraded>), String> {
     // Bounded: a firewalled host drops the SYN, and the OS default is over a minute.
     let addr = format!("{host}:{port}")
@@ -719,9 +759,25 @@ fn connect(
         .with_static_channel(CliprdrClient::new(Box::new(clipboard)))
         // The Display Control channel is the only way the desktop follows the window;
         // nothing is sent when the capabilities arrive, the first resize does that.
+        //
+        // Both are factories rather than one processor each: a server that resizes by
+        // deactivating the session (xrdp) opens them again afterwards, and a processor
+        // that was handed over once would answer "no listener" and leave the desktop black.
         .with_static_channel(
             DrdynvcClient::new()
-                .with_dynamic_channel(DisplayControlClient::new(|_| Ok(Vec::new()))),
+                .with_dynamic_channel_factory(ironrdp::displaycontrol::CHANNEL_NAME, || {
+                    DisplayControlClient::new(|_| Ok(Vec::new()))
+                })
+                // The graphics pipeline: what Windows sends a client that has one, and
+                // its codecs are the ones made for a desktop. The session drains its
+                // compositor into the same framebuffer, so nothing past here changes.
+                .with_dynamic_channel_factory(ironrdp_egfx::CHANNEL_NAME, {
+                    let pipelines = std::sync::Arc::clone(pipelines);
+                    move || {
+                        let gfx = Gfx::new(&pipelines);
+                        GraphicsPipelineClient::new(Box::new(gfx), crate::h264::decoder())
+                    }
+                }),
         );
     let should_upgrade = ironrdp_blocking::connect_begin(&mut framed, &mut connector)
         .map_err(|e| format!("{host}: {e}"))?;
@@ -739,6 +795,7 @@ fn connect(
         server_public_key,
         None,
     )
+    .and_then(|outcome| outcome.into_connected())
     .map_err(|e| format!("{host}: {e}"))?;
 
     socket
@@ -746,6 +803,34 @@ fn connect(
         .map_err(|e| e.to_string())?;
     Ok((result, upgraded_framed))
 }
+
+/// The compositor inside [`GraphicsPipelineClient`] keeps the surfaces and the session
+/// drains it, so none of the per-command callbacks are needed. What this does is count:
+/// the channel is a factory, so a server can open it as often as it likes, each one with
+/// a compositor allowed hundreds of megabytes, and the handler is dropped with its
+/// pipeline, which makes it the place to keep the tally.
+struct Gfx(Pipelines);
+
+type Pipelines = std::sync::Arc<std::sync::atomic::AtomicUsize>;
+
+/// A real server has one pipeline open, and a reopen briefly two; more is a server
+/// asking for memory, and the session ends rather than give it.
+const MAX_PIPELINES: usize = 2;
+
+impl Gfx {
+    fn new(pipelines: &Pipelines) -> Self {
+        pipelines.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Self(std::sync::Arc::clone(pipelines))
+    }
+}
+
+impl Drop for Gfx {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+impl ironrdp_egfx::client::GraphicsPipelineHandler for Gfx {}
 
 /// Matched by the window, which hands the device to the desktop's own RDP client.
 const OLD_TLS: &str = "the server only offers older encryption than the built-in session speaks";
@@ -1147,6 +1232,56 @@ mod tests {
             lit > buf.len() / 40,
             "framebuffer came out essentially black - crop is wrong"
         );
+    }
+
+    #[test]
+    fn a_framebuffer_resized_in_place_is_announced_before_its_pixels() {
+        let mut p = Pending {
+            size: (4, 4),
+            // Long enough ago that the frame isn't held for pacing.
+            sent: std::time::Instant::now() - Duration::from_secs(1),
+            ..Pending::default()
+        };
+        let all = |w: u16, h: u16| InclusiveRectangle {
+            left: 0,
+            top: 0,
+            right: w - 1,
+            bottom: h - 1,
+        };
+        p.follow(4, 4);
+        p.mark(all(4, 4));
+        assert_eq!((p.resized, p.dirty.len()), (None, 1));
+
+        p.follow(6, 2);
+        assert_eq!((p.resized, p.dirty.len()), (Some((6, 2)), 0));
+        p.mark(all(6, 2));
+        let frame = p
+            .take(
+                &DecodedImage::new(
+                    ironrdp_graphics::image_processing::PixelFormat::RgbA32,
+                    6,
+                    2,
+                ),
+                true,
+            )
+            .unwrap();
+        let head = |at: usize| u16::from_le_bytes([frame[at], frame[at + 1]]);
+        assert_eq!(
+            [head(0), head(2), head(4), head(6)],
+            [RESIZED, RESIZED, 6, 2]
+        );
+        assert_eq!([head(8), head(10), head(12), head(14)], [0, 0, 6, 2]);
+    }
+
+    #[test]
+    fn a_pipeline_is_counted_while_it_lives() {
+        let pipelines = Pipelines::default();
+        let first = Gfx::new(&pipelines);
+        let second = Gfx::new(&pipelines);
+        assert_eq!(pipelines.load(std::sync::atomic::Ordering::Relaxed), 2);
+        drop(first);
+        drop(second);
+        assert_eq!(pipelines.load(std::sync::atomic::Ordering::Relaxed), 0);
     }
 
     #[test]

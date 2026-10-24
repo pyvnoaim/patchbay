@@ -7,6 +7,7 @@
 mod clipboard;
 mod commands;
 mod config;
+mod h264;
 mod hostkeys;
 mod import;
 mod keychain;

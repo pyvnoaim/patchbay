@@ -11,6 +11,7 @@ it back. Nothing is retyped anywhere.
 ## Unreleased
 
 - Remote desktop in a tab is much smoother: scrolling or dragging a window draws several times as many frames.
+- Remote desktop speaks the graphics pipeline Windows uses with its own client, with H.264 decoded by your Mac's video hardware: less traffic, sharper text, and less CPU.
 
 ## 0.1.55 - 2026-10-23
 
