@@ -423,7 +423,7 @@ function reveal() {
 
 async function load() {
   try {
-    // In parallel: load() runs on every focus and sits in front of the first paint.
+    // In parallel: load() runs on every change to the list and sits in front of the first paint.
     // Only `jacks` is left uncaught; its failure is what the error branch is for.
     let noteRows, tun, paths, snip, listing;
     [prefs, sshKeys, colors, paths, tun, noteRows, snip, listing] = await Promise.all([
@@ -536,7 +536,7 @@ async function seePresence() {
 }
 
 const PROBE_EVERY = 30_000;
-// Throttled: load() runs on every focus and a sweep opens a socket to every jack.
+// Throttled: focus and every load() ask for one, and a sweep opens a socket to every jack.
 // Skipped in the background too, except for the first sweep, so a window that opens
 // behind something else still gets its dots.
 async function refreshProbes() {
@@ -696,8 +696,14 @@ load().then(startWebext).then(restoreTabs).then(takeLink).then(offerUpdate).then
 setInterval(refreshProbes, PROBE_EVERY);
 setInterval(pollList, PROBE_EVERY);
 setInterval(seePresence, PROBE_EVERY);
-// The config is hand-edited, so reload on focus.
-window.addEventListener("focus", load);
+// The config is hand-edited, so look on focus. Only a list that hashes differently is
+// reloaded: a full load() reads the shared list five times, slow on a share.
+window.addEventListener("focus", () => {
+  pollList();
+  refreshProbes();
+  seePresence();
+  refreshTunnels();
+});
 // Not `matchMedia`: with a theme pinned, our own `color-scheme` fixes what
 // `prefers-color-scheme` reports.
 listen("tauri://theme-changed", () => {

@@ -297,7 +297,7 @@ async function applyTheme() {
   );
   document.documentElement.dataset.theme = pick;
   remember("theme", pick);
-  // load() runs on every focus; skip the repaint when nothing changed. render() is part
+  // load() runs on every change to the list; skip the repaint when nothing changed. render() is part
   // of it: readable() computed every colour against the old surface.
   const stamp = `${pick} ${termFont()}`;
   if (stamp === painted) return;

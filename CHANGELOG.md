@@ -12,6 +12,7 @@ it back. Nothing is retyped anywhere.
 
 - A shell prints large output much faster, and accented letters, `€` or box drawing no longer turn into `�` now and then.
 - A device's web page open in a tab can no longer read what a shell or a remote desktop in another tab is showing.
+- Coming back to the window no longer rereads the whole list unless it changed, which is quicker on a shared list over the network.
 
 ## 0.1.57 - 2026-10-24
 
