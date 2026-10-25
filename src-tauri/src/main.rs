@@ -23,6 +23,84 @@ mod webext;
 use commands::{app, files, jacks, remote, sessions, settings, web};
 use tauri::Manager;
 
+/// Channel messages bypass Tauri's own path, which parks anything over 1 KB in an
+/// app-wide queue under a counting id that any webview may fetch: the command that
+/// drains it skips the ACL, so a device's web tab could take a shell's output or a
+/// desktop's frames before our window did. Small ones are evaluated straight into
+/// the window; big ones are parked here and fetched over `pbchan:`, which answers
+/// only the window itself, so a frame still crosses as bytes and not as base64.
+#[derive(Default)]
+struct Parked(std::sync::Mutex<(u64, std::collections::HashMap<u64, Vec<u8>>)>);
+
+/// Past this a message is parked rather than evaluated.
+const INLINE: usize = 64 * 1024;
+
+#[cfg(not(windows))]
+const PARKED_URL: &str = "pbchan://localhost/";
+#[cfg(windows)]
+const PARKED_URL: &str = "http://pbchan.localhost/";
+
+fn channel_js(callback: u32, index: usize, body: &tauri::ipc::InvokeResponseBody) -> String {
+    use base64::Engine;
+    let message = match body {
+        tauri::ipc::InvokeResponseBody::Json(json) => json.clone(),
+        tauri::ipc::InvokeResponseBody::Raw(bytes) => format!(
+            "((s) => Uint8Array.fromBase64 ? Uint8Array.fromBase64(s) : Uint8Array.from(atob(s), (c) => c.charCodeAt(0)))(\"{}\").buffer",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        ),
+    };
+    format!("window.__TAURI_INTERNALS__.runCallback({callback}, {{ message: {message}, index: {index} }})")
+}
+
+fn parked_js(callback: u32, index: usize, id: u64) -> String {
+    format!("fetch(\"{PARKED_URL}{id}\").then((r) => r.arrayBuffer()).then((message) => window.__TAURI_INTERNALS__.runCallback({callback}, {{ message, index: {index} }}))")
+}
+
+fn intercept<R: tauri::Runtime>(
+    webview: &tauri::Webview<R>,
+    callback: u32,
+    index: usize,
+    body: &tauri::ipc::InvokeResponseBody,
+) -> bool {
+    let js = match body {
+        tauri::ipc::InvokeResponseBody::Raw(bytes) if bytes.len() > INLINE => {
+            let mut parked = webview.state::<Parked>().inner().0.lock().unwrap();
+            let id = parked.0;
+            parked.0 += 1;
+            parked.1.insert(id, bytes.clone());
+            parked_js(callback, index, id)
+        }
+        _ => channel_js(callback, index, body),
+    };
+    let _ = webview.eval(js);
+    true
+}
+
+/// A parked message, once, and only to the window: a web tab is a webview of its own.
+/// ponytail: one left unfetched by a reload stays parked until exit; sweep by age if
+/// that ever shows up.
+fn unpark<R: tauri::Runtime>(
+    ctx: tauri::UriSchemeContext<'_, R>,
+    request: tauri::http::Request<Vec<u8>>,
+) -> tauri::http::Response<Vec<u8>> {
+    let bytes = (ctx.webview_label() == "main")
+        .then(|| request.uri().path().trim_start_matches('/').parse().ok())
+        .flatten()
+        .and_then(|id| {
+            let parked = ctx.app_handle().state::<Parked>();
+            let taken = parked.inner().0.lock().unwrap().1.remove(&id);
+            taken
+        });
+    let response = tauri::http::Response::builder()
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Content-Type", "application/octet-stream");
+    match bytes {
+        Some(bytes) => response.body(bytes),
+        None => response.status(404).body(Vec::new()),
+    }
+    .unwrap()
+}
+
 fn main() {
     tauri::Builder::default()
         // First, as its docs insist. The link a second launch carried arrives through
@@ -41,6 +119,11 @@ fn main() {
         .manage(files::Edits::default())
         .manage(rdp_session::Shared::default())
         .manage(app::PendingLink::default())
+        .manage(Parked::default())
+        .channel_interceptor(|webview, callback, index, body| {
+            intercept(webview, callback.0, index, body)
+        })
+        .register_uri_scheme_protocol("pbchan", unpark)
         // Closing with a live session is asked about in the window, so the close is
         // held here and answered by `quit`.
         .on_window_event(|w, event| match event {
@@ -267,4 +350,27 @@ fn setup_macos(app: &tauri::App) -> tauri::Result<()> {
         }
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::channel_js;
+    use tauri::ipc::InvokeResponseBody;
+
+    #[test]
+    fn a_channel_message_carries_its_payload_inline() {
+        let raw = channel_js(
+            7,
+            3,
+            &InvokeResponseBody::Raw("€".repeat(1000).into_bytes()),
+        );
+        assert!(raw.starts_with("window.__TAURI_INTERNALS__.runCallback(7, { message: "));
+        assert!(raw.contains("\"4oKs4oKs") && raw.ends_with("index: 3 })"));
+        assert!(!raw.contains("__TAURI_CHANNEL__"));
+        let json = channel_js(7, 4, &InvokeResponseBody::Json("255".into()));
+        assert_eq!(
+            json,
+            "window.__TAURI_INTERNALS__.runCallback(7, { message: 255, index: 4 })"
+        );
+    }
 }
