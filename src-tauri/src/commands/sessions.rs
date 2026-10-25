@@ -119,8 +119,10 @@ pub async fn open_line(
             patchbay::telnet_argv(&addr, patchbay::on_path)?
         }
         "serial" => {
-            // Rewritten each time rather than trusted: it is in a shared temp directory.
-            let rc = std::env::temp_dir().join("patchbay-screenrc");
+            // Beside the config, which is this user's own: Linux's /tmp is everyone's, and
+            // a screenrc there could be swapped for one that runs a command. Rewritten
+            // each time rather than trusted.
+            let rc = patchbay::config_path().with_file_name("screenrc");
             std::fs::write(&rc, patchbay::SCREENRC)
                 .map_err(|e| format!("{}: {e}", rc.display()))?;
             patchbay::serial_argv(j, patchbay::on_path, &rc)?

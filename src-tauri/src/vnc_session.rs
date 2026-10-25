@@ -65,6 +65,20 @@ pub const REFUSED: &str = "refused the sign-in";
 /// Matched by the window, which hands the device to the system's VNC viewer.
 pub const UNSUPPORTED: &str = "signs in a way the built-in viewer doesn't speak";
 
+/// The largest desktop taken, as RDP caps it: past this a server is asking for memory.
+/// vnc-rs refuses bigger ones itself; this keeps the allocation honest if it ever stops.
+const MAX_SIDE: u16 = 8192;
+const MAX_PIXELS: usize = 8_294_400;
+
+/// `Ok` for a desktop inside the cap, else the error that ends the session.
+fn fits(name: &str, width: u16, height: u16) -> Result<(), String> {
+    let ok = width <= MAX_SIDE
+        && height <= MAX_SIDE
+        && usize::from(width) * usize::from(height) <= MAX_PIXELS;
+    ok.then_some(())
+        .ok_or_else(|| format!("\"{name}\" asked for a {width}x{height} desktop"))
+}
+
 /// A wheel notch in the units `Input::Wheel` carries.
 const NOTCH: i32 = 120;
 
@@ -128,7 +142,9 @@ pub fn open(
         // The server's first word after the handshake is the desktop's size.
         loop {
             match tokio::time::timeout(HANDSHAKE, client.recv_event()).await {
-                Ok(Ok(VncEvent::SetResolution(s))) => break Ok((client, (s.width, s.height))),
+                Ok(Ok(VncEvent::SetResolution(s))) => {
+                    break fits(name, s.width, s.height).map(|_| (client, (s.width, s.height)))
+                }
                 Ok(Ok(_)) => continue,
                 Ok(Err(e)) => break Err(format!("{host}:{port}: {e}")),
                 Err(_) => break Err(format!("\"{name}\" never sent its desktop")),
@@ -270,9 +286,13 @@ async fn run(
                             desktop.copy(dst, src);
                             fresh = true;
                         }
-                        VncEvent::SetResolution(s) => full |= desktop.resize(s.width, s.height),
+                        VncEvent::SetResolution(s) => {
+                            fits(name, s.width, s.height)?;
+                            full |= desktop.resize(s.width, s.height);
+                        }
                         VncEvent::DesktopUpdate(u) => {
                             if let Some(l) = u.layout {
+                                fits(name, l.width, l.height)?;
                                 full |= desktop.resize(l.width, l.height);
                             }
                         }
@@ -627,6 +647,15 @@ mod tests {
         d.draw(rect(0, 0, 2, 2), &[7; 8]);
         assert_eq!(px(&d, 1, 0), [7, 7, 7, 255]);
         assert_eq!(px(&d, 1, 1), [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn a_desktop_past_the_cap_is_refused() {
+        assert!(fits("box", 1920, 1080).is_ok());
+        assert!(fits("box", 3840, 2160).is_ok());
+        assert!(fits("box", 8193, 10).is_err());
+        let err = fits("box", 8192, 8192).unwrap_err();
+        assert!(err.contains("8192x8192"), "{err}");
     }
 
     #[test]

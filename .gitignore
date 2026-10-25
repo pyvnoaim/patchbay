@@ -13,3 +13,5 @@ dev/spaces/
 
 # A real one, pasted into the dev app. dev/licence.example is the ended fixture.
 dev/patchbay_licence
+# Written beside the config for a serial console's `screen` (see open_line).
+dev/screenrc
