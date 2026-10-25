@@ -11,13 +11,16 @@ mod h264;
 mod hostkeys;
 mod import;
 mod keychain;
+mod licence;
 mod patchbay;
 mod presence;
 mod pty;
 mod rdp;
 mod rdp_session;
 mod sftp;
+mod sound;
 mod terminal;
+mod vnc_session;
 mod webext;
 
 use commands::{app, files, jacks, remote, sessions, settings, web};
@@ -118,6 +121,7 @@ fn main() {
         .manage(rdp::SharedTunnels::default())
         .manage(files::Edits::default())
         .manage(rdp_session::Shared::default())
+        .manage(vnc_session::Shared::default())
         .manage(app::PendingLink::default())
         .manage(Parked::default())
         .channel_interceptor(|webview, callback, index, body| {
@@ -207,6 +211,9 @@ fn main() {
             jacks::list_stamp,
             jacks::reveal_list,
             settings::open_config,
+            settings::licence,
+            settings::save_licence,
+            settings::remove_licence,
             sessions::connect,
             sessions::open_session,
             sessions::open_task,
@@ -236,6 +243,11 @@ fn main() {
             remote::close_rdp_session,
             remote::rdp_input,
             remote::open_vnc,
+            sessions::open_line,
+            remote::open_vnc_session,
+            remote::close_vnc_session,
+            remote::vnc_input,
+            remote::can_remember,
             remote::open_forwards,
             remote::tunnels,
             remote::close_tunnel,

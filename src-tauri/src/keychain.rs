@@ -1,11 +1,14 @@
-//! RDP sign-ins remembered on this machine, in the OS keychain - never in the list,
-//! which a colleague may be reading, and never in a file beside it, which would need a
-//! key kept beside it too. Only ever ticked into, one device at a time, and a
-//! device can hold several accounts: the admin and the user it is being fixed for.
+//! RDP sign-ins and VNC passwords remembered on this machine, in the OS keychain - never
+//! in the list, which a colleague may be reading, and never in a file beside it, which
+//! would need a key kept beside it too. Only ever ticked into, one device at a time, and
+//! a device can hold several accounts: the admin and the user it is being fixed for.
 //!
 //! Filed under the device's own `host:port` (the same pin its certificate has), not its
 //! name: a shared list edited to point `win01` somewhere else must not carry the
 //! password along to wherever that is.
+//!
+//! A VNC password has no account, so it is filed under an empty one at its VNC port's
+//! pin; the service stays "patchbay rdp" so passwords saved before VNC stay found.
 //!
 //! A ticked "Remember" on the RDP sign-in, in the OS keychain via `keyring`. Filed
 //! under the device's `host:port` (its cert pin), never its name, so a shared list

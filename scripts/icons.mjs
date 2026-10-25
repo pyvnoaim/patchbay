@@ -34,6 +34,11 @@ const USED = [
   "globe",
   "monitor",
   "screen-share", // vnc
+  "terminal", // telnet
+  "cable", // a serial console
+  "columns-2", // panes side by side
+  "rows-2", // panes stacked
+  "badge-check", // Settings > Licence
   "unplug",
   "settings",
   "router",

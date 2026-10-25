@@ -19,7 +19,7 @@ the map, the commands, and the rules that cut across files.
 - `src-tauri/src/config.rs` - the only code that *writes* a config.
 - `src-tauri/src/commands/` - the `#[tauri::command]` surface, one file per area, thin. `mod.rs` holds the two-vault plumbing (`file_for`, `load_all`, stamps).
 - `src-tauri/src/main.rs` - setup, the macOS menu, the command list, and the channel interceptor (`pbchan:`).
-- `pty.rs` terminals · `sftp.rs` files · `rdp.rs` RDP/VNC handoff and tunnels · `rdp_session.rs` in-window RDP (IronRDP) · `h264.rs` OS video decode · `clipboard.rs` RDP clipboard · `webext.rs` Bitwarden · `hostkeys.rs` team host keys · `presence.rs` who is on a device · `keychain.rs` remembered RDP passwords · `terminal.rs` the system terminal · `import.rs` ssh config and Royal TS in, ssh config out.
+- `pty.rs` terminals · `sftp.rs` files · `rdp.rs` RDP/VNC handoff and tunnels · `rdp_session.rs` in-window RDP (IronRDP) · `vnc_session.rs` in-window VNC (vnc-rs) · `h264.rs` OS video decode · `clipboard.rs` RDP clipboard · `sound.rs` RDP sound, played by the webview · `webext.rs` Bitwarden · `hostkeys.rs` team host keys · `presence.rs` who is on a device · `keychain.rs` remembered RDP passwords · `licence.rs` the team licence · `terminal.rs` the system terminal · `import.rs` ssh config and Royal TS in, ssh config out.
 - `src-tauri/capabilities/default.json` - grants `core:default`. Load-bearing; see Non-obvious.
 - `src-tauri/Info.plist` - merged into the macOS bundle. Load-bearing: without it a plain-http device page is a silent white pane.
 - Files kept *beside* the config, never in it, because each is this machine's answer rather than part of the list: `web_trusted` (checks waived), `rdp_known_hosts` (certs seen).
@@ -29,7 +29,7 @@ the map, the commands, and the rules that cut across files.
 - `CHANGELOG.md` - the release notes, and the only place they are written. Written for someone about to install, not for someone reading the diff.
 - `TODO.md` - what's next and the ideas pile. A line leaves it when it ships (into the changelog) or is decided against. Plans that get built are not kept as files: the code and this file say what was built.
 - `scripts/` - one-job node scripts, run via npm. Never imported by the app; `dev.mjs` is the single entry point for running anything locally. `draw.mjs` is the exception to "one job": a PNG writer and the SDF helpers that `icon.mjs` and `dmg.mjs` both draw with, so neither needs an image dependency.
-- No licence check yet: shipped builds are free under [PolyForm Perimeter](https://polyformproject.org/licenses/perimeter/1.0.1). The paid version is parked in `git stash`; `TODO.md` has its shape.
+- `LICENSE` is free for one person, a company licence for a shared list; 0.1.58 and earlier stay [PolyForm Perimeter](https://polyformproject.org/licenses/perimeter/1.0.1). The check is in `licence.rs` and asks for nothing until `ON_SALE` turns on in the release that opens the store; `TODO.md` has the steps left.
 
 ## Commands
 
@@ -92,7 +92,7 @@ aren't obvious from reading:
   - `OVERLAYS()` in `core.js` - feeds `modalOpen()` and the observer that shrinks a web tab away. Left out, the webview paints straight over your overlay. (The context menu was missed first time round: the sidebar stays live while a session tab is open.)
   - the `#sheetwrap, #askwrap, #importwrap` rule in `app.css` - left out, it has no `position: fixed`, sits in normal flow at the end of `<body>`, and stretches the layout behind it.
   - the modal guard in `boot.js` - left out, Escape doesn't close it and every global chord still fires; ⌘N opens the jack sheet on top of it.
-- **A live session owns the keyboard.** The global `keydown` returns early when `activeId !== null`; only window-level chords (⌘K, ⌘N, ⌘W, ⌘[/]) may be intercepted, and each one added is a key nobody can send to their shell. `sessions.js`'s header has the rest.
+- **A live session owns the keyboard.** The global `keydown` returns early when `activeId !== null`; only window-level chords (⌘K, ⌘N, ⌘D, ⌘W, ⌘[/]) may be intercepted, and each one added is a key nobody can send to their shell. `sessions.js`'s header has the rest.
 - Shortcut labels come from `chord("k")`, never a hardcoded `⌘` - it reads `Ctrl+Shift+K` off macOS. Matching goes through `chorded(e)` and `chordKey(e)` for the same reason; never `e.metaKey || e.ctrlKey`, which made Ctrl+W in a shell a close prompt.
 - The default `contextmenu` is suppressed app-wide (it's the webview's Reload/Inspect menu). Right-click is ours; new actions go in the `contextmenu` handler as well as a visible button, since a menu alone isn't discoverable.
 - `localStorage` holds habits only (theme, tabs to reopen, open folders, recency), never anything the list says.
@@ -132,7 +132,7 @@ aren't obvious from reading:
 ## Scope
 
 - We exec the system `ssh` and `sftp` with the argv `patchbay.rs` builds, on a real pty, so the agent, `~/.ssh/config`, `known_hosts` and password prompts come free. **Never embed an ssh protocol implementation.** Sessions in the window reversed the old "launcher, not a client" rule; this part did not change, and "Open in Terminal" stays.
-- Remote desktop is decoded in the window by IronRDP, pure Rust, into the webview we already ship. The Royal TS failure mode was bundling FreeRDP, a C graphics stack with its own toolkit and CVE feed: **never link FreeRDP, and no H.264 library** (the OS decodes, `h264.rs`). The handoff in `rdp.rs` stays; in-window is the default, not the only way.
+- Remote desktop is decoded in the window by IronRDP, pure Rust, into the webview we already ship. The Royal TS failure mode was bundling FreeRDP, a C graphics stack with its own toolkit and CVE feed: **never link FreeRDP, and no H.264 library** (the OS decodes, `h264.rs`). VNC is decoded the same way by vnc-rs, also pure Rust. Both handoffs stay; in-window is the default, not the only way.
 - **patchbay stores no credentials of its own and asks for none.** The one exception is an RDP password ticked Remember, in the OS keychain, never a file. The Bitwarden host isn't a credential store: the vault and sign-in are Bitwarden's own code, loaded from the installed Bitwarden for Mac, and patchbay never sees them.
 - Watch memory per session: xterm scrollback is capped at 5000 lines on purpose, and an RDP session holds a framebuffer plus the graphics pipeline's surfaces and cache.
 - Grouping is a `folders` **list** on each jack (`prod/eu/web` nests): a jack sits in several branches at once. Never collapse it to one `group` field - one home per host is what makes Royal TS's tree annoying. There is no tag concept either, by decision: two overlapping ways to group the same hosts is the confusion this app exists to avoid. An old `tags` key is neither read nor written.

@@ -87,6 +87,53 @@ fn log_path(name: &str) -> std::path::PathBuf {
     patchbay::logs_dir().join(format!("{safe}-{stamp}.log"))
 }
 
+/// Telnet or a serial console in a tab, the system's own tool on the same pty a session
+/// uses. Telnet behind a bastion goes through a local forward, the one RDP and VNC use,
+/// so it is the same `telnet` either way.
+#[tauri::command]
+pub async fn open_line(
+    out: Out,
+    sessions: tauri::State<'_, pty::Shared>,
+    tunnels: tauri::State<'_, crate::rdp::SharedTunnels>,
+    id: u32,
+    name: String,
+    via: String,
+    cols: u16,
+    rows: u16,
+) -> Result<String, String> {
+    let shared = tunnels.inner().clone();
+    let jacks = load_jacks()?;
+    let resolved = patchbay::resolve(&name, &jacks)?;
+    let j = &jacks[&resolved];
+    let (program, args) = match via.as_str() {
+        "telnet" => {
+            let port = j
+                .telnet
+                .ok_or_else(|| format!("\"{resolved}\" has no telnet port"))?;
+            let addr = super::blocking({
+                let jacks = jacks.clone();
+                let resolved = resolved.clone();
+                move || super::remote::dial_address(&shared, &jacks, &resolved, port)
+            })
+            .await?;
+            patchbay::telnet_argv(&addr, patchbay::on_path)?
+        }
+        "serial" => {
+            // Rewritten each time rather than trusted: it is in a shared temp directory.
+            let rc = std::env::temp_dir().join("patchbay-screenrc");
+            std::fs::write(&rc, patchbay::SCREENRC)
+                .map_err(|e| format!("{}: {e}", rc.display()))?;
+            patchbay::serial_argv(j, patchbay::on_path, &rc)?
+        }
+        _ => return Err(format!("no way in called \"{via}\"")),
+    };
+    let log = config::load_settings()
+        .log_sessions
+        .then(|| log_path(&resolved));
+    sessions.open(out, id, &program, &args, cols.max(2), rows.max(2), log)?;
+    Ok(terminal::command_line_of(&program, &args))
+}
+
 /// Ping or traceroute in a tab, on the same pty a session uses so output streams and
 /// ^C works. The tab goes dead when the command exits.
 #[tauri::command]

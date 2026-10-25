@@ -3,31 +3,62 @@
 What's next, then ideas. A line leaves this file when it ships (the changelog says it
 then) or when it's decided against (say why in the commit).
 
+## Now: try the unreleased work in the real app
+
+Built and unit-tested, never run in the window. `npm run dev`, then tick these off before
+the next push.
+
+- [ ] **VNC tab** on a Linux desktop, Proxmox/QEMU console or KVM: typing (with Shift and
+      ⌥), the remote cursor's shape, clipboard both ways (copy there, paste here; copy
+      here, click in, paste there).
+- [ ] **VNC password**: a server that wants one asks; Remember works; a wrong saved one is
+      asked again still ticked. A Mac with only Apple's sign-in opens in Screen Sharing.
+- [ ] **RDP regression** (its canvas code moved): typing, ⌘C/⌘V, resizing the window,
+      the 2008 R2 handoff, a changed certificate.
+- [ ] **RDP pointer**: the I-beam over text and resize arrows on a window edge, at the
+      right size on a Retina screen.
+- [ ] **RDP sound**: a video or a system sound plays, in sync. Does it start at once or
+      only after the first click in the desktop?
+- [ ] **Settings**: a switch takes effect without Done; theme, font size and the shared
+      list save on leaving the field; an invalid snippet keeps the sheet open, closing
+      twice discards it.
+- [ ] **Telnet**: a device with `telnet = 23`, without `telnet` installed (the curl
+      fallback): login prompt, typing, echo, ^C. Once behind a jump host.
+- [ ] **Serial**: a console cable at `/dev/cu.usbserial-…`, 9600 and 115200.
+- [ ] **Split panes**: ⌘D beside a shell, an RDP tab and a web tab; drag and double-click
+      the divider; ⌘[ / ⌘] through panes; ⌘W one pane; "Stack the panes" and
+      "Separate into tabs" from the tab's menu; a second shell of the same device.
+- [ ] **VoiceOver** (⌘F5): the tree reads names and status, tabs read as tabs, icon
+      buttons have names, the menu key opens a device's menu.
+- [ ] **Licence pane**: with one vault it says free; with a shared list it shows no
+      licence needed yet; a fresh `npm run licence` paste is accepted and removable.
+
 ## Next: the paid version
 
-Written and parked in `git stash` as `paid: team licence ...` (`git stash list`, then
-`git stash pop`). Free for one person; a team on a shared list needs a company licence,
-€249 a year, perpetual fallback, checked offline.
+The code is in: `licence.rs`, Settings ▸ Licence, and `npm run licence "Acme GmbH"
+2027-10-20` to sign one with `~/.tauri/patchbay-licence.key`. Free for one person; a team
+on a shared list needs a company licence, €249 a year, checked offline. When one ends the
+list keeps opening for a week under a "licence ended" line, then stops; your own devices
+always open. None of it asks for anything while `licence::ON_SALE` is false.
 
-The licence is a minisign-signed file beside the shared list (`licence.rs`, `npm run
-licence`). Nothing is gated on it: an unlicensed list works the same and the sidebar says
-so. Its `updates_until` is held against the build date, so a team that stops paying keeps
-a licensed copy. The stash is on 0.1.38; a `git stash pop` on a newer main may conflict in
-`commands/jacks.rs`, `ui/edit.js` and `CHANGELOG.md`.
-
-Blocked on the store, in this order:
+Left, in this order:
 
 1. Open a Lemon Squeezy store with the company licence as a yearly product. Licence
-   keys off: the licence is ours, signed by `npm run licence "Acme GmbH" 2027-10-20`
-   with `~/.tauri/patchbay-licence.key`, and sent by hand while orders are few.
-2. Pick the domain. `patchbay.dev` is a placeholder in `site/index.html` and in the
-   Licence pane's note.
-3. Add the checkout link to the Licence pane, the site and the README. The site says
-   "coming soon" until then: bring the €249 card, its small print and the `CHECKOUT`
-   Buy button back from the commit that took them down.
+   keys off: the licence is ours, signed by `npm run licence` and sent by hand while
+   orders are few.
+2. Pick the domain. `patchbay.dev` is a placeholder in `site/index.html`.
+3. Add the checkout link to the site and the README (the €249 card's Buy button, and
+   drop its "on sale soon"), and a Buy link in Settings ▸ Licence.
 4. Have someone who knows licences read `LICENSE`. It is plain words, not a lawyer's.
-5. Sign a real licence, paste it on a shared list, check the sidebar line goes, then
-   `npm run check`, `npm test`, push and release.
+5. Sign a real licence, paste it on a shared list with `ON_SALE` on in a dev build, and
+   check the sidebar line goes; one that has ended closes the list after the week.
+6. The launch is 1.0.0 (`npm run bump 1.0.0`), never a reset to 0.1.0: the updater only
+   moves up. Turn `ON_SALE` on in the same commit. Make `LICENSE`'s last line "Versions
+   before 1.0.0", but only if nothing after 0.1.58 has shipped under Perimeter.
+7. Once 1.0.0 is published, delete the 0.1.x GitHub releases (`gh release delete <tag>
+   --cleanup-tag`). Not before: installed copies update through the latest release's
+   `latest.json`, so 1.0.0 has to be live first. It stops new downloads only; copies
+   people have and the source in git history stay under Perimeter.
 
 Later, if orders aren't few: a Lemon Squeezy webhook into a function that runs the same
 signing, so a licence arrives with the receipt.

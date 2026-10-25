@@ -8,7 +8,7 @@
 <p align="center"><b>Share the list, not the passwords.</b></p>
 
 <p align="center">
-  A connection manager for ssh, remote desktop, VNC, web UIs and files.<br>
+  A connection manager for ssh, remote desktop, VNC, telnet, serial consoles, web UIs and files.<br>
   One TOML file, your own <code>ssh</code>, no Electron, no sync service, no credential store.
 </p>
 
@@ -274,11 +274,12 @@ toolkit, which was always the actual objection. H.264 goes to the system's own d
 either. "Remote desktop in system client" hands a `.rdp` file to mstsc, Windows App or
 xfreerdp if you'd rather.
 
-VNC is a handoff and only a handoff: `vnc = 5900` opens `vnc://` with whatever viewer
-the machine already has - Screen Sharing on macOS, Remmina on most Linux desktops, and
-on Windows whichever viewer you installed and let claim the scheme - over the same
-forwarded port when the device is behind a bastion. A second protocol decoder in here
-would have to earn its place, and one screen-sharing tab already exists.
+VNC is a tab as well, decoded by vnc-rs (pure Rust again), over the same forwarded port
+when the device is behind a bastion. It signs in with a VNC password or none; a server
+that only offers another scheme, such as a Mac's Screen Sharing with Apple's sign-in,
+opens in whatever viewer the machine has for `vnc://`, and "VNC in system viewer" does
+that on request. The desktop is never resized from here, since a VNC screen is often
+one somebody is sitting at.
 
 Files are `sftp`, the binary, not a library. A web UI is a webview showing the device's
 own page, not something we render. The pattern holds: patchbay knows where your machines
@@ -286,17 +287,19 @@ are and what to run - the running is someone else's job.
 
 ## Licence
 
-**Free, all of it, for now** - every protocol, every tab, the shared list included, on
-as many machines as you like, at a company of any size. [PolyForm
-Perimeter](https://polyformproject.org/licenses/perimeter/1.0.1) is the licence: the one
-thing it asks is that you don't turn it into a product that competes with this one.
+**Free for you. Paid for your team.** Every protocol and every tab are free for one
+person, at work or anywhere else, on as many machines as you like. A team sharing one
+list (Settings ▸ Team) will need a company licence: **€249 a year, any team size**.
+Until it goes on sale, a shared list is free too. [LICENSE](LICENSE) has the terms.
 
 Nothing is sent anywhere and there is no account: patchbay makes no outbound request
 except the update check, and Bitwarden's own if you turn that on.
 
-- **Can we change the code?** Yes, and you never have to publish what you changed.
-- **Is a paid version coming?** A company licence for teams on a shared list is
-  planned. One person stays free, and a team's list keeps working without one.
-- **Is this open source?** The source is public and yours to read, build and fork, but it
-  is not OSI open source: PolyForm asks that you don't sell a competing product built
-  out of it. Using it, at work or anywhere else, is not that.
+- **What counts as a team?** A shared list. Your own list, on all your machines, at
+  work or for clients, is one person.
+- **What if we stop paying?** The shared list stops opening until you renew. Everyone's
+  own devices keep working, because one person is free.
+- **What about the copy we have now?** 0.1.58 and earlier stay under [PolyForm
+  Perimeter](https://polyformproject.org/licenses/perimeter/1.0.1), free for anyone.
+- **Is this open source?** The source is public to read and build, but it isn't OSI open
+  source, and a modified copy isn't yours to hand on.

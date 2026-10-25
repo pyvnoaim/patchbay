@@ -28,6 +28,9 @@ pub struct Imported {
     #[serde(default)]
     pub folders: Vec<String>,
     pub rdp: Option<u16>,
+    /// A Royal TS telnet connection's port; an ssh config has none.
+    #[serde(default)]
+    pub telnet: Option<u16>,
     pub url: Option<String>,
     /// `None` is ssh, the default for anything an ssh config named. A Royal TS RDP or
     /// web connection sets `Some(false)`: without it `primary` finds ssh first and
@@ -532,8 +535,8 @@ pub fn from_royal_ts(src: &str) -> Result<Found, String> {
             warnings.push(format!("\"{name}\" has no address, so it was left out"));
             continue;
         };
-        // patchbay has nothing to open these with.
-        if n.yes("IsTelnetConnection") || n.yes("IsSerialPortConnection") {
+        // A COM port names a cable on the machine Royal TS ran on, which is not this one.
+        if n.yes("IsSerialPortConnection") {
             serial += 1;
             continue;
         }
@@ -564,6 +567,12 @@ pub fn from_royal_ts(src: &str) -> Result<Found, String> {
                 j.url = Some(url);
                 j.ssh = Some(false);
             }
+            // Royal TS keeps telnet as an SSH connection with a flag on it.
+            "RoyalSSHConnection" if n.yes("IsTelnetConnection") => {
+                j.host = uri.to_string();
+                j.telnet = Some(n.num("Port").unwrap_or(23));
+                j.ssh = Some(false);
+            }
             "RoyalSSHConnection" => {
                 j.host = uri.to_string();
                 j.port = n.num("Port").filter(|p| *p != 22);
@@ -578,7 +587,10 @@ pub fn from_royal_ts(src: &str) -> Result<Found, String> {
 
     for (n, what) in [
         (binned, "in the trash, left there"),
-        (serial, "telnet or serial, which patchbay doesn't open"),
+        (
+            serial,
+            "serial ports, which name a cable on another machine: add them here by hand",
+        ),
         (
             guessed,
             "web addresses with no scheme, so https was assumed",
@@ -865,6 +877,8 @@ mod royal_tests {
     <CredentialUsername>ops</CredentialUsername></RoyalSSHConnection>
   <RoyalSSHConnection><ID>c4</ID><Name>console</Name><ParentID>f3</ParentID>
     <URI>10.9.0.2</URI><IsSerialPortConnection>True</IsSerialPortConnection></RoyalSSHConnection>
+  <RoyalSSHConnection><ID>c11</ID><Name>old-switch</Name><ParentID>f3</ParentID>
+    <URI>10.9.0.3</URI><Port>2323</Port><IsTelnetConnection>True</IsTelnetConnection></RoyalSSHConnection>
   <RoyalWebConnection><ID>c5</ID><Name>NAS</Name><ParentID>f3</ParentID>
     <URI>10.9.0.20:5001</URI></RoyalWebConnection>
   <RoyalWebConnection><ID>c6</ID><Name>Proxmox</Name><ParentID>f3</ParentID>
@@ -891,7 +905,7 @@ mod royal_tests {
         let f = from_royal_ts(DOC).unwrap();
         assert_eq!(
             f.hosts.len(),
-            6,
+            7,
             "{:?}",
             f.hosts.iter().map(|h| &h.name).collect::<Vec<_>>()
         );
@@ -938,6 +952,14 @@ mod royal_tests {
         assert_eq!(pve.url.as_deref(), Some("https://10.9.0.30:8006/#v1"));
         assert_eq!(pve.host, "10.9.0.30");
         assert_eq!(pve.desc.as_deref(), Some("the hypervisor"));
+    }
+
+    #[test]
+    fn a_telnet_connection_comes_across_as_telnet() {
+        let f = from_royal_ts(DOC).unwrap();
+        let sw = find(&f, "old-switch");
+        assert_eq!((sw.telnet, sw.ssh), (Some(2323), Some(false)));
+        assert_eq!(sw.host, "10.9.0.3");
     }
 
     #[test]

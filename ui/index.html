@@ -11,7 +11,7 @@
     <div id="app" hidden>
       <aside id="side">
         <div class="drag" data-tauri-drag-region></div>
-        <nav id="tree"></nav>
+        <nav id="tree" role="tree" aria-label="Devices" tabindex="0"></nav>
         <div class="side-foot">
           <button class="flat" id="newgroup"></button>
           <button class="flat" id="settings"></button>
@@ -23,7 +23,7 @@
 
       <section id="mid">
         <div class="tabs" data-tauri-drag-region>
-          <div class="tabstrip" id="tabs"></div>
+          <div class="tabstrip" id="tabs" role="tablist" aria-label="Sessions"></div>
           <!-- Carries the window drag: a drag region inside an overflow-x: auto element is inert in WebKit,
              so the strip stays plain and this never-scrolling sibling takes it. -->
           <div class="tabfill" data-tauri-drag-region></div>
@@ -76,11 +76,18 @@
     </div>
 
     <!-- right-click menu; replaces the webview's own Reload/Inspect one -->
-    <div id="ctx" hidden></div>
+    <div id="ctx" role="menu" hidden></div>
     <div id="tip"></div>
 
     <div id="sheetwrap" hidden>
-      <form class="sheet" id="jackform" autocomplete="off">
+      <form
+        class="sheet"
+        id="jackform"
+        autocomplete="off"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sheet-title"
+      >
         <div class="sheet-head" id="sheet-title"></div>
         <div class="sheet-body">
           <!-- Only with a shared list set: with one vault there is nothing to choose. -->
@@ -112,6 +119,12 @@
                 ><input type="radio" name="reach" value="vnc" /><span>VNC</span></label
               >
               <label class="how-opt"
+                ><input type="radio" name="reach" value="telnet" /><span>Telnet</span></label
+              >
+              <label class="how-opt"
+                ><input type="radio" name="reach" value="serial" /><span>Serial</span></label
+              >
+              <label class="how-opt"
                 ><input type="radio" name="reach" value="web" /><span>Web UI</span></label
               >
               <label class="how-opt"
@@ -122,7 +135,8 @@
           <label class="f wide req"
             ><span>Name</span><input name="name" spellcheck="false" placeholder="prod-web"
           /></label>
-          <label class="f wide req"
+          <!-- A console cable has no address. -->
+          <label class="f wide req" data-need="ssh sftp rdp vnc telnet web"
             ><span>Host</span><input name="host" spellcheck="false" placeholder="10.0.0.4"
           /></label>
           <label class="f" data-need="ssh sftp rdp vnc"
@@ -139,7 +153,7 @@
               list="sshkeys"
               placeholder="only if it isn't your default"
           /></label>
-          <label class="f wide" data-need="ssh sftp"
+          <label class="f wide" data-need="ssh sftp telnet"
             ><span>Jump host</span
             ><input
               name="jump"
@@ -160,6 +174,24 @@
           <label class="f req" data-need="vnc"
             ><span>VNC port</span><input name="vnc" inputmode="numeric" placeholder="5900"
           /></label>
+          <label class="f req" data-need="telnet"
+            ><span>Telnet port</span><input name="telnet" inputmode="numeric" placeholder="23"
+          /></label>
+          <!-- cu, not tty: on macOS a tty device waits for a carrier a console never raises. -->
+          <label class="f wide req" data-need="serial"
+            ><span>Serial device</span
+            ><input name="serial" spellcheck="false" placeholder="/dev/cu.usbserial-1410"
+          /></label>
+          <label class="f" data-need="serial"
+            ><span>Speed</span
+            ><select name="baud">
+              <option value="9600">9600</option>
+              <option value="19200">19200</option>
+              <option value="38400">38400</option>
+              <option value="57600">57600</option>
+              <option value="115200">115200</option>
+            </select></label
+          >
           <label class="f wide" data-need="web"
             ><span>URL</span>
             <span class="withprefix">
@@ -211,8 +243,15 @@
     </div>
 
     <div id="setwrap" hidden>
-      <form class="sheet set" id="setform" autocomplete="off">
-        <div class="sheet-head">Settings</div>
+      <form
+        class="sheet set"
+        id="setform"
+        autocomplete="off"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="set-title"
+      >
+        <div class="sheet-head" id="set-title">Settings</div>
         <div class="sheet-body">
           <nav class="setnav" id="setnav">
             <button type="button" data-pane="devices" data-icon="server">Devices</button>
@@ -224,60 +263,70 @@
             <button type="button" data-pane="import" data-icon="download">Import</button>
             <button type="button" data-pane="webext" data-icon="key-round" hidden>Bitwarden</button>
             <button type="button" data-pane="updates" data-icon="rotate-cw">Updates</button>
+            <button type="button" data-pane="licence" data-icon="badge-check">Licence</button>
             <button type="button" data-pane="config" data-icon="file-pen-line">Config file</button>
             <button type="button" data-pane="keys" data-icon="keyboard">Shortcuts</button>
           </nav>
           <div class="setpanes">
             <section class="pane" data-pane="devices">
               <div class="d-sec">Devices</div>
-              <label class="opt"
-                ><input type="checkbox" name="probe" />
-                <span
-                  ><b>Check reachability</b> Opens a TCP connection to each device's first hop every
-                  30 seconds to drive the status dots. Nothing is sent; the socket is opened and
-                  dropped.</span
-                ></label
-              >
-              <label class="opt"
-                ><input type="checkbox" name="connect_in_terminal" />
-                <span
-                  ><b>Connect in the system terminal</b> Hands the ssh command to Terminal / Windows
-                  Terminal instead of opening a tab here.</span
-                ></label
-              >
-              <label class="opt"
-                ><input type="checkbox" name="write_ssh_config" />
-                <span
-                  ><b>Add these devices to your ssh config</b> So <code>ssh web-01</code> works in
-                  any terminal, jump chains and all, and so do scp and rsync. Writes its own file
-                  plus one <code>Include</code> line; hosts you defined yourself are left
-                  alone.</span
-                ></label
-              >
-              <!-- ssh has one namespace and both vaults can have a "web", so one or the other. -->
-              <label class="f" id="ssh-vault-field" hidden
-                ><span>Devices to add</span
-                ><select name="ssh_config_vault">
-                  <option value="team">Team</option>
-                  <option value="mine">Mine</option>
-                </select></label
-              >
-              <label class="opt"
-                ><input type="checkbox" name="log_sessions" />
-                <span
-                  ><b>Log sessions to a file</b> Appends each session's terminal output to
-                  <code>logs/</code> beside the config, one file per session. Off by default: it's a
-                  record you may not want kept.</span
-                ></label
-              >
-              <div class="space-row">
-                <div class="space-name">
-                  <span>Saved passwords</span>
+              <div class="setgroup">
+                <label class="opt"
+                  ><input type="checkbox" name="probe" />
+                  <span
+                    ><b>Check reachability</b> The status dots, from a TCP connection to each
+                    device's first hop every 30 seconds. Nothing is sent.</span
+                  ></label
+                >
+                <label class="opt"
+                  ><input type="checkbox" name="connect_in_terminal" />
+                  <span
+                    ><b>Connect in the system terminal</b> ssh opens in Terminal or Windows Terminal
+                    instead of a tab here.</span
+                  ></label
+                >
+                <label class="opt"
+                  ><input type="checkbox" name="log_sessions" />
+                  <span
+                    ><b>Log sessions to a file</b> Each session's output, appended to
+                    <code>logs/</code> beside the config. Off by default: it's a record you may not
+                    want kept.</span
+                  ></label
+                >
+              </div>
+              <div class="setlabel">Your other tools</div>
+              <div class="setgroup">
+                <label class="opt"
+                  ><input type="checkbox" name="write_ssh_config" />
+                  <span
+                    ><b>Add these devices to your ssh config</b> So <code>ssh web-01</code>, scp and
+                    rsync reach them, jump chains and all. One file of its own and an
+                    <code>Include</code> line; hosts you wrote yourself are left alone.</span
+                  ></label
+                >
+                <!-- ssh has one namespace and both vaults can have a "web", so one or the other. -->
+                <div class="setrow" id="ssh-vault-field" hidden>
+                  <span
+                    ><b>Devices to add</b> ssh has one name per host, so one list or the
+                    other.</span
+                  >
+                  <label class="f"
+                    ><select name="ssh_config_vault" aria-label="Devices to add">
+                      <option value="team">Team</option>
+                      <option value="mine">Mine</option>
+                    </select></label
+                  >
+                </div>
+              </div>
+              <div class="setlabel">Passwords</div>
+              <div class="setgroup">
+                <div class="setrow">
+                  <span
+                    ><b>Saved passwords</b> Remote desktop and VNC passwords you ticked Remember on,
+                    in this machine's keychain.</span
+                  >
                   <button type="button" class="ghost" id="page-forget"></button>
                 </div>
-                <p class="space-note">
-                  Remote desktop sign-ins you ticked Remember on, in this machine's keychain.
-                </p>
               </div>
             </section>
 
@@ -317,27 +366,35 @@
 
             <section class="pane" data-pane="appearance" hidden>
               <div class="d-sec">Appearance</div>
-              <div class="grid2">
-                <label class="f"
-                  ><span>Theme</span
-                  ><select name="theme">
-                    <option value="system">Follow the system</option>
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
-                  </select></label
+              <div class="setgroup">
+                <div class="setrow">
+                  <span><b>Theme</b></span>
+                  <label class="f"
+                    ><select name="theme" aria-label="Theme">
+                      <option value="system">Follow the system</option>
+                      <option value="light">Light</option>
+                      <option value="dark">Dark</option>
+                    </select></label
+                  >
+                </div>
+                <div class="setrow">
+                  <span><b>Terminal font size</b></span>
+                  <label class="f"
+                    ><input
+                      name="font_size"
+                      inputmode="decimal"
+                      placeholder="12.5"
+                      aria-label="Terminal font size"
+                  /></label>
+                </div>
+                <label class="opt"
+                  ><input type="checkbox" name="os_colors" />
+                  <span
+                    ><b>Colour device icons by OS</b> Each brand's own colour, adjusted to stay
+                    readable here. Override any below.</span
+                  ></label
                 >
-                <label class="f"
-                  ><span>Terminal font size</span>
-                  <input name="font_size" inputmode="decimal" placeholder="12.5"
-                /></label>
               </div>
-              <label class="opt"
-                ><input type="checkbox" name="os_colors" />
-                <span
-                  ><b>Colour device icons by OS</b> Each brand's own colour, adjusted to stay
-                  readable here. Override any below.</span
-                ></label
-              >
               <div class="swatches" id="swatches"></div>
             </section>
 
@@ -366,13 +423,15 @@
 
             <section class="pane" data-pane="webext" hidden>
               <div class="d-sec">Bitwarden</div>
-              <label class="opt"
-                ><input type="checkbox" name="webext" />
-                <span
-                  ><b>Fill logins with Bitwarden</b> Uses your installed Bitwarden. patchbay never
-                  sees your vault.</span
-                ></label
-              >
+              <div class="setgroup">
+                <label class="opt"
+                  ><input type="checkbox" name="webext" />
+                  <span
+                    ><b>Fill logins with Bitwarden</b> Uses your installed Bitwarden. patchbay never
+                    sees your vault.</span
+                  ></label
+                >
+              </div>
               <p class="space-note" id="webext-said"></p>
               <label class="f"
                 ><span>Your own server</span
@@ -396,16 +455,53 @@
                 </div>
                 <p class="space-note" id="update-said"></p>
               </div>
-              <label class="opt"
-                ><input type="checkbox" name="check_updates" />
-                <span
-                  ><b>Check on launch</b> Untick it and the button above becomes the only
-                  check.</span
-                ></label
-              >
+              <div class="setgroup">
+                <label class="opt"
+                  ><input type="checkbox" name="check_updates" />
+                  <span
+                    ><b>Check on launch</b> Turn it off and the button above becomes the only
+                    check.</span
+                  ></label
+                >
+              </div>
               <p class="page-note">
                 patchbay's only outbound request. What comes back is verified against a key built
                 into this app, and nothing installs until you say so.
+              </p>
+            </section>
+
+            <section class="pane" data-pane="licence" hidden>
+              <div class="d-sec">Licence</div>
+              <div class="setgroup">
+                <div class="setrow">
+                  <span><b id="lic-state">Free for you</b><span id="lic-said"></span></span>
+                  <button type="button" class="ghost" id="lic-remove" hidden></button>
+                </div>
+              </div>
+              <!-- A textarea, so Enter is a newline in the paste and never closes Settings. -->
+              <div id="lic-add" hidden>
+                <div class="setlabel">Add the team's licence</div>
+                <label class="f">
+                  <textarea
+                    id="lic-text"
+                    aria-label="Company licence"
+                    rows="6"
+                    spellcheck="false"
+                    autocomplete="off"
+                    placeholder="Paste the whole licence from your receipt"
+                  ></textarea>
+                </label>
+                <div class="btns"><button type="button" class="ghost" id="lic-save"></button></div>
+              </div>
+              <p class="page-note">
+                patchbay is free for one person. A team on a shared list needs a company licence,
+                €249 a year for any team size. It sits beside the shared list, so one covers
+                everyone on it, and it is checked here, never sent anywhere. When it ends, the
+                team's list keeps opening for a week; your own devices always open.<span
+                  id="lic-free"
+                >
+                  Until licences go on sale, a shared list needs none.</span
+                >
               </p>
             </section>
 
@@ -432,14 +528,20 @@
         <p class="sheet-err" id="set-err" hidden></p>
         <div class="sheet-foot">
           <span style="flex: 1"></span>
-          <button type="button" id="set-cancel">Cancel</button>
-          <button type="submit" class="primary">Save</button>
+          <button type="submit" class="primary">Done</button>
         </div>
       </form>
     </div>
 
     <div id="askwrap" hidden>
-      <form class="sheet small" id="askform" autocomplete="off">
+      <form
+        class="sheet small"
+        id="askform"
+        autocomplete="off"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ask-title"
+      >
         <div class="sheet-head" id="ask-title"></div>
         <dl class="ask-facts" id="ask-facts" hidden></dl>
         <div class="sheet-body">
@@ -471,7 +573,14 @@
     </div>
 
     <div id="importwrap" hidden>
-      <form class="sheet imp" id="importform" autocomplete="off">
+      <form
+        class="sheet imp"
+        id="importform"
+        autocomplete="off"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="imp-title"
+      >
         <div class="sheet-head" id="imp-title">Import</div>
         <div class="imp-top">
           <!-- As in the jack sheet: with one vault there is nothing to choose. -->
@@ -512,18 +621,28 @@
     </div>
 
     <div id="palette" hidden>
-      <div class="pal">
+      <div class="pal" role="dialog" aria-modal="true" aria-label="Search">
         <div class="search pal-search">
           <span id="pq-icon"></span
-          ><input id="pq" placeholder="Connect to…" spellcheck="false" autocomplete="off" />
+          ><input
+            id="pq"
+            placeholder="Connect to…"
+            spellcheck="false"
+            autocomplete="off"
+            role="combobox"
+            aria-label="Search devices"
+            aria-controls="presults"
+            aria-expanded="true"
+          />
         </div>
-        <div id="presults"></div>
+        <div id="presults" role="listbox" aria-label="Devices"></div>
       </div>
     </div>
 
     <!-- News, not questions: they float over the list, take no keyboard, and are not in OVERLAYS().
        Messages are flash()'s own pills, stacked above these, so one never takes another's button. -->
-    <div id="notices">
+    <!-- Polite: a pill is news, never an interruption of what is being read. -->
+    <div id="notices" aria-live="polite">
       <!-- Shown once per launch when a previous install left `~/.ssh/patchbay.conf` or the Include line. -->
       <div id="ssh-leftover" class="pill" role="status" hidden>
         <div class="pill-row">

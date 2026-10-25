@@ -1,0 +1,7 @@
+company = "Acme GmbH"
+updates_until = 1577836799
+--
+untrusted comment: signature from tauri secret key
+RUStHn7frty+G+7ehYUx5hdDgei2CqGvKR+XO7Oh+ICnw6eLLSdU04XvpCp8ML3H0aAmNlNWM3jeRDfHBptQrtUIyOzH0dVOPwk=
+trusted comment: timestamp:1792529891	file:licence.toml
+i6cynIKCkx0NCQOHIiWMdM2u+kvBWppe2EZbBVf8s8AnHK1kjr/5e3XAHY0EsZph49cO4B0LOkgZ+vo6Ln0mBw==

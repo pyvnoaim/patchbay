@@ -36,6 +36,12 @@ pub struct JackInput {
     pub url: Option<String>,
     pub rdp: Option<u16>,
     pub vnc: Option<u16>,
+    #[serde(default)]
+    pub telnet: Option<u16>,
+    #[serde(default)]
+    pub serial: Option<String>,
+    #[serde(default)]
+    pub baud: Option<u32>,
     pub ssh: Option<bool>,
     pub primary: Option<String>,
     pub desc: Option<String>,
@@ -325,6 +331,7 @@ const FIRST_RUN: &str = r#"# patchbay - your devices, one file. Uncomment a bloc
 # forward = ["8080:localhost:80"]
 # url = "https://10.0.0.4"   # opens as a tab
 # rdp = 3389            # or vnc = 5900; remote desktop through the jump chain
+# telnet = 23           # or serial = "/dev/cu.usbserial-1410" with baud = 9600
 # desc = "what someone arriving here should know"
 
 # Inherited by every device that doesn't set its own: user = "root", key = "~/.ssh/id_ed25519".
@@ -488,8 +495,14 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     if name.is_empty() {
         return Err("a jack needs a name".into());
     }
-    if j.host.trim().is_empty() {
+    let serial = j.serial.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    // A console cable has no address; everything else is dialled.
+    if j.host.trim().is_empty() && serial.is_none() {
         return Err(format!("\"{name}\" needs a host"));
+    }
+    // These become argv, so they are refused here as well as on connect.
+    if let Some(s) = serial {
+        patchbay::serial_path(s)?;
     }
     if let Some(u) = j.url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
         if !patchbay::is_web_url(u) {
@@ -558,6 +571,14 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     }
     set_num(t, "vnc", j.vnc);
     set_num(t, "rdp", j.rdp);
+    set_num(t, "telnet", j.telnet);
+    set_str(t, "serial", j.serial.as_deref());
+    match j.baud {
+        Some(b) => t["baud"] = value(i64::from(b)),
+        None => {
+            t.remove("baud");
+        }
+    }
     set_num(t, "port", j.port);
 
     write_doc(path, &doc, was.as_deref())?;
@@ -1313,6 +1334,9 @@ folders = ["prod/eu/web"]
             url: None,
             rdp: None,
             vnc: None,
+            telnet: None,
+            serial: None,
+            baud: None,
             ssh: None,
             primary: None,
             desc: None,

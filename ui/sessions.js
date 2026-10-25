@@ -3,7 +3,7 @@
 // the other ui/ files, so anything reaching across files stays inside a function body.
 //
 // A live session owns the keyboard. The global `keydown` handler returns early when `activeId !==
-// null`; every keystroke belongs to ssh. Only window-level chords (⌘K, ⌘N, ⌘W, ⌘[/]) may be
+// null`; every keystroke belongs to ssh. Only window-level chords (⌘K, ⌘N, ⌘D, ⌘W, ⌘[/]) may be
 // intercepted, and each one you add is a key someone can no longer send to their remote shell. The
 // terminal's own keys are `termKey()` in `sessions.js`: on macOS ⌘ never reached the shell, so ⌘A,
 // ⌘+ and ⌘← cost nothing, and ⌥← is *remapped* to readline's `ESC b` rather than taken. On macOS a
@@ -205,7 +205,7 @@ function makeBroadcast(names) {
 const inActive = (s) => {
   if (activeId === null) return false;
   const a = sessions.get(activeId);
-  return s === a || (a?.bcast && s.bcast === a.bcast);
+  return s === a || (a?.bcast && s.bcast === a.bcast) || (a?.split && s.split === a.split);
 };
 
 // Every marked ssh device as a pane in one broadcast tab. Non-ssh marks are named in a
@@ -228,6 +228,147 @@ async function openBroadcast(marks) {
   }
 }
 
+// ── split panes ────────────────────────────────────────────────────────────
+// Sessions side by side in one tab: any kind, a shell beside a desktop beside a page.
+// A split is an object every pane points at, as a broadcast is; one level, panes in a
+// row or a column, each with a share of the room that a divider moves.
+// ponytail: one level of split; a tree of them if someone wants a 2x2 of mixed panes.
+// A split is not remembered across launches: its panes come back as tabs of their own.
+// Broadcast panes stay out: their grid is a layout of its own, and their keystrokes go
+// to every pane, which a split's must not.
+let nextSid = 1;
+
+// Session `id` beside `anchor`, in a split that grows or is made.
+function joinSplit(anchor, id, dir = "row") {
+  const a = sessions.get(anchor),
+    s = sessions.get(id);
+  if (!a || !s || a === s || a.bcast || s.bcast) return;
+  leaveSplit(s);
+  const g = (a.split ??= { sid: nextSid++, dir, ids: [a.id], sizes: [1], last: a.id });
+  g.ids.splice(g.ids.indexOf(a.id) + 1, 0, id);
+  // Even shares again: a new pane squeezed into a sliver helps nobody.
+  g.sizes = g.ids.map(() => 1);
+  s.split = g;
+  // Its panes together where the split's chip is, so ⌘[ / ⌘] and the strip's order
+  // walk through them in the order they sit.
+  const order = [...sessions.values()].flatMap((x) =>
+    x === a ? g.ids.map((i) => sessions.get(i)) : g.ids.includes(x.id) ? [] : [x],
+  );
+  sessions.clear();
+  for (const x of order) sessions.set(x.id, x);
+  activeId = id;
+  showTab();
+  renderTabs();
+}
+
+// Out of its split, which is dissolved when one pane is all that is left.
+function leaveSplit(s) {
+  const g = s.split;
+  if (!g) return;
+  const i = g.ids.indexOf(s.id);
+  g.ids.splice(i, 1);
+  g.sizes.splice(i, 1);
+  s.split = null;
+  if (g.ids.length === 1) sessions.get(g.ids[0]).split = null;
+  if (g.last === s.id) g.last = g.ids[0];
+}
+
+// Every pane its own tab again, in the order they sat.
+function separateSplit(sid) {
+  for (const s of [...sessions.values()].filter((x) => x.split?.sid === sid)) leaveSplit(s);
+  showTab();
+  renderTabs();
+}
+
+async function closeSplit(sid) {
+  const panes = [...sessions.values()].filter((s) => s.split?.sid === sid);
+  const live = panes.filter(isLive).length;
+  if (live > 1 && !(await ask(`Close ${live} live sessions?`, null, "Close"))) return;
+  for (const s of panes) closeSession(s.id);
+}
+
+// Open a device the way Enter would, and put what opened beside the tab in front. A
+// device already open in a tab of its own moves in rather than opening twice.
+async function openBeside(name, dir = "row") {
+  const anchor = activeId;
+  if (anchor === null) return primary(name);
+  // A shell is opened fresh, so a second one of the same device can sit beside the first;
+  // anything else is one login per device, and an open one moves in.
+  const j = all.find((x) => x.name === name);
+  const via = ["ssh", "telnet", "serial"].includes(j?.primary) ? j.primary : null;
+  if (via) {
+    used(name);
+    await openSession(name, null, null, false, via, true);
+  } else await primary(name);
+  if (activeId !== null && activeId !== anchor && sessions.has(anchor)) {
+    joinSplit(anchor, activeId, dir);
+  }
+}
+
+// A divider drag moves the room between the two panes either side of it, never past
+// a pane's minimum, and refits them as it goes; a double-click evens the split out.
+const PANE_MIN = 140;
+termsEl.addEventListener("pointerdown", (e) => {
+  const div = e.target.closest(".divider");
+  if (!div || e.button !== 0) return;
+  const g = sessions.get(activeId)?.split;
+  if (!g) return;
+  e.preventDefault();
+  const i = +div.dataset.at;
+  const col = g.dir === "col";
+  const [a, b] = [g.ids[i - 1], g.ids[i]].map((id) => sessions.get(id).host);
+  const size = (el) => (col ? el.offsetHeight : el.offsetWidth);
+  const total = size(a) + size(b),
+    share = g.sizes[i - 1] + g.sizes[i];
+  const start = col ? e.clientY : e.clientX,
+    from = size(a);
+  div.setPointerCapture(e.pointerId);
+  document.body.classList.add("dragging");
+  let frame = 0;
+  const onMove = (ev) => {
+    const px = Math.min(
+      total - PANE_MIN,
+      Math.max(PANE_MIN, from + (col ? ev.clientY : ev.clientX) - start),
+    );
+    g.sizes[i - 1] = (share * px) / total;
+    g.sizes[i] = share - g.sizes[i - 1];
+    a.style.flexGrow = g.sizes[i - 1];
+    b.style.flexGrow = g.sizes[i];
+    frame ||= requestAnimationFrame(() => {
+      frame = 0;
+      for (const id of g.ids) sessions.get(id)?.fit?.fit();
+      placeWebViews();
+    });
+  };
+  const end = () => {
+    div.removeEventListener("pointermove", onMove);
+    div.removeEventListener("lostpointercapture", end);
+    document.body.classList.remove("dragging");
+  };
+  div.addEventListener("pointermove", onMove);
+  div.addEventListener("lostpointercapture", end);
+});
+termsEl.addEventListener("dblclick", (e) => {
+  const g = e.target.closest(".divider") && sessions.get(activeId)?.split;
+  if (!g) return;
+  g.sizes = g.ids.map(() => 1);
+  showTab();
+});
+// A click in a pane gives it the keyboard. Capture, so it lands before the pane's own
+// handlers see the click, as a broadcast pane's does.
+termsEl.addEventListener(
+  "mousedown",
+  (e) => {
+    const host = e.target.closest(".termhost");
+    const s = host && [...sessions.values()].find((x) => x.host === host);
+    if (!s?.split || s.id === activeId || !inActive(s)) return;
+    activeId = s.id;
+    showTab();
+    renderTabs();
+  },
+  true,
+);
+
 // "ping-on" is ping until ^C: offered once a ping has finished, never as a first click.
 const taskLabel = (task) => (task === "ping-on" ? "ping ∞" : task);
 
@@ -235,10 +376,24 @@ const taskLabel = (task) => (task === "ping-on" ? "ping ∞" : task);
 // on the jump host when there is one; "key" installs this machine's key over the chain.
 // `bcast` joins the session to a broadcast group.
 // `waiting` is a redial from "r": a failed one goes back to waiting rather than stopping.
-async function openSession(name, task = null, bcast = null, waiting = false) {
+// `via` is "telnet" or "serial" for a device reached that way instead of ssh: the
+// system's own tool on the same pty, and the same tab in every other respect.
+// `fresh` opens another session even with one open already: a second shell beside the first.
+async function openSession(
+  name,
+  task = null,
+  bcast = null,
+  waiting = false,
+  via = "ssh",
+  fresh = false,
+) {
   // A broadcast pane never counts as "already open": two grids are two grids.
-  const key = bcast ? `bcast:${bcast.gid}:${name}` : `term:${task ?? ""}:${name}`;
-  if (!bcast && showOpen(key)) return;
+  const key = bcast
+    ? `bcast:${bcast.gid}:${name}`
+    : via === "ssh"
+      ? `term:${task ?? ""}:${name}`
+      : `${via}:${name}`;
+  if (!bcast && !fresh && showOpen(key)) return;
   const id = nextId++;
   const host = document.createElement("div");
   host.className = "termhost" + (bcast ? " bcasthost" : "");
@@ -262,6 +417,7 @@ async function openSession(name, task = null, bcast = null, waiting = false) {
     id,
     name,
     task,
+    via,
     kind: "term",
     key,
     term,
@@ -294,12 +450,10 @@ async function openSession(name, task = null, bcast = null, waiting = false) {
         term.write("\x1b[2m── stopped waiting ──\x1b[0m\r\n");
         return;
       }
-      if (d === "r" && !task) return waitForIt(s);
+      // A cable has nothing to wait on: it is plugged in or it isn't.
+      if (d === "r" && !task && via !== "serial") return waitForIt(s);
       const again = d === "\r" ? task : d === "c" && task === "ping" ? "ping-on" : undefined;
-      if (again !== undefined) {
-        dropTab(id);
-        openSession(name, again, s.bcast);
-      }
+      if (again !== undefined) redial(s, again, false);
       return;
     }
     // Broadcast on: every live sibling gets the keystroke. Off: only the focused pane,
@@ -317,7 +471,8 @@ async function openSession(name, task = null, bcast = null, waiting = false) {
   // Our banner is cleared by the first byte from the far end, so a login that draws
   // with cursor moves gets a clean screen. An error we wrote on the way in stays.
   let ours = true;
-  term.write(`\x1b[2m── ${task ? `${taskLabel(task)} ` : ""}${name}… ──\x1b[0m\r\n`);
+  const what = task ? `${taskLabel(task)} ` : via === "ssh" ? "" : `${via} `;
+  term.write(`\x1b[2m── ${what}${name}… ──\x1b[0m\r\n`);
 
   const out = ptyChannel(
     s,
@@ -327,7 +482,7 @@ async function openSession(name, task = null, bcast = null, waiting = false) {
         term.write("\x1b[2J\x1b[3J\x1b[H");
       }
       term.write(bytes);
-      offerHostKey(s, bytes);
+      if (via === "ssh") offerHostKey(s, bytes);
     },
     (code) => {
       s.dead = true;
@@ -336,7 +491,7 @@ async function openSession(name, task = null, bcast = null, waiting = false) {
       if (waiting && code === 255) waitForIt(s);
       else
         term.write(
-          `\r\n\x1b[2m── ${task ? taskLabel(task) : "ssh"} exited (${code}) · ⏎ to ${task ? "run it again" : "reconnect"}${task === "ping" ? " · c to ping until ^C" : task ? "" : " · r to reconnect when it's back"} · ${chord("w")} to close ──\x1b[0m\r\n`,
+          `\r\n\x1b[2m── ${task ? taskLabel(task) : via} exited (${code}) · ⏎ to ${task ? "run it again" : "reconnect"}${task === "ping" ? " · c to ping until ^C" : task || via === "serial" ? "" : " · r to reconnect when it's back"} · ${chord("w")} to close ──\x1b[0m\r\n`,
         );
       renderTabs();
       renderTree();
@@ -344,9 +499,12 @@ async function openSession(name, task = null, bcast = null, waiting = false) {
   );
 
   try {
+    const size = { cols: term.cols, rows: term.rows };
     await (task
-      ? invoke("open_task", { out, id, name, task, cols: term.cols, rows: term.rows })
-      : invoke("open_session", { out, id, name, cols: term.cols, rows: term.rows }));
+      ? invoke("open_task", { out, id, name, task, ...size })
+      : via === "ssh"
+        ? invoke("open_session", { out, id, name, ...size })
+        : invoke("open_line", { out, id, name, via, ...size }));
   } catch (err) {
     ours = false;
     s.dead = true;
@@ -368,6 +526,20 @@ function ptyChannel(s, onBytes, onExit) {
   return chan;
 }
 
+// The same device again in place of a dead tab: fresh, so a second shell of it alive
+// beside this one isn't taken for it, and back into the split it sat in.
+async function redial(s, task, waiting) {
+  const g = s.split;
+  const i = g ? g.ids.indexOf(s.id) : -1;
+  const beside = g && (g.ids[i - 1] ?? g.ids[i + 1]);
+  const dir = g?.dir;
+  dropTab(s.id);
+  await openSession(s.name, task, s.bcast, waiting, s.via, true);
+  if (beside !== undefined && sessions.has(beside) && activeId !== beside) {
+    joinSplit(beside, activeId, dir);
+  }
+}
+
 // A reboot: dial again once the device takes a connection. Any key stops it.
 function waitForIt(s) {
   s.term.write(`\r\n\x1b[2m── waiting for ${labelOf(s.name)} · any key to stop ──\x1b[0m\r\n`);
@@ -378,20 +550,22 @@ function waitForIt(s) {
     const up = await invoke("reachable", { name: s.name }).catch(() => false);
     asking = false;
     if (!up || !s.wait || !sessions.has(s.id)) return;
-    dropTab(s.id);
-    openSession(s.name, null, s.bcast, true);
+    redial(s, null, true);
   }, 3000);
 }
 
 // A live tab: a connected shell or desktop. Closing one is not asked about - it is
 // one deliberate click on one session - but closing several at once is.
-const isLive = (s) => !s.dead && ((s.kind === "term" && !s.task) || s.kind === "rdp");
+const isLive = (s) =>
+  !s.dead && ((s.kind === "term" && !s.task) || s.kind === "rdp" || s.kind === "vnc");
 const liveSessions = () => [...sessions.values()].filter(isLive);
 
 function closeSession(id) {
   const s = sessions.get(id);
   if (!s) return;
-  const closer = { rdp: "close_rdp_session", web: "close_web_view" }[s.kind] ?? "close_session";
+  const closer =
+    { rdp: "close_rdp_session", vnc: "close_vnc_session", web: "close_web_view" }[s.kind] ??
+    "close_session";
   invoke(closer, { id }).catch(() => {});
   dropTab(id);
 }
@@ -407,11 +581,17 @@ function dropTab(id) {
   s.unlisten.forEach((f) => f());
   s.term?.dispose();
   s.host.remove();
+  // Before it goes, so the pane that inherits the keyboard is one beside it.
+  const ids = s.split?.ids;
+  const beside = ids && (ids[ids.indexOf(id) - 1] ?? ids[ids.indexOf(id) + 1]);
+  leaveSplit(s);
   sessions.delete(id);
   s.bcast?.live.delete(id);
   if (activeId === id) {
-    // Stay inside the same broadcast group when one of its panes closes.
-    const sibling = s.bcast && [...sessions.values()].find((x) => x.bcast === s.bcast);
+    // Stay inside the same broadcast group or split when one of its panes closes.
+    const sibling =
+      (s.bcast && [...sessions.values()].find((x) => x.bcast === s.bcast)) ||
+      (beside !== undefined && sessions.get(beside));
     activeId = sibling ? sibling.id : ([...sessions.keys()].pop() ?? null);
   }
   showTab();
@@ -427,7 +607,26 @@ function showTab() {
   browseEl.hidden = activeId !== null;
   termsEl.hidden = activeId === null;
   const grid = sessions.get(activeId)?.bcast ?? null;
+  const split = sessions.get(activeId)?.split ?? null;
+  if (split) split.last = activeId;
   termsEl.classList.toggle("grid", grid !== null);
+  termsEl.classList.toggle("split", split !== null);
+  termsEl.classList.toggle("col", split?.dir === "col");
+  // Panes take their place by `order`, dividers sit between them, and a pane's share
+  // of the room is its flex-grow.
+  for (const d of termsEl.querySelectorAll(".divider")) d.remove();
+  if (split) {
+    split.ids.forEach((id, i) => {
+      if (!i) return;
+      const d = document.createElement("div");
+      d.className = "divider";
+      d.dataset.at = i;
+      d.setAttribute("role", "separator");
+      d.setAttribute("aria-orientation", split.dir === "col" ? "horizontal" : "vertical");
+      d.style.order = 2 * i - 1;
+      termsEl.append(d);
+    });
+  }
   termsEl.classList.toggle("bcast-on", !!grid?.on);
   // Nearest-square grid: 4 becomes 2×2, 6 becomes 3×2.
   if (grid) {
@@ -438,12 +637,17 @@ function showTab() {
   }
   for (const s of sessions.values()) {
     s.host.hidden = !inActive(s);
-    s.host.classList.toggle("focused", grid !== null && s.id === activeId);
+    s.host.classList.toggle("focused", (grid !== null || split !== null) && s.id === activeId);
+    const at = split ? split.ids.indexOf(s.id) : -1;
+    s.host.style.order = at < 0 ? "" : 2 * at;
+    s.host.style.flexGrow = at < 0 ? "" : split.sizes[at];
+    if (at >= 0) s.host.dataset.name = labelOf(s.name);
+    else if (!s.bcast) delete s.host.dataset.name;
   }
   if (activeId !== null) {
     // Every visible pane refits after the grid template lands.
     requestAnimationFrame(() => {
-      if (grid) {
+      if (grid || split) {
         for (const s of sessions.values()) if (inActive(s)) s.fit?.fit();
       }
       const s = sessions.get(activeId);
@@ -614,7 +818,7 @@ function placeWebViews() {
     const r = s.host.getBoundingClientRect();
     // Held back until the first page finishes: before that WebKit paints a white
     // pane, and a NAS waking its disks can sit on one for half a minute.
-    const shown = s.id === activeId && !covered(r) && !s.failed && s.loaded && r.width > 0;
+    const shown = inActive(s) && !covered(r) && !s.failed && s.loaded && r.width > 0;
     invoke("place_web_view", {
       id: s.id,
       x: shown ? r.left : 0,
@@ -1177,43 +1381,58 @@ async function openWebSession(name) {
 }
 
 function renderTabs() {
-  // A broadcast group is one chip, selected whenever any of its panes has focus.
+  // A broadcast group is one chip, selected whenever any of its panes has focus; so is a
+  // split, named after its panes.
   const seen = new Set();
   const chips = [];
   for (const s of sessions.values()) {
+    if (s.split) {
+      if (seen.has(`s${s.split.sid}`)) continue;
+      seen.add(`s${s.split.sid}`);
+      const g = s.split;
+      const panes = g.ids.map((id) => sessions.get(id));
+      const names = panes.map((p) => labelOf(p.name)).join(" · ");
+      chips.push(`<div class="tab split ${panes.every((p) => p.dead) ? "dead" : ""}" data-sid="${g.sid}" role="tab" aria-selected="${g.ids.includes(activeId)}">
+        <span class="tabkind">${icon(g.dir === "col" ? "rows-2" : "columns-2")}</span>
+        <span class="lbl">${esc(names)}</span>
+        <span class="x" data-sclose="${g.sid}" data-tip="Close all" role="button">${icon("x")}</span>
+      </div>`);
+      continue;
+    }
     if (s.bcast) {
       if (seen.has(s.bcast.gid)) continue;
       seen.add(s.bcast.gid);
       const b = s.bcast;
       const anyActive = [...sessions.values()].some((x) => x.bcast === b && x.id === activeId);
       const alive = b.live.size;
-      chips.push(`<div class="tab bcast ${b.on ? "on" : ""}" data-gid="${b.gid}" aria-selected="${anyActive}">
+      chips.push(`<div class="tab bcast ${b.on ? "on" : ""}" data-gid="${b.gid}" role="tab" aria-selected="${anyActive}">
         <span class="tabkind">${icon("radio-tower")}</span>
         <span class="lbl">Broadcast · ${alive} of ${b.names.length}</span>
         <button type="button" class="bmute" data-bmute="${b.gid}"
           data-tip="${b.on ? "Stop broadcasting keystrokes" : "Broadcast keystrokes to every pane"}"
           aria-pressed="${b.on}">${icon(b.on ? "radio-tower" : "square")}</button>
-        <span class="x" data-bclose="${b.gid}" data-tip="Close all">${icon("x")}</span>
+        <span class="x" data-bclose="${b.gid}" data-tip="Close all" role="button">${icon("x")}</span>
       </div>`);
       continue;
     }
     // A shell tab wears its device's mark in readable()'s colour, never a raw brand hex.
     const os = s.kind === "term" && !s.task ? all.find((j) => j.name === s.name)?.os : undefined;
     const tint = os && osColor(os);
-    chips.push(`<div class="tab ${s.dead ? "dead" : ""}" data-id="${s.id}" aria-selected="${s.id === activeId}">
-      <span class="dot ${s.dead ? "down" : "up"}"></span>
+    chips.push(`<div class="tab ${s.dead ? "dead" : ""}" data-id="${s.id}" role="tab" aria-selected="${s.id === activeId}">
+      <span class="dot ${s.dead ? "down" : "up"}" role="img" aria-label="${s.dead ? "ended" : "connected"}"></span>
       ${os ? `<span class="tabkind"${tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(os)}</span>` : ""}
       ${s.kind === "rdp" ? `<span class="tabkind">${icon("monitor")}</span>` : ""}
+      ${s.kind === "vnc" ? `<span class="tabkind">${icon("screen-share")}</span>` : ""}
       ${s.kind === "web" ? `<span class="tabkind">${icon("globe")}</span>` : ""}
       ${s.kind === "sftp" ? `<span class="tabkind">${icon("folder")}</span>` : ""}
       ${s.task ? `<span class="tabkind">${icon({ trace: "waypoints", key: "key-round" }[s.task] ?? "plug")}</span>` : ""}
       <span class="lbl">${esc(s.task ? `${taskLabel(s.task)} ${labelOf(s.name)}` : labelOf(s.name))}</span>
       ${
         s.kind === "web" && webextRunning && !s.dead
-          ? `<span class="x" data-bw="${s.id}" data-tip="Fill · right-click for Bitwarden">${icon("key-round")}</span>`
+          ? `<span class="x" data-bw="${s.id}" data-tip="Fill · right-click for Bitwarden" role="button">${icon("key-round")}</span>`
           : ""
       }
-      <span class="x" data-close="${s.id}" data-tip="Close  ${chord("w")}">${icon("x")}</span>
+      <span class="x" data-close="${s.id}" data-tip="Close  ${chord("w")}" role="button">${icon("x")}</span>
     </div>`);
   }
   tabsEl.innerHTML = chips.join("");
@@ -1272,8 +1491,12 @@ function tellPresence() {
 // like `recent`: a habit, not part of the list.
 function rememberTabs() {
   const open = [...sessions.values()]
-    .filter((s) => !s.dead && !s.bcast && !s.task && s.kind !== "rdp")
-    .map((s) => ({ kind: s.kind, name: s.name }));
+    .filter((s) => !s.dead && !s.bcast && !s.task && s.kind !== "rdp" && s.kind !== "vnc")
+    .map((s) => ({
+      kind: s.kind,
+      name: s.name,
+      ...(s.via !== "ssh" && s.via ? { via: s.via } : {}),
+    }));
   remember("tabs", JSON.stringify(open));
 }
 
@@ -1314,6 +1537,19 @@ tabsEl.addEventListener("click", (e) => {
   if (close) return closeSession(+close);
   const bclose = e.target.closest("[data-bclose]")?.dataset.bclose;
   if (bclose) return closeBroadcast(+bclose);
+  const sclose = e.target.closest("[data-sclose]")?.dataset.sclose;
+  if (sclose) return closeSplit(+sclose);
+  const split = e.target.closest("[data-sid]");
+  if (split) {
+    // Back to the pane that last had the keyboard.
+    const g = [...sessions.values()].find((s) => s.split?.sid === +split.dataset.sid)?.split;
+    if (g) {
+      activeId = g.last;
+      showTab();
+      renderTabs();
+    }
+    return;
+  }
   const bmute = e.target.closest("[data-bmute]")?.dataset.bmute;
   if (bmute) return toggleBroadcast(+bmute);
   const bcast = e.target.closest("[data-gid]");
@@ -1372,7 +1608,13 @@ tabsEl.addEventListener("pointerdown", (e) => {
     setTimeout(() => (tabDragged = false), 0);
     const was = [...sessions.values()];
     const order = [...tabsEl.querySelectorAll(".tab")].flatMap((t) =>
-      was.filter((s) => (t.dataset.gid ? s.bcast?.gid === +t.dataset.gid : s.id === +t.dataset.id)),
+      was.filter((s) =>
+        t.dataset.gid
+          ? s.bcast?.gid === +t.dataset.gid
+          : t.dataset.sid
+            ? s.split?.sid === +t.dataset.sid
+            : s.id === +t.dataset.id,
+      ),
     );
     // A session opened mid-drag has no chip in the order yet; it goes last.
     for (const s of was) if (!order.includes(s)) order.push(s);
@@ -1416,7 +1658,8 @@ addEventListener("resize", () => {
 });
 
 function cycleSession(d) {
-  // One step per chip: a broadcast group is one tab in the strip.
+  // One step per chip: a broadcast group is one tab in the strip. A split's panes are a
+  // step each, so the keyboard can reach every one of them.
   const stops = [null];
   const seen = new Set();
   for (const s of sessions.values()) {
@@ -1641,15 +1884,12 @@ async function rdpSaved(name, j) {
 const rdpAsk = (j, user, remember, saved = []) =>
   ask(`Sign in to ${j.host}`, "", "Connect", "password", user, remember, saved);
 
-async function openRdpSession(name) {
-  const j = all.find((x) => x.name === name);
-  if (!j) return;
-  // Before the credentials are asked for: a second desktop would be a second login.
-  const key = `rdp:${name}`;
-  if (showOpen(key)) return;
-
-  let creds = rdpCreds.get(name) ?? (await rdpSaved(name, j));
-  if (!creds) return;
+// One remote desktop tab, RDP or VNC: a canvas Rust paints tiles onto, and the mouse and
+// keyboard going back. Both protocols send the same records, and `${kind}_input` takes
+// the same arguments, so only opening one differs. The tab shows before the server
+// answers, so connecting has somewhere to be.
+function desktopTab(name, kind) {
+  const key = `${kind}:${name}`;
   // A dead desktop is a black canvas with nothing to read back, so a retry takes its
   // place rather than lining up beside it.
   for (const d of sessions.values()) if (d.key === key && d.dead) dropTab(d.id);
@@ -1664,15 +1904,19 @@ async function openRdpSession(name) {
   const ctx = canvas.getContext("2d");
   watchDrops();
 
-  const s = { id, name, kind: "rdp", key, canvas, host, dead: false, unlisten: [] };
+  const s = { id, name, kind, key, canvas, host, dead: false, unlisten: [] };
   sessions.set(id, s);
   activeId = id;
   showTab();
   renderTabs();
   renderTree();
 
-  // The desktop is letterboxed into the pane while it is a different size: a resize is
-  // a round trip to the server, and the window must not go black in the meantime. The
+  // `key` is the character a keystroke typed: VNC sends characters, RDP ignores it.
+  const send = (k, a = 0, b = 0, down = false, extra = {}) =>
+    invoke(`${kind}_input`, { id, kind: k, a, b, down, ...extra }).catch(() => {});
+
+  // The desktop is letterboxed into the pane while it is a different size: an RDP resize
+  // is a round trip to the server, and a VNC desktop is never resized at all. The
   // element keeps the picture's aspect so `at()` stays a plain rect ratio.
   const scale = () => {
     // A backgrounded tab has no box, and a canvas sized to nothing would stay that
@@ -1681,7 +1925,68 @@ async function openRdpSession(name) {
     const k = Math.min(host.clientWidth / canvas.width, host.clientHeight / canvas.height);
     canvas.style.width = `${Math.round(canvas.width * k)}px`;
     canvas.style.height = `${Math.round(canvas.height * k)}px`;
+    if (shape) cursor(...shape);
   };
+  const ro = new ResizeObserver(scale);
+  ro.observe(host);
+  s.unlisten.push(() => ro.disconnect());
+
+  // The server's pointer shape on the canvas's own cursor, so it moves without a round
+  // trip. It comes in desktop pixels, and the desktop is drawn smaller than that (a 2x
+  // screen's RDP desktop is in device pixels, a VNC one letterboxed), so it is scaled the
+  // same way or Windows' I-beam is twice the size of the text it sits on. Kept, so a
+  // pane that changes size redraws it. Empty is the server hiding it; a hotspot x of
+  // 0xffff with no pixels is the system arrow.
+  let shape = null;
+  const cursor = (w, h, hx, hy, rgba) => {
+    shape = [w, h, hx, hy, rgba];
+    if (!rgba) return void (canvas.style.cursor = hx === 0xffff ? "" : "none");
+    const k = parseFloat(canvas.style.width) / canvas.width || 1;
+    const src = document.createElement("canvas");
+    src.width = w;
+    src.height = h;
+    src.getContext("2d").putImageData(new ImageData(rgba, w, h), 0, 0);
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(w * k));
+    c.height = Math.max(1, Math.round(h * k));
+    c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+    canvas.style.cursor = `url(${c.toDataURL()}) ${Math.round(hx * k)} ${Math.round(hy * k)}, default`;
+  };
+
+  // A remote desktop's sound, played as it arrives: each block scheduled right after the
+  // last, and after a gap (silence, a stall) a little ahead of the clock so the first
+  // block of the next sound doesn't start late and click. A backlog past half a second
+  // is dropped, so sound never falls behind the picture. Only RDP sends any; the context
+  // is made on the first block, so a silent desktop never opens one.
+  let audio = null,
+    playAt = 0;
+  const sound = new window.__TAURI__.core.Channel();
+  sound.onmessage = (msg) => {
+    const buf = msg instanceof ArrayBuffer ? msg : new Uint8Array(msg).buffer;
+    const view = new DataView(buf);
+    const rate = view.getUint32(0, true),
+      channels = view.getUint16(4, true);
+    const pcm = new Int16Array(buf, 8, (buf.byteLength - 8) >> 1);
+    const frames = Math.floor(pcm.length / channels);
+    if (!frames) return;
+    audio ??= new AudioContext();
+    const block = audio.createBuffer(channels, frames, rate);
+    for (let c = 0; c < channels; c++) {
+      const out = block.getChannelData(c);
+      for (let i = 0; i < frames; i++) out[i] = pcm[i * channels + c] / 32768;
+    }
+    const src = audio.createBufferSource();
+    src.buffer = block;
+    src.connect(audio.destination);
+    const now = audio.currentTime;
+    if (playAt < now || playAt > now + 0.5) playAt = now + 0.05;
+    src.start(playAt);
+    playAt += block.duration;
+  };
+  // A webview may hold a context made outside a click until there is one; a click in
+  // the desktop is one.
+  canvas.addEventListener("mousedown", () => audio?.resume());
+  s.unlisten.push(() => audio?.close());
 
   // Tiles arrive before the invoke resolves, and setting canvas.width clears the
   // canvas, so they are held until the server has said how big the desktop is.
@@ -1703,14 +2008,22 @@ async function openRdpSession(name) {
         scale();
         continue;
       }
+      // x at 0xfffe is VNC's cursor: its hotspot as two more u16s, then its pixels.
+      if (x === 0xfffe) {
+        const hx = view.getUint16(at, true),
+          hy = view.getUint16(at + 2, true);
+        at += 4;
+        cursor(w, h, hx, hy, w && h ? new Uint8ClampedArray(buf, at, w * h * 4) : null);
+        at += w * h * 4;
+        continue;
+      }
       ctx.putImageData(new ImageData(new Uint8ClampedArray(buf, at, w * h * 4), w, h), x, y);
       at += w * h * 4;
     }
   };
   // The session holds the next frame until this one is painted, so a window that
   // paints slower than the desktop changes skips pictures rather than falling behind.
-  const painted = () =>
-    invoke("rdp_input", { id, kind: "painted", a: 0, b: 0, down: false }).catch(() => {});
+  const painted = () => send("painted");
   const chan = new window.__TAURI__.core.Channel();
   chan.onmessage = (msg) => {
     const buf = msg instanceof ArrayBuffer ? msg : new Uint8Array(msg).buffer;
@@ -1722,10 +2035,184 @@ async function openRdpSession(name) {
     }
   };
 
+  // The size the server gave, once the open command resolves; what was held is painted.
+  const show = (screen) => {
+    canvas.width = screen.width;
+    canvas.height = screen.height;
+    scale();
+    const held = queued;
+    queued = null;
+    try {
+      held.forEach(paint);
+    } finally {
+      if (held.length) painted();
+    }
+  };
+
+  // Once the session is up: its hang-up, then the mouse and keyboard.
+  const live = async () => {
+    // Without this a hang-up freezes the picture while the tab keeps a live dot.
+    try {
+      s.unlisten.push(
+        await listen(`${kind}-exit:${id}`, (e) => {
+          s.dead = true;
+          renderTabs();
+          renderTree();
+          if (e.payload) alertish(e.payload);
+        }),
+      );
+    } catch {
+      /* no capability means no exit notice, not a broken session */
+    }
+
+    // The canvas is letterboxed to fit the pane, so pointer coordinates are scaled back.
+    const at = (e) => {
+      const r = canvas.getBoundingClientRect();
+      return [
+        Math.round((e.clientX - r.left) * (canvas.width / r.width)),
+        Math.round((e.clientY - r.top) * (canvas.height / r.height)),
+      ];
+    };
+    // One move per frame, not per event: a drag fires a hundred a second, each of them an
+    // invoke and a layout read for the rect, and only the last position in a frame is one
+    // the far end can act on. A button flushes first, or the click lands where the pointer
+    // was a frame ago.
+    let pending = null,
+      frame = 0;
+    const flush = () => {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      if (pending) send("move", ...at(pending));
+      pending = null;
+    };
+    canvas.addEventListener("mousemove", (e) => {
+      pending = e;
+      frame ||= requestAnimationFrame(flush);
+    });
+    canvas.addEventListener("mousedown", (e) => {
+      canvas.focus();
+      flush();
+      send("button", e.button, 0, true);
+    });
+    canvas.addEventListener("mouseup", (e) => {
+      flush();
+      send("button", e.button, 0, false);
+    });
+    // Right-click belongs to the far end, but stopping propagation alone skips the
+    // document handler's preventDefault and leaves the webview's own Reload menu.
+    canvas.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    // A trackpad fires a wheel event per frame with a few pixels in each, and sending
+    // each as a whole notch scrolled a page per flick and had the far end repaint sixty
+    // times a second. The distance is summed and sent once a frame instead, in Windows'
+    // units: 120 is a notch, three lines, which is about 60 of our pixels.
+    // ponytail: a fixed pixels-to-units ratio; per-app tuning if a program scrolls oddly.
+    let wheel = 0,
+      wheelFrame = 0;
+    const scroll = () => {
+      // Two notches a frame at most, which is all the wire's nine bits hold; the rest
+      // stays in `wheel` for the next frame rather than wrapping into the other way.
+      const units = Math.max(-240, Math.min(240, Math.round(wheel * -2)));
+      wheel += units / 2;
+      wheelFrame = Math.abs(wheel) >= 0.5 ? requestAnimationFrame(scroll) : 0;
+      if (!units) return;
+      // A wheel carries no coordinates either: it lands wherever the last move left it.
+      flush();
+      send("wheel", units);
+    };
+    canvas.addEventListener(
+      "wheel",
+      (e) => {
+        e.preventDefault();
+        wheel += e.deltaY * [1, 20, 400][e.deltaMode];
+        wheelFrame ||= requestAnimationFrame(scroll);
+      },
+      { passive: false },
+    );
+    // What the far end believes is held down. macOS delivers no keyup for a key pressed
+    // while ⌘ is held, and a chord that moves the focus (⌘K) takes the Meta keyup with
+    // it - either way Windows keeps the key down and every letter after it is a
+    // shortcut. Releasing on blur and after Meta is what stops that.
+    const down = new Set();
+    const release = () => {
+      for (const code of down) send("key", code, 0, false);
+      down.clear();
+    };
+    // ⌘C, ⌘X, ⌘V, ⌘A and ⌘Z are Ctrl on the far end, as in Microsoft's own Mac client.
+    // ⌘ is already down there as Win by then, and Win+V is Windows' clipboard history.
+    const ctrlChord = (code) => {
+      send("key", SCANCODES.ControlLeft, 0, true);
+      // Let go of with Ctrl already down, or Windows reads a lone Win and opens Start.
+      for (const win of [SCANCODES.MetaLeft, SCANCODES.MetaRight])
+        if (down.delete(win)) send("key", win, 0, false);
+      send("key", code, 0, true);
+      send("key", code, 0, false);
+      send("key", SCANCODES.ControlLeft, 0, false);
+    };
+    const MAC_EDIT = ["KeyC", "KeyX", "KeyV", "KeyA", "KeyZ"];
+    // When the Edit menu takes the chord it never arrives as a keydown, only as its
+    // clipboard event; the `before` ones are what enable the menu item over a canvas.
+    const EDIT = { copy: "KeyC", cut: "KeyX", paste: "KeyV" };
+    const onEdit = (e) => {
+      if (document.activeElement !== canvas) return;
+      e.preventDefault();
+      if (EDIT[e.type]) ctrlChord(SCANCODES[EDIT[e.type]]);
+    };
+    if (isMac) {
+      const types = ["beforecopy", "beforecut", "beforepaste", ...Object.keys(EDIT)];
+      for (const t of types) document.addEventListener(t, onEdit, true);
+      s.unlisten.push(() => types.forEach((t) => document.removeEventListener(t, onEdit, true)));
+    }
+    for (const [type, pressed] of [
+      ["keydown", true],
+      ["keyup", false],
+    ]) {
+      canvas.addEventListener(type, (e) => {
+        const code = SCANCODES[e.code];
+        if (code === undefined) return;
+        // Window chords stay ours; everything else belongs to the remote desktop.
+        if (chorded(e) && ["w", "k", "n", "d", "[", "]"].includes(chordKey(e))) return;
+        e.preventDefault();
+        if (isMac && e.metaKey && !e.ctrlKey && MAC_EDIT.includes(e.code)) {
+          if (pressed) ctrlChord(code);
+          return;
+        }
+        if (pressed) down.add(code);
+        else down.delete(code);
+        // ⌥ on a Mac is Alt on the far end, not the character it would type here: ⌥F
+        // is a menu there, not ƒ. Without a character VNC falls back to the key itself.
+        send("key", code, 0, pressed, { key: isMac && e.altKey ? null : e.key });
+        if (!pressed && (e.code === "MetaLeft" || e.code === "MetaRight")) release();
+      });
+    }
+    canvas.addEventListener("blur", release);
+    // VNC sends the local clipboard here and nowhere else; RDP ignores it.
+    canvas.addEventListener("focus", () => send("focus"));
+
+    renderTabs();
+    canvas.focus();
+  };
+
+  return { s, send, chan, sound, show, live };
+}
+
+async function openRdpSession(name) {
+  const j = all.find((x) => x.name === name);
+  if (!j) return;
+  // Before the credentials are asked for: a second desktop would be a second login.
+  if (showOpen(`rdp:${name}`)) return;
+
+  const creds = rdpCreds.get(name) ?? (await rdpSaved(name, j));
+  if (!creds) return;
+  const d = desktopTab(name, "rdp");
+  const { id, host } = d.s;
+
   // The pane's own size in device pixels, so the desktop fits without being scaled:
   // in CSS pixels a 2x screen draws each one as a 2x2 block and the text goes soft.
   // `scale` is what keeps it from being half the size. Even numbers because the RDP
-  // codecs work in 2x2 blocks. Laid out by showTab() above.
+  // codecs work in 2x2 blocks. Laid out by showTab() in desktopTab.
   const px = (n) => Math.max(640, Math.min(8192, n * devicePixelRatio)) & ~1;
   const percent = () => Math.round(devicePixelRatio * 100);
   // What the far end was last asked for. The observer below fires once the moment it
@@ -1741,39 +2228,27 @@ async function openRdpSession(name) {
       width: asked[0],
       height: asked[1],
       scale: asked[2],
-      onTile: chan,
+      onTile: d.chan,
+      onSound: d.sound,
     });
     // The server picks the size; asking for one is only a suggestion. What it gave is
     // what the pane is compared against, or a desktop that came back smaller than the
     // pane is never asked again and sits letterboxed at the wrong scale.
-    canvas.width = screen.width;
-    canvas.height = screen.height;
+    d.show(screen);
     asked = [screen.width, screen.height, asked[2]];
     // Every resize tears the session down and rebuilds it, so the pointer is only
     // believed once it has stopped moving. A server without the Display Control
-    // channel ignores it and the letterboxing above is all there is.
+    // channel ignores it and the letterboxing is all there is.
     let settle;
     const resized = () => {
       // A hidden pane measures zero, and asking for that would shrink the desktop to
       // the minimum every time another tab is looked at.
       if (!host.clientWidth || !host.clientHeight) return;
-      scale();
       const want = [px(host.clientWidth), px(host.clientHeight), percent()];
       if (want.every((n, i) => n === asked[i])) return;
       asked = want;
       clearTimeout(settle);
-      settle = setTimeout(
-        () =>
-          invoke("rdp_input", {
-            id,
-            kind: "resize",
-            a: want[0],
-            b: want[1],
-            down: false,
-            scale: want[2],
-          }).catch(() => {}),
-        400,
-      );
+      settle = setTimeout(() => d.send("resize", want[0], want[1], false, { scale: want[2] }), 400);
     };
     const ro = new ResizeObserver(resized);
     ro.observe(host);
@@ -1786,22 +2261,15 @@ async function openRdpSession(name) {
       resized();
     };
     moved();
-    s.unlisten.push(() => {
+    d.s.unlisten.push(() => {
       ro.disconnect();
       ratio.removeEventListener("change", moved);
       clearTimeout(settle);
     });
-    const held = queued;
-    queued = null;
-    try {
-      held.forEach(paint);
-    } finally {
-      if (held.length) painted();
-    }
     // Said once: a second connect this run neither saves it again nor forgets it.
     rdpCreds.set(name, { ...creds, remember: null });
   } catch (err) {
-    s.dead = true;
+    d.s.dead = true;
     // Rejected credentials must not be remembered, or the next attempt reuses them.
     rdpCreds.delete(name);
     renderTabs();
@@ -1845,145 +2313,55 @@ async function openRdpSession(name) {
     rdpCreds.set(name, creds);
     return openRdpSession(name);
   }
+  await d.live();
+}
 
-  // Without this a hang-up freezes the picture while the tab keeps a live dot.
+// Passwords typed this run, as `rdpCreds` keeps sign-ins. A remembered one never
+// crosses into the page: `null` asks Rust to use it, and only if the server wants one.
+const vncPasswords = new Map();
+
+// Tried without asking first: most VNC servers worth a tab (a hypervisor console, a KVM)
+// want no password, and the one that does says so.
+async function openVncSession(name, password = vncPasswords.get(name) ?? null, remember = null) {
+  const j = all.find((x) => x.name === name);
+  if (!j) return;
+  if (showOpen(`vnc:${name}`)) return;
+
+  const d = desktopTab(name, "vnc");
   try {
-    s.unlisten.push(
-      await listen(`rdp-exit:${id}`, (e) => {
-        s.dead = true;
-        renderTabs();
-        renderTree();
-        if (e.payload) alertish(e.payload);
-      }),
+    d.show(
+      await invoke("open_vnc_session", { id: d.s.id, name, password, remember, onTile: d.chan }),
     );
-  } catch {
-    /* no capability means no exit notice, not a broken session */
+    if (password !== null) vncPasswords.set(name, password);
+  } catch (err) {
+    dropTab(d.s.id);
+    vncPasswords.delete(name);
+    const e = String(err);
+    // Apple's sign-in, VeNCrypt, RealVNC's: the system's viewer speaks what this can't.
+    if (e.includes("signs in a way the built-in viewer")) {
+      flash(
+        `${j.name} signs in a way the built-in viewer doesn't speak, so it is opening in your VNC viewer`,
+      );
+      return handOffVnc(name);
+    }
+    const refused = e.includes("refused the sign-in");
+    if (!refused && !e.includes("asks for a VNC password")) return alertish(err);
+    if (refused) alertish(err);
+    // A remembered password that was refused is asked for again still ticked, so the
+    // new one replaces it.
+    const can = await invoke("can_remember").catch(() => false);
+    const typed = await ask(
+      `VNC password for ${j.host}`,
+      "",
+      "Connect",
+      "password",
+      null,
+      can ? refused && password === null : null,
+    );
+    if (!typed) return;
+    return typeof typed === "string"
+      ? openVncSession(name, typed)
+      : openVncSession(name, typed.password, typed.remember);
   }
-
-  const send = (kind, a = 0, b = 0, down = false) =>
-    invoke("rdp_input", { id, kind, a, b, down }).catch(() => {});
-  // The canvas is letterboxed to fit the pane, so pointer coordinates are scaled back.
-  const at = (e) => {
-    const r = canvas.getBoundingClientRect();
-    return [
-      Math.round((e.clientX - r.left) * (canvas.width / r.width)),
-      Math.round((e.clientY - r.top) * (canvas.height / r.height)),
-    ];
-  };
-  // One move per frame, not per event: a drag fires a hundred a second, each of them an
-  // invoke and a layout read for the rect, and only the last position in a frame is one
-  // the far end can act on. A button flushes first, or the click lands where the pointer
-  // was a frame ago.
-  let pending = null,
-    frame = 0;
-  const flush = () => {
-    cancelAnimationFrame(frame);
-    frame = 0;
-    if (pending) send("move", ...at(pending));
-    pending = null;
-  };
-  canvas.addEventListener("mousemove", (e) => {
-    pending = e;
-    frame ||= requestAnimationFrame(flush);
-  });
-  canvas.addEventListener("mousedown", (e) => {
-    canvas.focus();
-    flush();
-    send("button", e.button, 0, true);
-  });
-  canvas.addEventListener("mouseup", (e) => {
-    flush();
-    send("button", e.button, 0, false);
-  });
-  // Right-click belongs to the far end, but stopping propagation alone skips the
-  // document handler's preventDefault and leaves the webview's own Reload menu.
-  canvas.addEventListener("contextmenu", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  });
-  // A trackpad fires a wheel event per frame with a few pixels in each, and sending
-  // each as a whole notch scrolled a page per flick and had the far end repaint sixty
-  // times a second. The distance is summed and sent once a frame instead, in Windows'
-  // units: 120 is a notch, three lines, which is about 60 of our pixels.
-  // ponytail: a fixed pixels-to-units ratio; per-app tuning if a program scrolls oddly.
-  let wheel = 0,
-    wheelFrame = 0;
-  const scroll = () => {
-    // Two notches a frame at most, which is all the wire's nine bits hold; the rest
-    // stays in `wheel` for the next frame rather than wrapping into the other way.
-    const units = Math.max(-240, Math.min(240, Math.round(wheel * -2)));
-    wheel += units / 2;
-    wheelFrame = Math.abs(wheel) >= 0.5 ? requestAnimationFrame(scroll) : 0;
-    if (!units) return;
-    // A wheel carries no coordinates either: it lands wherever the last move left it.
-    flush();
-    send("wheel", units);
-  };
-  canvas.addEventListener(
-    "wheel",
-    (e) => {
-      e.preventDefault();
-      wheel += e.deltaY * [1, 20, 400][e.deltaMode];
-      wheelFrame ||= requestAnimationFrame(scroll);
-    },
-    { passive: false },
-  );
-  // What the far end believes is held down. macOS delivers no keyup for a key pressed
-  // while ⌘ is held, and a chord that moves the focus (⌘K) takes the Meta keyup with
-  // it - either way Windows keeps the key down and every letter after it is a
-  // shortcut. Releasing on blur and after Meta is what stops that.
-  const down = new Set();
-  const release = () => {
-    for (const code of down) send("key", code, 0, false);
-    down.clear();
-  };
-  // ⌘C, ⌘X, ⌘V, ⌘A and ⌘Z are Ctrl on the far end, as in Microsoft's own Mac client.
-  // ⌘ is already down there as Win by then, and Win+V is Windows' clipboard history.
-  const ctrlChord = (code) => {
-    send("key", SCANCODES.ControlLeft, 0, true);
-    // Let go of with Ctrl already down, or Windows reads a lone Win and opens Start.
-    for (const win of [SCANCODES.MetaLeft, SCANCODES.MetaRight])
-      if (down.delete(win)) send("key", win, 0, false);
-    send("key", code, 0, true);
-    send("key", code, 0, false);
-    send("key", SCANCODES.ControlLeft, 0, false);
-  };
-  const MAC_EDIT = ["KeyC", "KeyX", "KeyV", "KeyA", "KeyZ"];
-  // When the Edit menu takes the chord it never arrives as a keydown, only as its
-  // clipboard event; the `before` ones are what enable the menu item over a canvas.
-  const EDIT = { copy: "KeyC", cut: "KeyX", paste: "KeyV" };
-  const onEdit = (e) => {
-    if (document.activeElement !== canvas) return;
-    e.preventDefault();
-    if (EDIT[e.type]) ctrlChord(SCANCODES[EDIT[e.type]]);
-  };
-  if (isMac) {
-    const types = ["beforecopy", "beforecut", "beforepaste", ...Object.keys(EDIT)];
-    for (const t of types) document.addEventListener(t, onEdit, true);
-    s.unlisten.push(() => types.forEach((t) => document.removeEventListener(t, onEdit, true)));
-  }
-  for (const [type, pressed] of [
-    ["keydown", true],
-    ["keyup", false],
-  ]) {
-    canvas.addEventListener(type, (e) => {
-      const code = SCANCODES[e.code];
-      if (code === undefined) return;
-      // Window chords stay ours; everything else belongs to the remote desktop.
-      if (chorded(e) && ["w", "k", "n", "[", "]"].includes(chordKey(e))) return;
-      e.preventDefault();
-      if (isMac && e.metaKey && !e.ctrlKey && MAC_EDIT.includes(e.code)) {
-        if (pressed) ctrlChord(code);
-        return;
-      }
-      if (pressed) down.add(code);
-      else down.delete(code);
-      send("key", code, 0, pressed);
-      if (!pressed && (e.code === "MetaLeft" || e.code === "MetaRight")) release();
-    });
-  }
-  canvas.addEventListener("blur", release);
-
-  renderTabs();
-  canvas.focus();
+  await d.live();
 }

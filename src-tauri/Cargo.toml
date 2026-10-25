@@ -2,7 +2,7 @@
 name = "patchbay-app"
 version = "0.1.58"
 edition = "2021"
-license-file = "../LICENSE"   # PolyForm Perimeter 1.0.1, not an SPDX id
+license-file = "../LICENSE"   # our own terms, not an SPDX id
 rust-version = "1.94"   # ironrdp main (in-app RDP) needs it
 description = "Every host, one jack away."
 [build-dependencies]
@@ -46,7 +46,14 @@ arboard = "3.6.1"
 notify = "8"
 ironrdp-core = { git = "https://github.com/pyvnoaim/IronRDP", rev = "a7a793af9a2294513e2747536dc0039ee489e7cf" }
 ironrdp-egfx = { git = "https://github.com/pyvnoaim/IronRDP", rev = "a7a793af9a2294513e2747536dc0039ee489e7cf" }
+ironrdp-rdpsnd = { git = "https://github.com/pyvnoaim/IronRDP", rev = "a7a793af9a2294513e2747536dc0039ee489e7cf" }
 sha2 = "0.11.0"
+# The team licence, checked offline against the public key in licence.rs. Already in
+# the tree behind the updater; taking it directly keeps the licence off the network.
+minisign-verify = "0.2"
+# VNC in a tab: pure Rust, async on a runtime of the session's own (`vnc_session.rs`).
+vnc-rs = "0.6"
+tokio = { version = "1", features = ["rt", "net", "time"] }
 # Channel payloads are handed to the webview as text; see `channel_js` in main.rs.
 base64 = "0.22"
 # Royal TS documents. A `.rtsz` is XML, not a zip - and the names in a real one have

@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>patchbay</title>
+    <title>patchbay: share the list, not the passwords</title>
     <meta
       name="description"
-      content="Share the list, not the passwords. A connection manager that is a TOML file and an ssh exec, storing no credentials at all."
+      content="An SSH and RDP connection manager on one TOML file your team shares. Hosts, folders and jump chains go in the list; passwords and keys never do."
     />
-    <meta property="og:title" content="patchbay" />
+    <meta property="og:title" content="patchbay: share the list, not the passwords" />
     <meta
       property="og:description"
       content="An ssh connection manager on one TOML file the team shares. No Electron, no sync service, and the keys stay in your ssh agent."
@@ -1167,8 +1167,11 @@
                     <rect width="18" height="18" x="3" y="3" rx="2" ry="2" /></svg></span
                 >Terminal
               </h3>
-              <p>Your ssh on a real pty, not a client we wrote.</p>
-              <span class="path">/usr/bin/ssh &rarr; xterm.js</span>
+              <p>
+                Your ssh on a real pty, not a client we wrote. Telnet and a console cable too, and
+                any two side by side.
+              </p>
+              <span class="path">ssh, telnet, cu &rarr; xterm.js</span>
             </div>
             <div class="r">
               <h3>
@@ -1187,8 +1190,8 @@
                 >Remote desktop
               </h3>
               <p>
-                Decoded in-process onto a canvas, or handed to the system client. VNC goes to your
-                viewer.
+                RDP and VNC decoded in-process onto a canvas, H.264 on the video hardware of a Mac
+                or a Windows PC, or handed to the system client.
               </p>
               <span class="path">IronRDP &rarr; &lt;canvas&gt;</span>
             </div>
@@ -1532,8 +1535,8 @@
           <div class="sheet" id="log-off">
             <p class="hd screen">Releases</p>
             <p>
-              Nothing published yet. The first one lands here, and on
-              <a href="https://github.com/pyvnoaim/patchbay/releases">GitHub</a> beside the
+              Couldn't load the releases from here. They're on
+              <a href="https://github.com/pyvnoaim/patchbay/releases">GitHub</a>, beside the
               downloads.
             </p>
           </div>
@@ -1546,8 +1549,8 @@
         <div class="body">
           <h2>Free for you.<br />Free for your team, for now.</h2>
           <p class="lede">
-            Every protocol and every tab, free for one person at work or anywhere else, and for now
-            for a team on a shared list too. A company licence for teams is coming.
+            Every protocol and every tab, free for one person at work or anywhere else. A team on a
+            shared list will need a company licence, and until it goes on sale, that is free too.
           </p>
           <a class="btn line" href="https://github.com/pyvnoaim/patchbay/blob/main/LICENSE">
             Read the licence
@@ -1604,8 +1607,8 @@
             </div>
             <div class="price team">
               <h3>Team</h3>
-              <p class="amount">Soon</p>
-              <p class="per">a company licence, any team size</p>
+              <p class="amount">€249</p>
+              <p class="per">a year per company, any team size, on sale soon</p>
               <ul>
                 <li>
                   <svg
@@ -1640,10 +1643,17 @@
             <p class="hd screen">Small print</p>
             <dl class="faq">
               <div>
+                <dt>What counts as a team?</dt>
+                <dd>
+                  A shared list. Your own list, on all your machines, at work or for clients, is one
+                  person.
+                </dd>
+              </div>
+              <div>
                 <dt>Does a team pay today?</dt>
                 <dd>
-                  No. A shared list is free until the team licence launches, and nothing stops
-                  working when it does.
+                  No. A shared list is free until the team licence goes on sale. After that, a
+                  shared list needs a licence to open. Your own devices always open.
                 </dd>
               </div>
               <div>
@@ -1730,9 +1740,9 @@
           <p class="hd screen">Specification</p>
           <dl>
             <dt>Runs</dt>
-            <dd>ssh, sftp<small>the ones already on your PATH</small></dd>
+            <dd>ssh, sftp, telnet, cu<small>the ones already on your PATH</small></dd>
             <dt>Speaks</dt>
-            <dd>RDP<small>IronRDP, pure Rust, no FreeRDP</small></dd>
+            <dd>RDP, VNC<small>IronRDP and vnc-rs, pure Rust, no FreeRDP</small></dd>
             <dt>Stores</dt>
             <dd>
               the list<small
@@ -1745,7 +1755,7 @@
             <dt>Shell</dt>
             <dd>Tauri<small>the system webview, not Electron</small></dd>
             <dt>Licence</dt>
-            <dd>Free<small>for now, teams too; a team licence is coming</small></dd>
+            <dd>Free<small>for one person; a team's shared list, €249 a year</small></dd>
           </dl>
         </div>
       </div>

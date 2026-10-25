@@ -1,7 +1,7 @@
 //! `[settings]`, `[defaults]`, `[colors]`, the theme, and the config file itself.
 
 use super::{blocking, list_file, os_open, ssh_dir};
-use crate::{config, patchbay};
+use crate::{config, licence, patchbay};
 
 #[tauri::command]
 pub fn settings() -> config::Settings {
@@ -205,6 +205,30 @@ pub async fn open_config() -> Result<(), String> {
         os_open(p.as_os_str())
     })
     .await
+}
+
+/// The team licence beside the shared list. None with one vault: one person needs none.
+#[tauri::command]
+pub async fn licence() -> Result<Option<licence::Status>, String> {
+    blocking(|| Ok(super::licence_list()?.map(|p| licence::status(&p)))).await
+}
+
+/// The shared list a licence goes beside. The own config is never it: a licence there
+/// covers nobody.
+fn licensed_list() -> Result<std::path::PathBuf, String> {
+    super::licence_list()?
+        .ok_or_else(|| "a licence is for a shared list: set one in Settings ▸ Team first".into())
+}
+
+#[tauri::command]
+pub async fn save_licence(text: String) -> Result<licence::Status, String> {
+    blocking(move || licence::save(&licensed_list()?, &text)).await
+}
+
+/// For everyone on the list, which is why the window asks first.
+#[tauri::command]
+pub async fn remove_licence() -> Result<(), String> {
+    blocking(|| licence::remove(&licensed_list()?)).await
 }
 
 #[cfg(test)]

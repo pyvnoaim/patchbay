@@ -234,6 +234,29 @@ function alertish(e) {
   flash(String(e), true);
 }
 
+// A licence's date as the day it names: in UTC, the zone `npm run licence` signs in.
+const licDay = (secs) =>
+  new Date(secs * 1000).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+
+// An icon-only control is named by its tooltip, so a screen reader says "Settings"
+// rather than "button". Only where the control has no words of its own, and only a name
+// set here is kept in step with a tooltip that changes (the URL scheme's does).
+function nameIcons(root) {
+  const els = root.matches?.("[data-tip]") ? [root] : [];
+  els.push(...(root.querySelectorAll?.("[data-tip]") ?? []));
+  for (const el of els) {
+    if (el.hasAttribute("aria-label") && el.dataset.named === undefined) continue;
+    if (el.textContent.trim() && el.dataset.named === undefined) continue;
+    el.setAttribute("aria-label", el.dataset.tip.trim());
+    el.dataset.named = "";
+  }
+}
+
 // A sheet is modal to the keyboard; the palette handles its own keys.
 const sheetOpen = () => [sheetWrap, askWrap, setWrap, impWrap].some((el) => !el.hidden);
 // Everything that paints over the window. A web tab is an OS view above the page and

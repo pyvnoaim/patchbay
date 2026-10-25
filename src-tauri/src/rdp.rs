@@ -5,9 +5,8 @@
 //! Ssh's stderr is read on its own thread (a pipe nobody drains blocks ssh) and its
 //! last line is the error a failed tunnel shows; `list()` drops a tunnel whose ssh has
 //! since exited and hands the reason back, so the window can say so. Its `Tunnels` and
-//! `free_port` are what `vnc = <port>` uses too - VNC is a handoff and nothing else,
-//! `vnc://` to whatever viewer the machine has, so there is no `vnc_session.rs` and
-//! adding one needs the same argument `rdp_session.rs` had to win.
+//! `free_port` are what `vnc = <port>` uses too, in a tab (`vnc_session.rs`) or handed
+//! to whatever viewer owns `vnc://`.
 //!
 //! `.rdp` is line-based, so a newline in a host or username injects directives -
 //! `alternate shell:s:` runs a program. Control characters are rejected before anything
@@ -133,6 +132,8 @@ pub struct Tunnel {
     pub jack: String,
     pub local: u16,
     pub via: String,
+    /// The `host:port` a forward for a desktop or a console leads to; see `reuse`.
+    target: Option<String>,
 }
 
 /// A live tunnel as the window sees it: id, jack, local port, route.
@@ -169,6 +170,7 @@ impl Tunnels {
             jack: jack.to_string(),
             local,
             via: via.clone(),
+            target: None,
         };
         let up = match local {
             0 => still_running(&mut t.child, Duration::from_millis(1500)),
@@ -186,6 +188,26 @@ impl Tunnels {
         }
         self.0.lock().unwrap().insert(id, t);
         Ok(())
+    }
+
+    /// Name what tunnel `id` forwards to, so the next connection there can share it.
+    pub fn mark(&self, id: u32, target: String) {
+        if let Some(t) = self.0.lock().unwrap().get_mut(&id) {
+            t.target = Some(target);
+        }
+    }
+
+    /// The local port of a live tunnel to `target` for `jack`. A retry or a second
+    /// connection goes through it rather than leaving one more ssh holding a port.
+    pub fn reuse(&self, jack: &str, target: &str) -> Option<u16> {
+        let mut held = self.0.lock().unwrap();
+        for t in held.values_mut() {
+            let here = t.jack == jack && t.target.as_deref() == Some(target);
+            if here && matches!(t.child.try_wait(), Ok(None)) {
+                return Some(t.local);
+            }
+        }
+        None
     }
 
     /// Live tunnels, and the ones found dead on the way: an ssh that exited since the

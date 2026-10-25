@@ -51,12 +51,35 @@ use std::path::PathBuf;
 /// never a fresh file: a share that is away must not read as empty, and nothing is
 /// written where it will mount. The own config keeps the first-run rule, where missing
 /// means empty.
+///
+/// It is also where the team licence is held: once licences are on sale, a list with
+/// none running is refused here like one that is away, so every read and write of it
+/// stops in one place and your own devices still load. `licence_list` is the way past,
+/// for the licence itself.
 pub fn list_file() -> Result<PathBuf, String> {
-    let Some(p) = patchbay::list() else {
+    let Some(p) = licence_list()? else {
         return Ok(patchbay::config_path());
     };
+    // Not even read until licences are on sale: this runs on every touch of the list,
+    // over a share, and the answer could only be yes.
+    if !crate::licence::ON_SALE {
+        return Ok(p);
+    }
+    let standing = crate::licence::status(&p);
+    if !crate::licence::opens(&standing) {
+        return Err(crate::licence::refusal(&standing));
+    }
+    Ok(p)
+}
+
+/// The shared list whatever its licence, or None with one vault: where a licence is
+/// read, added and removed.
+pub fn licence_list() -> Result<Option<PathBuf>, String> {
+    let Some(p) = patchbay::list() else {
+        return Ok(None);
+    };
     if p.is_file() {
-        Ok(p)
+        Ok(Some(p))
     } else {
         Err(format!("the team list at {} is not there", p.display()))
     }

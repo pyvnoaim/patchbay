@@ -114,11 +114,11 @@ impl Input {
 /// How long a read blocks before the input queue is checked, and a frame the window is
 /// ready for goes out. Half a frame: a quiet desktop otherwise holds a keystroke, or
 /// the last paint of a burst, for the whole wait.
-const POLL: Duration = Duration::from_millis(8);
+pub(crate) const POLL: Duration = Duration::from_millis(8);
 
 /// The handshake is several round trips (TLS, CredSSP, capabilities); `POLL` applied
 /// to any of them aborts it mid-negotiation.
-const HANDSHAKE: Duration = Duration::from_secs(15);
+pub(crate) const HANDSHAKE: Duration = Duration::from_secs(15);
 
 /// A connected session, not yet pumping. Split from [`pump`] so a wrong password
 /// fails while the window is still waiting on the command.
@@ -145,6 +145,7 @@ fn config(
     width: u16,
     height: u16,
     scale: u32,
+    audio: bool,
 ) -> connector::Config {
     connector::Config {
         credentials: Credentials::UsernamePassword { username, password },
@@ -175,15 +176,18 @@ fn config(
         platform: MajorPlatformType::WINDOWS,
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         platform: MajorPlatformType::UNIX,
-        // The server draws the cursor into the framebuffer; a hardware pointer would
-        // have to be composited on the canvas.
-        enable_server_pointer: false,
+        // The pointer capability always advertises a cache, so a server never draws the
+        // pointer into the framebuffer: without these its shape was thrown away and the
+        // canvas showed only this machine's arrow. Accelerated, so the shape arrives as
+        // RGBA for the canvas's own cursor rather than drawn into the picture, which
+        // would cost a frame per pointer move.
+        enable_server_pointer: true,
         request_data: None,
         autologon: false,
-        enable_audio_playback: false,
+        enable_audio_playback: audio,
         enable_audio_capture: false,
         compression_type: None,
-        pointer_software_rendering: true,
+        pointer_software_rendering: false,
         multitransport_flags: None,
         support_dyn_vc_gfx_protocol: true,
         // A wallpaper is a photo, and the bitmap updates a Windows host sends outside
@@ -216,17 +220,20 @@ pub fn open(
     width: u16,
     height: u16,
     scale: u32,
+    sound: Option<crate::sound::Speaker>,
 ) -> Result<Session, String> {
     let (to_session, clipboard) = std::sync::mpsc::channel();
     let last_seen = crate::clipboard::last_seen();
     let pipelines = Pipelines::default();
+    let audio = sound.is_some();
     let (result, framed) = connect(
         host,
         port,
         pin,
-        config(username, password, domain, width, height, scale),
+        config(username, password, domain, width, height, scale, audio),
         crate::clipboard::Backend::new(to_session, std::sync::Arc::clone(&last_seen)),
         &pipelines,
+        sound,
     )?;
 
     let image = DecodedImage::new(
@@ -378,14 +385,14 @@ pub fn pump(
             ));
         }
 
-        if let Some(frame) = pending.take(&image, quiet) {
+        if let Some(frame) = pending.take(image.data(), image.width(), image.height(), quiet) {
             on_frame(frame);
         }
     }
 }
 
 /// How long a frame is gathered before it crosses to the window: one at 60 Hz.
-const FRAME: Duration = Duration::from_millis(16);
+pub(crate) const FRAME: Duration = Duration::from_millis(16);
 
 /// The server sends one screen's change as a burst of updates and then goes quiet, so
 /// a frame goes when the socket does - sent mid-burst, a page loading paints in bands
@@ -394,26 +401,52 @@ const LATE: Duration = Duration::from_millis(50);
 
 /// A frame the window never said it painted (a reload, a thrown paint) is given up on
 /// after this, so a lost acknowledgement slows the picture rather than freezing it.
-const STALL: Duration = Duration::from_secs(1);
+pub(crate) const STALL: Duration = Duration::from_secs(1);
 
 /// `x` and `y` of a record that carries the desktop's new size rather than pixels. No
 /// tile starts there: the desktop is capped at 8192.
 const RESIZED: u16 = u16::MAX;
 
+/// `x` and `y` of a record that carries the remote pointer's shape: the hotspot as two
+/// more little-endian u16s, then `w * h` RGBA. Empty is the pointer hidden, unless the
+/// hotspot's x is [`CURSOR_DEFAULT`], which is the system arrow.
+const CURSOR: u16 = u16::MAX - 1;
+pub(crate) const CURSOR_DEFAULT: u16 = u16::MAX;
+
+/// The record for a pointer shape. Pixels that don't fill `w * h` come out hidden
+/// rather than as a shape read past its end.
+pub(crate) fn cursor(w: u16, h: u16, hot_x: u16, hot_y: u16, rgba: &[u8]) -> Vec<u8> {
+    let len = usize::from(w) * usize::from(h) * 4;
+    let (w, h, pixels) = match rgba.get(..len) {
+        Some(p) if len > 0 => (w, h, p),
+        _ => (0, 0, &[][..]),
+    };
+    let mut record = Vec::with_capacity(12 + pixels.len());
+    head(&mut record, [CURSOR, CURSOR, w, h]);
+    record.extend_from_slice(&hot_x.to_le_bytes());
+    record.extend_from_slice(&hot_y.to_le_bytes());
+    record.extend_from_slice(pixels);
+    record
+}
+
 /// What changed since the last frame went to the window. Regions, not pixels: they are
 /// cut from the framebuffer when the frame goes, so a region drawn ten times while the
 /// window was busy crosses once, as it is now. Queueing the pixels instead made a
 /// window that paints slower than the server draws fall further behind every second.
-struct Pending {
+/// `vnc_session.rs` paces its frames with this too, so both desktops reach the window
+/// as the same records.
+pub(crate) struct Pending {
     dirty: Vec<InclusiveRectangle>,
     resized: Option<(u16, u16)>,
+    /// Whole records that aren't pixels (VNC's cursor), sent in order ahead of the tiles.
+    records: Vec<u8>,
     /// The desktop size the window was last told, so a change it hasn't heard of goes
     /// ahead of the pixels drawn at the new size.
     size: (u16, u16),
     /// When the oldest change still waiting was made.
     since: Option<std::time::Instant>,
     /// The window acknowledged the last frame; at most one is ever in flight.
-    painted: bool,
+    pub(crate) painted: bool,
     sent: std::time::Instant,
 }
 
@@ -422,6 +455,7 @@ impl Default for Pending {
         Self {
             dirty: Vec::new(),
             resized: None,
+            records: Vec::new(),
             size: (0, 0),
             since: None,
             painted: true,
@@ -443,7 +477,7 @@ impl Pending {
     /// Kept as a short list rather than one bounding box, which a clock in one corner
     /// and a cursor in the other would turn into the whole screen. Two regions become
     /// one when that costs no more pixels than sending both.
-    fn mark(&mut self, mut r: InclusiveRectangle) {
+    pub(crate) fn mark(&mut self, mut r: InclusiveRectangle) {
         self.since.get_or_insert_with(std::time::Instant::now);
         // ponytail: a pass per region over a list of a few dozen; a real region set if a
         // desktop ever dirties hundreds of disjoint spots per frame.
@@ -471,8 +505,14 @@ impl Pending {
         self.dirty.push(r);
     }
 
+    /// One complete record to go out with the next frame.
+    pub(crate) fn record(&mut self, bytes: &[u8]) {
+        self.since.get_or_insert_with(std::time::Instant::now);
+        self.records.extend_from_slice(bytes);
+    }
+
     /// A new desktop: whatever was dirty belonged to the old framebuffer.
-    fn resize(&mut self, width: u16, height: u16) {
+    pub(crate) fn resize(&mut self, width: u16, height: u16) {
         self.size = (width, height);
         self.dirty.clear();
         self.resized = Some((width, height));
@@ -489,8 +529,15 @@ impl Pending {
     }
 
     /// The next frame, once the server has finished drawing it (`quiet`) or it has
-    /// waited long enough, and the window has painted the last.
-    fn take(&mut self, image: &DecodedImage, quiet: bool) -> Option<Vec<u8>> {
+    /// waited long enough, and the window has painted the last. `data` is the whole
+    /// framebuffer, RGBA rows `width` pixels wide.
+    pub(crate) fn take(
+        &mut self,
+        data: &[u8],
+        width: u16,
+        height: u16,
+        quiet: bool,
+    ) -> Option<Vec<u8>> {
         let waited = self.since?.elapsed();
         let sent = self.sent.elapsed();
         if !(quiet || waited >= LATE) || sent < FRAME || !(self.painted || sent >= STALL) {
@@ -501,8 +548,9 @@ impl Pending {
         if let Some((width, height)) = self.resized.take() {
             head(&mut frame, [RESIZED, RESIZED, width, height]);
         }
+        frame.append(&mut self.records);
         for region in self.dirty.drain(..) {
-            crop(image, region, &mut frame);
+            crop(data, width, height, region, &mut frame);
         }
         self.painted = false;
         self.sent = std::time::Instant::now();
@@ -510,7 +558,7 @@ impl Pending {
     }
 }
 
-fn head(frame: &mut Vec<u8>, head: [u16; 4]) {
+pub(crate) fn head(frame: &mut Vec<u8>, head: [u16; 4]) {
     for v in head {
         frame.extend_from_slice(&v.to_le_bytes());
     }
@@ -692,8 +740,7 @@ fn clipboard_frames(
 /// changed region crosses into the webview. The rectangle comes off the wire, so it is
 /// clamped rather than trusted: a reversed or oversized one would panic the session
 /// thread.
-fn crop(image: &DecodedImage, region: InclusiveRectangle, frame: &mut Vec<u8>) {
-    let (iw, ih) = (image.width(), image.height());
+fn crop(data: &[u8], iw: u16, ih: u16, region: InclusiveRectangle, frame: &mut Vec<u8>) {
     let left = region.left.min(iw.saturating_sub(1));
     let top = region.top.min(ih.saturating_sub(1));
     let right = region.right.min(iw.saturating_sub(1));
@@ -709,7 +756,6 @@ fn crop(image: &DecodedImage, region: InclusiveRectangle, frame: &mut Vec<u8>) {
     let h = usize::from(bottom - top) + 1;
 
     // Clamped above, so every row is inside the framebuffer.
-    let data = image.data();
     head(frame, [left, top, w as u16, h as u16]);
     frame.reserve(w * h * 4);
     for row in 0..h {
@@ -741,6 +787,17 @@ fn drain(
                 pending.follow(image.width(), image.height());
                 pending.mark(region);
             }
+            ActiveStageOutput::PointerBitmap(p) => pending.record(&cursor(
+                p.width,
+                p.height,
+                p.hotspot_x,
+                p.hotspot_y,
+                &p.bitmap_data,
+            )),
+            ActiveStageOutput::PointerDefault => {
+                pending.record(&cursor(0, 0, CURSOR_DEFAULT, 0, &[]));
+            }
+            ActiveStageOutput::PointerHidden => pending.record(&cursor(0, 0, 0, 0, &[])),
             ActiveStageOutput::Terminate(_) => return Ok(true),
             // The server rebuilt the session: a resize taking effect, or the logon
             // desktop handing over. Follow it, and tell the window the new size.
@@ -761,6 +818,7 @@ fn connect(
     config: connector::Config,
     clipboard: crate::clipboard::Backend,
     pipelines: &Pipelines,
+    sound: Option<crate::sound::Speaker>,
 ) -> Result<(ConnectionResult, ironrdp_blocking::Framed<Upgraded>), String> {
     // Bounded: a firewalled host drops the SYN, and the OS default is over a minute.
     let addr = format!("{host}:{port}")
@@ -778,8 +836,21 @@ fn connect(
     let socket = stream.try_clone().map_err(|e| e.to_string())?;
 
     let mut framed = ironrdp_blocking::Framed::new(stream);
+    let mut dynamic = DrdynvcClient::new();
     let mut connector = connector::ClientConnector::new(config, client_addr)
-        .with_static_channel(CliprdrClient::new(Box::new(clipboard)))
+        .with_static_channel(CliprdrClient::new(Box::new(clipboard)));
+    // Sound on both transports, one speaker behind them: Windows uses the dynamic one.
+    if let Some(speaker) = sound {
+        connector = connector.with_static_channel(ironrdp_rdpsnd::client::Rdpsnd::new(Box::new(
+            speaker.clone(),
+        )));
+        let state = ironrdp_rdpsnd::client::RdpsndDvcState::new(Box::new(speaker));
+        dynamic = dynamic
+            .with_dynamic_channel_factory(ironrdp_rdpsnd::client::DVC_CHANNEL_NAME, move || {
+                state.channel()
+            });
+    }
+    let mut connector = connector
         // The Display Control channel is the only way the desktop follows the window;
         // nothing is sent when the capabilities arrive, the first resize does that.
         //
@@ -787,7 +858,7 @@ fn connect(
         // deactivating the session (xrdp) opens them again afterwards, and a processor
         // that was handed over once would answer "no listener" and leave the desktop black.
         .with_static_channel(
-            DrdynvcClient::new()
+            dynamic
                 .with_dynamic_channel_factory(ironrdp::displaycontrol::CHANNEL_NAME, || {
                     DisplayControlClient::new(|_| Ok(Vec::new()))
                 })
@@ -1100,11 +1171,35 @@ pub(crate) mod verifier {
     }
 }
 
-/// Live sessions, keyed the same way `pty::Sessions` keys terminal tabs.
-#[derive(Default)]
-pub struct Sessions(
-    std::sync::Mutex<std::collections::HashMap<u32, std::sync::mpsc::Sender<Input>>>,
+/// Live sessions, keyed the same way `pty::Sessions` keys terminal tabs. Generic over
+/// the input so `vnc_session.rs` keeps its desktops in one of these too.
+pub struct Sessions<I = Input>(
+    std::sync::Mutex<std::collections::HashMap<u32, std::sync::mpsc::Sender<I>>>,
 );
+
+impl<I> Default for Sessions<I> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<I> Sessions<I> {
+    pub(crate) fn add(&self, id: u32, tx: std::sync::mpsc::Sender<I>) {
+        self.0.lock().unwrap().insert(id, tx);
+    }
+
+    /// Input for a session that has already ended is dropped, not an error.
+    pub fn send(&self, id: u32, input: I) {
+        if let Some(tx) = self.0.lock().unwrap().get(&id) {
+            let _ = tx.send(input);
+        }
+    }
+
+    /// Dropping the sender ends the pump loop and closes the socket.
+    pub fn close(&self, id: u32) {
+        self.0.lock().unwrap().remove(&id);
+    }
+}
 
 impl Sessions {
     /// Connect synchronously, then pump frames into `on_tile` from a thread until
@@ -1125,10 +1220,21 @@ impl Sessions {
         height: u16,
         scale: u32,
         on_tile: tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>,
+        on_sound: tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>,
         app: tauri::AppHandle,
     ) -> Result<Screen, String> {
+        let speaker = crate::sound::Speaker::new(on_sound);
         let session = open(
-            host, port, pin, username, password, domain, width, height, scale,
+            host,
+            port,
+            pin,
+            username,
+            password,
+            domain,
+            width,
+            height,
+            scale,
+            Some(speaker),
         )?;
         let screen = Screen {
             width: session.width,
@@ -1136,7 +1242,7 @@ impl Sessions {
         };
 
         let (tx, rx) = std::sync::mpsc::channel();
-        self.0.lock().unwrap().insert(id, tx);
+        self.add(id, tx);
 
         std::thread::spawn(move || {
             let ended = pump(session, rx, |frame| {
@@ -1146,18 +1252,6 @@ impl Sessions {
         });
 
         Ok(screen)
-    }
-
-    /// Input for a session that has already ended is dropped, not an error.
-    pub fn send(&self, id: u32, input: Input) {
-        if let Some(tx) = self.0.lock().unwrap().get(&id) {
-            let _ = tx.send(input);
-        }
-    }
-
-    /// Dropping the sender ends the pump loop and closes the socket.
-    pub fn close(&self, id: u32) {
-        self.0.lock().unwrap().remove(&id);
     }
 }
 
@@ -1204,7 +1298,8 @@ mod tests {
         let tiles = std::sync::atomic::AtomicUsize::new(0);
 
         let pin = format!("{host}:{port}");
-        let session = open(&host, port, &pin, user, pass, None, 1280, 1024, 100).expect("connect");
+        let session =
+            open(&host, port, &pin, user, pass, None, 1280, 1024, 100, None).expect("connect");
         {
             let mut c = canvas.lock().unwrap();
             *c = (
@@ -1278,22 +1373,29 @@ mod tests {
         p.follow(6, 2);
         assert_eq!((p.resized, p.dirty.len()), (Some((6, 2)), 0));
         p.mark(all(6, 2));
-        let frame = p
-            .take(
-                &DecodedImage::new(
-                    ironrdp_graphics::image_processing::PixelFormat::RgbA32,
-                    6,
-                    2,
-                ),
-                true,
-            )
-            .unwrap();
+        let frame = p.take(&[0; 6 * 2 * 4], 6, 2, true).unwrap();
         let head = |at: usize| u16::from_le_bytes([frame[at], frame[at + 1]]);
         assert_eq!(
             [head(0), head(2), head(4), head(6)],
             [RESIZED, RESIZED, 6, 2]
         );
         assert_eq!([head(8), head(10), head(12), head(14)], [0, 0, 6, 2]);
+    }
+
+    #[test]
+    fn a_pointer_shape_is_one_record_and_a_short_one_hides() {
+        let r = cursor(1, 2, 0, 1, &[1, 2, 3, 4, 5, 6, 7, 8]);
+        let at = |i: usize| u16::from_le_bytes([r[i], r[i + 1]]);
+        assert_eq!([at(0), at(2), at(4), at(6)], [CURSOR, CURSOR, 1, 2]);
+        assert_eq!([at(8), at(10)], [0, 1]);
+        assert_eq!(r[12..], [1, 2, 3, 4, 5, 6, 7, 8]);
+        // Fewer pixels than the size says: hidden, never read past the end.
+        let short = cursor(2, 2, 0, 0, &[0; 4]);
+        assert_eq!(short.len(), 12);
+        assert_eq!(u16::from_le_bytes([short[4], short[5]]), 0);
+        // The system arrow carries its marker in the hotspot.
+        let arrow = cursor(0, 0, CURSOR_DEFAULT, 0, &[]);
+        assert_eq!(u16::from_le_bytes([arrow[8], arrow[9]]), CURSOR_DEFAULT);
     }
 
     #[test]
@@ -1430,6 +1532,7 @@ mod tests {
             1024,
             768,
             100,
+            None,
         )
         .err()
         .expect("nothing listens on port 1");

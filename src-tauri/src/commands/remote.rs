@@ -1,9 +1,10 @@
 //! Remote desktop and screen sharing, and the ssh tunnels that carry them through a
 //! jump chain. RDP is either handed to the system client as a `.rdp` file or decoded
-//! in-app by `rdp_session.rs`; VNC is always a handoff to `vnc://`.
+//! in-app by `rdp_session.rs`; VNC the same way, by `vnc_session.rs` or a handoff to
+//! `vnc://`.
 
 use super::{blocking, load_jacks, os_open};
-use crate::{keychain, patchbay, rdp, rdp_session};
+use crate::{keychain, patchbay, rdp, rdp_session, vnc_session};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -23,7 +24,7 @@ fn next_tunnel_id() -> u32 {
 
 /// Where to dial a device's port from here: the host itself, or a local port
 /// forwarded over the jump chain when it sits behind one.
-fn dial_address(
+pub(super) fn dial_address(
     shared: &rdp::SharedTunnels,
     jacks: &patchbay::Jacks,
     resolved: &str,
@@ -34,9 +35,15 @@ fn dial_address(
         .ok_or_else(|| format!("no jack named \"{resolved}\""))?;
     let hops = patchbay::hops(resolved, jacks)?;
 
-    Ok(if hops.is_empty() {
-        format!("{}:{port}", j.host)
-    } else {
+    let target = format!("{}:{port}", j.host);
+    if hops.is_empty() {
+        return Ok(target);
+    }
+    // A tunnel already open to the same place: a retry, a reconnect, a second session.
+    if let Some(local) = shared.reuse(resolved, &target) {
+        return Ok(format!("127.0.0.1:{local}"));
+    }
+    Ok({
         let local = rdp::free_port()?;
         // -N: no shell, just the forward. The chain's far end is the box we tunnel from.
         let mut args = vec![
@@ -47,7 +54,9 @@ fn dial_address(
             hops.join(","),
         ];
         args.push(hops.last().cloned().unwrap_or_default());
-        shared.open(next_tunnel_id(), resolved, &args, local, hops.join(" → "))?;
+        let id = next_tunnel_id();
+        shared.open(id, resolved, &args, local, hops.join(" → "))?;
+        shared.mark(id, target);
         format!("127.0.0.1:{local}")
     })
 }
@@ -79,6 +88,34 @@ fn rdp_port(jacks: &patchbay::Jacks, name: &str) -> Result<(String, u16), String
 pub(super) fn rdp_pin(jacks: &patchbay::Jacks, name: &str) -> Result<String, String> {
     let (resolved, port) = rdp_port(jacks, name)?;
     Ok(format!("{}:{port}", jacks[&resolved].host))
+}
+
+fn vnc_port(jacks: &patchbay::Jacks, name: &str) -> Result<(String, u16), String> {
+    let resolved = patchbay::resolve(name, jacks)?;
+    let port = jacks
+        .get(&resolved)
+        .ok_or_else(|| format!("no jack named \"{resolved}\""))?
+        .vnc
+        .ok_or_else(|| format!("\"{resolved}\" has no vnc port"))?;
+    Ok((resolved, port))
+}
+
+/// What a device's VNC password is remembered under: its own `host:port`, as an RDP
+/// sign-in is, and never the dialled address.
+fn vnc_pin(jacks: &patchbay::Jacks, name: &str) -> Result<String, String> {
+    let (resolved, port) = vnc_port(jacks, name)?;
+    Ok(format!("{}:{port}", jacks[&resolved].host))
+}
+
+/// VNC has passwords but no accounts, so its one saved password goes under no name.
+const VNC_ACCOUNT: &str = "";
+
+/// Every pin a device's passwords are filed under, RDP's and VNC's.
+fn pins(jacks: &patchbay::Jacks, name: &str) -> Vec<String> {
+    [rdp_pin(jacks, name), vnc_pin(jacks, name)]
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect()
 }
 
 /// Remote desktop in the system client, via a `.rdp` file.
@@ -128,17 +165,13 @@ pub async fn open_rdp_session(
     height: u16,
     scale: u32,
     on_tile: tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>,
+    on_sound: tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>,
 ) -> Result<rdp_session::Screen, String> {
     let shared = tunnels.inner().clone();
     let rdp_sessions = sessions.inner().clone();
     blocking(move || {
         let (addr, resolved, cfg_user, pin) = rdp_address(&shared, &name)?;
-        let (host, port) = addr
-            .rsplit_once(':')
-            .ok_or_else(|| format!("\"{addr}\" isn't a host and port"))?;
-        let port: u16 = port
-            .parse()
-            .map_err(|_| format!("\"{addr}\" has no usable port"))?;
+        let (host, port) = patchbay::split_addr(&addr)?;
         let remember = remember.filter(|_| password.is_some());
         let (user, password) = match password {
             Some(p) => (user, p),
@@ -166,6 +199,7 @@ pub async fn open_rdp_session(
             height,
             scale,
             on_tile,
+            on_sound,
             app,
         )?;
         // After the session is up, so a keychain that says no costs the save, not the desktop.
@@ -210,20 +244,30 @@ pub async fn rdp_saved(name: String) -> Result<Saved, String> {
     .await
 }
 
-/// One device's remembered passwords, or every device's in the list when `name` is none.
+/// One device's remembered passwords, RDP and VNC, or every device's in the list when
+/// `name` is none.
 #[tauri::command]
 pub async fn rdp_forget(name: Option<String>) -> Result<(), String> {
     blocking(move || {
         let jacks = load_jacks()?;
-        match name {
-            Some(n) => keychain::forget(&rdp_pin(&jacks, &n)?),
-            None => jacks
-                .keys()
-                .filter_map(|n| rdp_pin(&jacks, n).ok())
-                .try_for_each(|pin| keychain::forget(&pin)),
-        }
+        let pins = match name {
+            Some(n) => match pins(&jacks, &n) {
+                p if p.is_empty() => {
+                    return Err(format!("\"{n}\" has no remote desktop to forget"))
+                }
+                p => p,
+            },
+            None => jacks.keys().flat_map(|n| pins(&jacks, n)).collect(),
+        };
+        pins.iter().try_for_each(|pin| keychain::forget(pin))
     })
     .await
+}
+
+/// Whether there is a keychain here, so the VNC password prompt can offer Remember.
+#[tauri::command]
+pub async fn can_remember() -> Result<bool, String> {
+    blocking(|| Ok(keychain::available())).await
 }
 
 /// A device's changed RDP certificate, trusted from here rather than by editing
@@ -283,6 +327,93 @@ pub fn rdp_input(
     sessions.send(id, input);
 }
 
+/// VNC in a tab. Connects synchronously, so a password the server wants or refuses is
+/// an error the window can ask again on. No `password` means the one this machine
+/// remembered, read only if the server asks; a typed one is remembered or forgotten by
+/// `remember`, once it got in.
+#[tauri::command]
+pub async fn open_vnc_session(
+    app: tauri::AppHandle,
+    tunnels: tauri::State<'_, rdp::SharedTunnels>,
+    sessions: tauri::State<'_, vnc_session::Shared>,
+    id: u32,
+    name: String,
+    password: Option<String>,
+    remember: Option<bool>,
+    on_tile: tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>,
+) -> Result<rdp_session::Screen, String> {
+    let shared = tunnels.inner().clone();
+    let vnc_sessions = sessions.inner().clone();
+    blocking(move || {
+        let jacks = load_jacks()?;
+        let (resolved, port) = vnc_port(&jacks, &name)?;
+        let pin = vnc_pin(&jacks, &name)?;
+        let addr = dial_address(&shared, &jacks, &resolved, port)?;
+        let (host, port) = patchbay::split_addr(&addr)?;
+        let typed = password.clone();
+        let saved = pin.clone();
+        let session = vnc_session::open(host, port, &resolved, move || {
+            typed.or_else(|| keychain::password(&saved, VNC_ACCOUNT).ok().flatten())
+        })?;
+        let (width, height) = session.size();
+        vnc_sessions.open(id, session, on_tile, app);
+        // After the session is up, so a keychain that says no costs the save, not the desktop.
+        if let (Some(remember), Some(password)) = (remember, password) {
+            let kept = if remember {
+                keychain::set(&pin, VNC_ACCOUNT, &password)
+            } else {
+                keychain::forget_user(&pin, VNC_ACCOUNT)
+            };
+            if let Err(e) = kept {
+                eprintln!("patchbay: {e}");
+            }
+        }
+        Ok(rdp_session::Screen { width, height })
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn close_vnc_session(sessions: tauri::State<'_, vnc_session::Shared>, id: u32) {
+    sessions.close(id);
+}
+
+/// Mouse and keyboard from a VNC canvas, in the shape `rdp_input` takes plus the
+/// character a key typed. Fire-and-forget, like `rdp_input`.
+#[tauri::command]
+pub fn vnc_input(
+    sessions: tauri::State<'_, vnc_session::Shared>,
+    id: u32,
+    kind: String,
+    a: i32,
+    b: i32,
+    down: bool,
+    key: Option<String>,
+) {
+    let input = match kind.as_str() {
+        "move" => vnc_session::Input::Move {
+            x: a.clamp(0, 65535) as u16,
+            y: b.clamp(0, 65535) as u16,
+        },
+        "button" => vnc_session::Input::Button {
+            button: a.clamp(0, 255) as u8,
+            down,
+        },
+        "wheel" => vnc_session::Input::Wheel {
+            delta: a.clamp(-1200, 1200) as i16,
+        },
+        "key" => vnc_session::Input::Key {
+            scancode: a.clamp(0, 65535) as u16,
+            key,
+            down,
+        },
+        "painted" => vnc_session::Input::Painted,
+        "focus" => vnc_session::Input::Focus,
+        _ => return,
+    };
+    sessions.send(id, input);
+}
+
 /// Screen sharing, handed to whatever viewer owns `vnc://` on this machine.
 #[tauri::command]
 pub async fn open_vnc(
@@ -292,16 +423,10 @@ pub async fn open_vnc(
     let shared = tunnels.inner().clone();
     blocking(move || {
         let jacks = load_jacks()?;
-        let resolved = patchbay::resolve(&name, &jacks)?;
-        let j = jacks
-            .get(&resolved)
-            .ok_or_else(|| format!("no jack named \"{resolved}\""))?;
-        let port = j
-            .vnc
-            .ok_or_else(|| format!("\"{resolved}\" has no vnc port"))?;
+        let (resolved, port) = vnc_port(&jacks, &name)?;
         let url = vnc_url(
             &dial_address(&shared, &jacks, &resolved, port)?,
-            j.user.as_deref(),
+            jacks[&resolved].user.as_deref(),
         )?;
         os_open(std::ffi::OsStr::new(&url))?;
         Ok(url)

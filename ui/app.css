@@ -17,6 +17,7 @@
   --row: rgba(255, 255, 255, 0.06);
   --row-hover: rgba(255, 255, 255, 0.08);
   --line: rgba(255, 255, 255, 0.1);
+  --switch-off: rgba(255, 255, 255, 0.18);
   --bg: #17171a; /* opaque fallback; macOS paints vibrancy behind instead */
   --tip: #3a3a42;
   --tip-fg: #f2f2f6;
@@ -63,6 +64,7 @@
   --row: rgba(0, 0, 0, 0.05);
   --row-hover: rgba(0, 0, 0, 0.07);
   --line: rgba(0, 0, 0, 0.1);
+  --switch-off: rgba(0, 0, 0, 0.16);
   --bg: #f4f4f6;
   --tip: #2c2c33;
   --tip-fg: #f6f6f8;
@@ -135,6 +137,22 @@ body[data-os="macos"] {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* The tree takes focus for a screen reader's sake; its ring sits inside the sidebar's edge. */
+#tree:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Asked for in the OS's accessibility settings: what moves is set down instead. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 /* Sidebar width is dragged by the grip and kept in [settings]; the fallback is the original width. */
@@ -412,7 +430,67 @@ body:not([data-os="macos"]) .tabs {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 30%, transparent);
 }
-/* The device name floated top-right, so a grid of twelve is legible. */
+/* Split panes in a row (or a column), each its share of the room by flex-grow, which
+   showTab sets; a divider between each two takes the drag. */
+.terms.split {
+  display: flex;
+  height: 100%;
+  padding: 8px;
+}
+.terms.split.col {
+  flex-direction: column;
+}
+.terms.split .termhost {
+  position: relative;
+  inset: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  padding: 6px 4px 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--panel);
+}
+.terms.split .termhost.rdphost,
+.terms.split .termhost.webhost {
+  padding: 0;
+}
+.terms.split .termhost.focused {
+  border-color: var(--accent);
+}
+.terms.split .divider {
+  flex: none;
+  width: 8px;
+  cursor: col-resize;
+}
+.terms.split.col .divider {
+  width: auto;
+  height: 8px;
+  cursor: row-resize;
+}
+/* A line in the gap, there while the pointer is over it, so the handle can be found. */
+.terms.split .divider::after {
+  content: "";
+  display: block;
+  margin: 0 auto;
+  width: 2px;
+  height: 100%;
+  border-radius: 1px;
+  transition: background-color 0.18s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.terms.split.col .divider::after {
+  margin: auto 0;
+  width: 100%;
+  height: 2px;
+}
+.terms.split .divider:hover::after {
+  background: var(--accent);
+}
+
+/* The device name floated top-right, so a grid of twelve is legible; and in a split,
+   where two panes of one device would otherwise look the same. */
+.terms.split .termhost::after,
 .terms.grid .termhost::after {
   content: attr(data-name);
   position: absolute;
@@ -2177,7 +2255,8 @@ button.flat:hover {
 /* One box for both: WebKit's native select ignores the padding and sizes itself.
    appearance: none makes a select take these metrics at all. */
 .f input,
-.f select {
+.f select,
+.f textarea {
   width: 100%;
   padding: 7px 10px;
   background: var(--row);
@@ -2190,10 +2269,17 @@ button.flat:hover {
   user-select: text;
 }
 .f input:focus,
-.f select:focus {
+.f select:focus,
+.f textarea:focus {
   border-color: var(--accent);
 }
-.f input::placeholder {
+/* A licence is a signed block, so it is shown as one: monospace, and it keeps its lines. */
+.f textarea {
+  resize: vertical;
+  font: 11px/1.5 var(--mono);
+}
+.f input::placeholder,
+.f textarea::placeholder {
   color: var(--fg-faint);
 }
 /* appearance: none loses the native chevron, so draw one as a mask; the colour stays a token. */
@@ -2763,18 +2849,111 @@ button:disabled {
 .setnav button.warn {
   color: var(--down);
 }
-/* One height for every pane, so the sheet doesn't jump size between panes. A taller pane scrolls. */
+/* One height for every pane, so the sheet doesn't jump size between panes. A taller pane scrolls;
+   tall enough that Devices, the first pane anyone sees, doesn't. */
 .setpanes {
   flex: 1;
   min-width: 0;
-  height: 420px;
+  height: min(540px, 66vh);
   padding: 16px 20px;
   overflow-y: auto;
   scrollbar-width: thin;
 }
 /* The pane's own heading is its title. */
 .pane > .d-sec:first-child {
-  margin-top: 0;
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--fg);
+}
+/* Settings as the OS lays out its own: rows in rounded groups, each a few words and its
+   control at the far end, so the eye runs down one edge to see what is on. */
+.setlabel {
+  margin: 18px 0 6px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-faint);
+}
+.setgroup {
+  margin-bottom: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--row);
+}
+.setgroup > * + * {
+  border-top: 1px solid var(--line);
+}
+.setgroup .opt,
+.setrow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 12px;
+}
+.setgroup .opt span,
+.setrow > span {
+  flex: 1;
+  min-width: 0;
+}
+.setrow > span {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--fg-dim);
+}
+.setrow b {
+  display: block;
+  margin-bottom: 2px;
+  font-weight: 550;
+  color: var(--fg);
+}
+.setrow b:only-child {
+  margin: 0;
+}
+.setrow > .f {
+  flex: none;
+  width: 170px;
+}
+.setrow > button {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+/* A checkbox drawn as a switch: still the input, so the label, the keyboard and the form
+   all work as they did. */
+.setgroup .opt input {
+  order: 2;
+  position: relative;
+  width: 30px;
+  height: 18px;
+  margin: 0;
+  border-radius: 9px;
+  background: var(--switch-off);
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  transition: background-color 0.18s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.setgroup .opt input::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--on-accent);
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.setgroup .opt input:checked {
+  background: var(--accent);
+}
+.setgroup .opt input:checked::before {
+  transform: translateX(12px);
+}
+.setgroup .opt input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 /* The settings sheet is a single column, so a row of fields needs its own grid. */
 /* The shortcuts page: a label and its keys per row, in the same three groups the

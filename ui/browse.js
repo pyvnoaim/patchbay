@@ -125,9 +125,21 @@ function renderTree() {
       rows.push(devRow(j, place(j, root), 0, live, root));
     }
     // Said where the devices would be, not in place of the whole window: yours still open.
+    // A list closed for want of a licence says so, with the way to add one; a share that
+    // is away gets another look. A licence in its grace week warns while the list opens.
+    const lic = vaults.on_sale ? vaults.licence : null;
+    const closed = lic && (lic.state === "unlicensed" || lic.state === "ended");
     if (vault === "team" && vaults.away) {
-      rows.push(`<div class="vault-away">${esc(vaults.away)}
-        <button type="button" class="ghost" data-retry="1">${icon("rotate-cw")}Look again</button></div>`);
+      rows.push(
+        `<div class="vault-away">${esc(vaults.away)}${
+          closed
+            ? `<button type="button" class="ghost" data-licence="1">${icon("key-round")}Licence</button>`
+            : `<button type="button" class="ghost" data-retry="1">${icon("rotate-cw")}Look again</button>`
+        }</div>`,
+      );
+    } else if (vault === "team" && lic?.state === "grace") {
+      rows.push(`<div class="vault-away">${esc(`${lic.company}'s licence ended on ${licDay(lic.until)}. The team's list keeps opening until ${licDay(lic.closes)}.`)}
+        <button type="button" class="ghost" data-licence="1">${icon("key-round")}Licence</button></div>`);
     }
   }
 
@@ -181,7 +193,8 @@ function vaultRow(vault, n) {
         ? `<span class="dot down"></span>Not there`
         : `<span class="dot up"></span><span data-tip="${esc(vaults.team ?? "")}">${esc(driveName(vaults.team ?? ""))}</span>`;
   return `<div class="group vault ${vault}${vault === "team" && vaults.away ? " away" : ""}"
-       data-vault="${vault}" data-path="" data-group="1" data-has-kids="false">
+       data-vault="${vault}" data-path="" data-group="1" data-has-kids="false"
+       role="treeitem" aria-level="1" aria-label="${esc(`${name}, ${n} device${n === 1 ? "" : "s"}`)}">
     <span class="badge">${icon(glyph)}</span>
     <span class="label"><b>${name}</b><small>${sub}</small></span>
     <span class="n">${n}</span>
@@ -196,7 +209,10 @@ function row(node, depth, live, id) {
   const [dot, say] = node.members.size
     ? reachSaid([...node.members].map((name) => ({ name })))
     : [];
-  return `<div class="group" ${idAttrs(id)} data-group="1" data-has-kids="${kids}" ${indent(depth)}>
+  // A screen reader hears the folder, whether it is open, and how much of it answers.
+  const heard = `${node.name}, ${node.members.size} device${node.members.size === 1 ? "" : "s"}${say ? `, ${say.toLowerCase()}` : ""}`;
+  return `<div class="group" ${idAttrs(id)} data-group="1" data-has-kids="${kids}" ${indent(depth)}
+    role="treeitem" aria-level="${depth + 1}" aria-label="${esc(heard)}"${kids ? ` aria-expanded="${open}"` : ""}>
     <span class="twist ${kids ? "" : "leaf"} ${open ? "open" : ""}">${icon("chevron-right")}</span>
     <span class="gi">${icon(kids && open ? "folder-open" : "folder")}</span>
     <span class="label">${esc(node.name)}</span>${
@@ -225,9 +241,20 @@ const devTail = (j, live) => `
 
 // A device in the tree. Selection and marks are painted afterwards (`paintRows`), so
 // a click never rebuilds the row under the pointer.
+// The status a dot paints, in words: a dot alone says nothing to a screen reader, or to
+// someone who can't tell its green from its grey.
+const DOT_SAID = { up: "reachable", down: "out of reach", checking: "checking", unknown: "" };
+
 function devRow(j, i, depth, live, id) {
   const tint = osColor(j.os);
-  return `<div class="jack dev" data-i="${i}" ${idAttrs(id)} ${indent(depth)}>
+  const heard = [
+    j.label,
+    DOT_SAID[dotState(j.name)],
+    j.primary !== "ssh" && KIND[j.primary]?.[1],
+    live.has(j.name) && "session open",
+  ].filter(Boolean);
+  return `<div class="jack dev" data-i="${i}" ${idAttrs(id)} ${indent(depth)}
+    role="treeitem" aria-level="${depth + 1}" aria-label="${esc(heard.join(", "))}">
     <span class="dot ${dotState(j.name)}"></span>
     <span class="os"${j.os ? ` data-tip="${esc(j.os)}"` : ""}${
       tint ? ` style="color:${esc(tint)}"` : ""
@@ -319,6 +346,8 @@ const KIND = {
   sftp: ["folder", "Files over SSH"],
   rdp: ["monitor", "Remote desktop"],
   vnc: ["screen-share", "VNC"],
+  telnet: ["terminal", "Telnet"],
+  serial: ["cable", "Serial console"],
   web: ["globe", "Web UI"],
 };
 
@@ -793,8 +822,13 @@ function renderJack(j, live) {
             }>${icon("search")}${breaks.get(j.name)?.busy ? "Asking…" : "Find the break"}</button>`
           : ""
       }
-      <button class="ghost" data-act="ping" data-tip="${j.hops.length ? `Ping from ${esc(j.hops.at(-1))}` : "Ping this host"}">${icon("plug")}Ping</button>
-      <button class="ghost" data-act="trace" data-tip="${j.hops.length ? `Trace from ${esc(j.hops.at(-1))}` : "Trace the route there"}">${icon("waypoints")}Trace</button>
+      ${
+        // A console cable has no address to ping.
+        j.host
+          ? `<button class="ghost" data-act="ping" data-tip="${j.hops.length ? `Ping from ${esc(j.hops.at(-1))}` : "Ping this host"}">${icon("plug")}Ping</button>
+      <button class="ghost" data-act="trace" data-tip="${j.hops.length ? `Trace from ${esc(j.hops.at(-1))}` : "Trace the route there"}">${icon("waypoints")}Trace</button>`
+          : ""
+      }
       ${
         j.ssh
           ? `<button class="ghost" data-act="key" data-tip="Make your key if you have none, then put it on this device">${icon("key-round")}Install my key</button>`
@@ -808,7 +842,7 @@ function renderJack(j, live) {
     </div>
     </section>
 
-    <section class="d-card span">
+    <section class="d-card span"${j.host ? "" : " hidden"}>
     <div class="d-sec">${icon("waypoints")}Route</div>
     <div class="route">
       <span class="here"><i class="pip"></i><em class="hop">this machine</em></span>
@@ -868,18 +902,22 @@ function renderJack(j, live) {
         : j.primary === "rdp"
           ? `<button class="primary" data-act="rdp">${icon("monitor")}Connect</button>`
           : j.primary === "vnc"
-            ? `<button class="primary" data-act="vnc">${icon("screen-share")}Share screen</button>`
-            : j.primary === "web"
-              ? `<button class="primary" data-act="web">${icon("globe")}Open</button>`
-              : j.primary === "sftp"
-                ? `<button class="primary" data-act="files">${icon("folder")}Browse files</button>`
-                : `<button class="primary" data-act="connect">${icon("square-terminal")}Connect</button>`
+            ? `<button class="primary" data-act="vnc">${icon("screen-share")}Connect</button>`
+            : j.primary === "telnet" || j.primary === "serial"
+              ? `<button class="primary" data-act="${j.primary}">${icon(KIND[j.primary][0])}Connect</button>`
+              : j.primary === "web"
+                ? `<button class="primary" data-act="web">${icon("globe")}Open</button>`
+                : j.primary === "sftp"
+                  ? `<button class="primary" data-act="files">${icon("folder")}Browse files</button>`
+                  : `<button class="primary" data-act="connect">${icon("square-terminal")}Connect</button>`
     }
     ${j.ssh && j.primary !== "ssh" ? `<button class="ghost" data-act="connect" data-tip="Connect over ssh">${icon("square-terminal")}</button>` : ""}
     ${j.ssh && j.primary !== "sftp" ? `<button class="ghost" data-act="files" data-tip="Browse files over sftp">${icon("folder")}</button>` : ""}
     ${j.url && j.primary !== "web" ? `<button class="ghost" data-act="web" data-tip="Open web UI">${icon("globe")}</button>` : ""}
     ${j.rdp && j.primary !== "rdp" ? `<button class="ghost" data-act="rdp" data-tip="Remote desktop">${icon("monitor")}</button>` : ""}
     ${j.vnc && j.primary !== "vnc" ? `<button class="ghost" data-act="vnc" data-tip="VNC">${icon("screen-share")}</button>` : ""}
+    ${j.telnet && j.primary !== "telnet" ? `<button class="ghost" data-act="telnet" data-tip="Telnet">${icon("terminal")}</button>` : ""}
+    ${j.serial && j.primary !== "serial" ? `<button class="ghost" data-act="serial" data-tip="Serial console">${icon("cable")}</button>` : ""}
     <button class="ghost" data-act="edit" data-tip="Edit device">${icon("pencil")}</button>
     <button class="ghost" data-act="dup" data-tip="Duplicate device">${icon("copy-plus")}</button>
     ${
@@ -952,6 +990,14 @@ function paintRows() {
     el.setAttribute("aria-current", detailMode === "group" && !!group && k === gkey(group));
     el.classList.toggle("marked", markedFolders.has(k));
   }
+  // The arrow keys move a selection, not the focus, so the tree tells a screen reader
+  // which row that is. One id, moved to whichever row is current.
+  document.getElementById("tree-active")?.removeAttribute("id");
+  const on = treeEl.querySelector('[aria-selected="true"], [aria-current="true"]');
+  if (on) {
+    on.id = "tree-active";
+    treeEl.setAttribute("aria-activedescendant", "tree-active");
+  } else treeEl.removeAttribute("aria-activedescendant");
   renderDock();
 }
 
@@ -1117,11 +1163,26 @@ async function openRdp(name) {
   await refreshTunnels();
 }
 
-// Always a handoff: the OS opens whatever registered `vnc://`.
+// In a tab. The context menu still offers the system's viewer.
 async function openVnc(name) {
+  used(name);
+  await openVncSession(name);
+  await refreshTunnels();
+}
+
+// Telnet or a serial console: a terminal tab running the system's own tool.
+async function openLine(name, via) {
+  used(name);
+  await openSession(name, null, null, false, via);
+  if (via === "telnet") await refreshTunnels();
+}
+
+// The OS opens whatever registered `vnc://`.
+async function handOffVnc(name) {
   used(name);
   try {
     await invoke("open_vnc", { name });
+    await refreshTunnels();
   } catch (e) {
     alertish(e);
   }
@@ -1159,6 +1220,7 @@ function primary(name) {
   if (!j) return;
   if (j.primary === "rdp") return openRdp(name);
   if (j.primary === "vnc") return openVnc(name);
+  if (j.primary === "telnet" || j.primary === "serial") return openLine(name, j.primary);
   if (j.primary === "web") return openWeb(name);
   if (j.primary === "sftp") return openFilesSession(name);
   return connect(name);
@@ -1178,7 +1240,11 @@ async function connect(name, inTerminal = prefs.connect_in_terminal === true) {
 // ── command palette ────────────────────────────────────────────────────────
 const palOpen = () => !paletteEl.hidden;
 // `seed` carries the keystroke that opened the palette from the list.
-function openPalette(seed = "") {
+// `beside` is ⌘D: what is picked opens beside the tab in front instead of in a tab.
+let palBeside = false;
+function openPalette(seed = "", beside = false) {
+  palBeside = beside;
+  pq.placeholder = beside ? "Open beside…" : "Connect to…";
   paletteEl.hidden = false;
   pq.value = seed;
   palSel = 0;
@@ -1209,17 +1275,18 @@ function palMatches() {
         .sort((a, b) => collate(a.path, b.path))
     : [];
   // Only with a shell in front: a snippet is typed, and there has to be a prompt.
-  const typed = shellInFront()
-    ? snips
-        .filter((s) => !f || s.name.toLowerCase().includes(f) || s.text.toLowerCase().includes(f))
-        .map((s) => ({ snip: s }))
-    : [];
+  const typed =
+    shellInFront() && !palBeside
+      ? snips
+          .filter((s) => !f || s.name.toLowerCase().includes(f) || s.text.toLowerCase().includes(f))
+          .map((s) => ({ snip: s }))
+      : [];
   return [...typed, ...folders, ...named, ...jacks.filter((j) => !named.includes(j))].slice(0, 40);
 }
 function palPick(p) {
   closePalette();
   if (p.snip) return typeSnippet(p.snip);
-  if (!p.path) return primary(p.name);
+  if (!p.path) return palBeside ? openBeside(p.name) : primary(p.name);
   const parts = p.path.split("/");
   for (let i = 1; i < parts.length; i++) {
     openGroup(gkey({ path: parts.slice(0, i).join("/"), vault: p.vault }));
@@ -1239,7 +1306,7 @@ function renderPalette() {
   // Snippets and folders lead, so the first device is where the two halves meet.
   const cutAt = rows.findIndex((r) => !r.path && !r.snip);
   presultsEl.innerHTML = quick
-    ? `<div class="jack" data-adhoc="1" aria-selected="true">
+    ? `<div class="jack" data-adhoc="1" role="option" aria-selected="true">
         <span class="os">${icon("square-terminal")}</span>
         <span class="name">${esc(quick)}</span>
         <span class="host">quick connect</span></div>`
@@ -1250,7 +1317,7 @@ function renderPalette() {
             // The text itself, not only its name: it is about to be on your prompt,
             // and in a shared list someone else may have written it.
             if (j.snip) {
-              return `<div class="jack" data-pi="${i}" aria-selected="${i === palSel}">
+              return `<div class="jack" data-pi="${i}" role="option" aria-selected="${i === palSel}">
         <span class="os">${icon("text-cursor-input")}</span>
         <span class="name">${esc(j.snip.name)}</span>
         <span class="host snip">${esc(j.snip.text)}</span>${
@@ -1259,7 +1326,7 @@ function renderPalette() {
             }
             if (j.path) {
               const at = j.path.lastIndexOf("/");
-              return `<div class="jack" data-pi="${i}" aria-selected="${i === palSel}">
+              return `<div class="jack" data-pi="${i}" role="option" aria-selected="${i === palSel}">
         <span class="os">${icon("folder")}</span>
         <span class="name">${esc(j.path.slice(at + 1))}</span>
         <span class="host">${esc(
@@ -1270,7 +1337,7 @@ function renderPalette() {
             }
             // Same rule as the list: no brand colour on the selected row.
             const tint = i === palSel ? null : osColor(j.os);
-            return `<div class="jack${cut}" data-pi="${i}" aria-selected="${i === palSel}">
+            return `<div class="jack${cut}" data-pi="${i}" role="option" aria-selected="${i === palSel}">
         <span class="os"${tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(j.os)}</span>
         <span class="name">${esc(j.label)}</span>
         <span class="host">${esc(j.host)}${j.vault === "mine" ? " · Mine" : ""}</span></div>`;

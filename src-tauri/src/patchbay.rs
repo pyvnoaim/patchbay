@@ -28,7 +28,15 @@
 //!
 //! The status dot probes the chain's *entry point* (the outermost bastion), not the
 //! target. Anything past the first hop is only reachable through ssh, so there's
-//! nothing to TCP-probe.
+//! nothing to TCP-probe. A serial console has no address at all and is never probed.
+//!
+//! Telnet and serial are the system's own tools on the pty, like ssh: `telnet`, or
+//! curl's telnet client where there is none (macOS dropped `telnet`), and `picocom`,
+//! `screen` or `cu` for a serial port. A telnet device behind a bastion is reached
+//! through the same local forward RDP and VNC use, so `telnet_argv` only ever sees an
+//! address. Nothing from the file reaches argv unchecked: a host goes through
+//! `plain_host`, a serial device has to be a plain `/dev/` path, a baud rate one of the
+//! standard ones.
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -61,12 +69,19 @@ pub struct Jack {
     pub url: Option<String>,
     /// Port for remote desktop. Absent means this device has none.
     pub rdp: Option<u16>,
-    /// Port for screen sharing, handed to the system's VNC viewer.
+    /// Port for screen sharing, in a tab or the system's VNC viewer.
     pub vnc: Option<u16>,
+    /// Port for telnet: old switches, and the ports of a console server.
+    pub telnet: Option<u16>,
+    /// A serial port on this machine, `/dev/cu.usbserial-1410`: a console cable. A
+    /// device reached only this way needs no `host`.
+    pub serial: Option<String>,
+    /// The serial port's speed; 9600 when absent, which is what nearly every console is.
+    pub baud: Option<u32>,
     /// Absent means yes.
     pub ssh: Option<bool>,
-    /// What Enter opens: "ssh" | "rdp" | "vnc" | "web". Absent picks the first one the
-    /// device has.
+    /// What Enter opens: "ssh" | "rdp" | "vnc" | "telnet" | "serial" | "web". Absent
+    /// picks the first one the device has.
     pub primary: Option<String>,
     pub folders: Option<Vec<String>>,
     pub desc: Option<String>,
@@ -306,6 +321,10 @@ pub fn parse_all(src: &str) -> Result<(Jacks, Sources), String> {
                 url: j.url.or_else(|| d.url.clone()),
                 rdp: j.rdp.or(d.rdp),
                 vnc: j.vnc.or(d.vnc),
+                telnet: j.telnet.or(d.telnet),
+                // A cable is plugged into one machine for one device: never inherited.
+                serial: j.serial,
+                baud: j.baud.or(d.baud),
                 ssh: j.ssh.or(d.ssh),
                 primary: j.primary.or_else(|| d.primary.clone()),
                 folders: j.folders.or_else(|| d.folders.clone()),
@@ -465,6 +484,11 @@ pub fn entry(name: &str, jacks: &Jacks) -> Result<(String, u16), String> {
     let mut cur = jacks
         .get(name)
         .ok_or_else(|| format!("no jack named \"{name}\""))?;
+    if primary(cur) == "serial" {
+        return Err(format!(
+            "\"{name}\" is a serial console, with no address to try"
+        ));
+    }
     let mut seen: HashSet<String> = HashSet::from([name.to_string()]);
     let mut from = name.to_string();
     while let Some(h) = cur.jump.clone() {
@@ -488,7 +512,7 @@ fn probe_port(j: &Jack) -> u16 {
     if j.ssh.unwrap_or(true) {
         return j.port.unwrap_or(22);
     }
-    if let Some(p) = j.rdp.or(j.vnc) {
+    if let Some(p) = j.rdp.or(j.vnc).or(j.telnet) {
         return p;
     }
     j.url.as_deref().and_then(url_port).unwrap_or(443)
@@ -796,6 +820,112 @@ fn local_task(task: &str, host: &str) -> (String, Vec<String>) {
     }
 }
 
+/// The `host` and `port` of a dialled `host:port`: the device, or the local end of a
+/// forward to it.
+pub fn split_addr(addr: &str) -> Result<(&str, u16), String> {
+    addr.rsplit_once(':')
+        .and_then(|(h, p)| p.parse::<u16>().ok().map(|p| (h, p)))
+        .ok_or_else(|| format!("\"{addr}\" isn't a host and port"))
+}
+
+/// Telnet to `addr` as `(program, args)`. `have` says whether a program is on this
+/// machine's PATH.
+pub fn telnet_argv(
+    addr: &str,
+    have: impl Fn(&str) -> bool,
+) -> Result<(String, Vec<String>), String> {
+    let (host, port) = split_addr(addr)?;
+    let host = plain_host(host)?;
+    if have("telnet") {
+        return Ok(("telnet".into(), vec![host.into(), port.to_string()]));
+    }
+    telnet_fallback(host, port)
+}
+
+/// curl speaks telnet, option negotiation and all, and ships on every desktop that lost
+/// `telnet`. It reads its input as given, so the pty goes raw first, or every key would
+/// wait for Enter and echo twice. The address is a parameter, never part of the script.
+#[cfg(not(target_os = "windows"))]
+fn telnet_fallback(host: &str, port: u16) -> Result<(String, Vec<String>), String> {
+    Ok((
+        "sh".into(),
+        vec![
+            "-c".into(),
+            r#"stty raw -echo; exec curl --no-progress-meter "telnet://$1""#.into(),
+            "sh".into(),
+            format!("{host}:{port}"),
+        ],
+    ))
+}
+
+#[cfg(target_os = "windows")]
+fn telnet_fallback(_: &str, _: u16) -> Result<(String, Vec<String>), String> {
+    Err("telnet needs Windows' Telnet Client: Settings ▸ System ▸ Optional features".into())
+}
+
+/// The speeds a console port is set to. Anything else is a typo, and argv besides.
+const BAUDS: [u32; 9] = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400];
+
+/// A device's serial console as `(program, args)`: the first of `picocom`, `screen` and
+/// `cu` this machine has. picocom first because it is made for this; `cu` last because
+/// on macOS it wants a lock directory only root can write. `screenrc` is a file saying
+/// `autodetach off` (`SCREENRC` below): closing the tab hangs up screen's terminal, and
+/// by default it detaches on that and keeps the port busy with nobody attached.
+pub fn serial_argv(
+    j: &Jack,
+    have: impl Fn(&str) -> bool,
+    screenrc: &Path,
+) -> Result<(String, Vec<String>), String> {
+    let path = serial_path(j.serial.as_deref().unwrap_or_default())?;
+    let baud = j.baud.unwrap_or(9600);
+    if !BAUDS.contains(&baud) {
+        return Err(format!("{baud} isn't a serial speed patchbay knows"));
+    }
+    if cfg!(target_os = "windows") {
+        return Err(
+            "a serial console needs picocom, screen or cu, which Windows doesn't have".into(),
+        );
+    }
+    let b = baud.to_string();
+    let p = path.to_string();
+    if have("picocom") {
+        Ok(("picocom".into(), vec!["-b".into(), b, p]))
+    } else if have("screen") {
+        let rc = screenrc.to_string_lossy().into_owned();
+        Ok(("screen".into(), vec!["-c".into(), rc, p, b]))
+    } else if have("cu") {
+        Ok(("cu".into(), vec!["-l".into(), p, "-s".into(), b]))
+    } else {
+        Err("a serial console needs picocom, screen or cu installed".into())
+    }
+}
+
+/// What `serial_argv` hands `screen` with `-c`.
+pub const SCREENRC: &str = "autodetach off\n";
+
+/// A serial device as argv will see it: a plain path under `/dev`, nothing that could be
+/// read as an option or climb out.
+pub fn serial_path(path: &str) -> Result<&str, String> {
+    let path = path.trim();
+    let ok = path.starts_with("/dev/")
+        && !path.contains("..")
+        && path
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c));
+    ok.then_some(path)
+        .ok_or_else(|| format!("\"{path}\" isn't a serial device: it has to be a /dev/ path"))
+}
+
+/// Whether `program` is on this machine's PATH.
+pub fn on_path(program: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|paths| {
+        std::env::split_paths(&paths).any(|d| {
+            let f = d.join(program);
+            f.is_file() || (cfg!(windows) && f.with_extension("exe").is_file())
+        })
+    })
+}
+
 /// Only http(s) may reach the desktop opener or a webview: `open` and `explorer` will
 /// happily launch an application for any other scheme.
 pub fn is_web_url(u: &str) -> bool {
@@ -843,14 +973,17 @@ pub fn adhoc_args(query: &str) -> Result<Vec<String>, String> {
     Ok(args)
 }
 
-/// How a device is reached: "ssh", "rdp", "vnc" or "web". `primary` is still read for
-/// configs that set several, and ignored when it names something the device lost.
+/// How a device is reached: "ssh", "rdp", "vnc", "telnet", "serial" or "web". `primary`
+/// is still read for configs that set several, and ignored when it names something the
+/// device lost.
 pub fn primary(j: &Jack) -> String {
     // "sftp" is ssh with a different default action.
     let has = |k: &str| match k {
         "ssh" | "sftp" => j.ssh.unwrap_or(true),
         "rdp" => j.rdp.is_some(),
         "vnc" => j.vnc.is_some(),
+        "telnet" => j.telnet.is_some(),
+        "serial" => j.serial.as_deref().is_some_and(|s| !s.trim().is_empty()),
         _ => j.url.is_some(),
     };
     j.primary
@@ -858,7 +991,7 @@ pub fn primary(j: &Jack) -> String {
         .filter(|p| has(p))
         .map(str::to_string)
         .unwrap_or_else(|| {
-            ["ssh", "rdp", "vnc", "web"]
+            ["ssh", "rdp", "vnc", "telnet", "serial", "web"]
                 .iter()
                 .find(|k| has(k))
                 .unwrap_or(&"ssh")
@@ -1560,5 +1693,80 @@ host = "x; id"
         ] {
             assert!(!is_web_url(bad), "{bad:?} should be rejected");
         }
+    }
+
+    #[test]
+    fn telnet_and_serial_are_the_systems_tools_and_take_nothing_unchecked() {
+        let all = |_: &str| true;
+        let none = |_: &str| false;
+        assert_eq!(
+            telnet_argv("10.0.0.20:23", all).unwrap(),
+            ("telnet".into(), vec!["10.0.0.20".into(), "23".into()])
+        );
+        // A host that would be an option, or a shell's business on the way through curl.
+        assert!(telnet_argv("-oProxy:23", all).is_err());
+        assert!(telnet_argv("a;b:23", none).is_err());
+        assert!(telnet_argv("10.0.0.20", all).is_err());
+        #[cfg(not(target_os = "windows"))]
+        {
+            let (prog, args) = telnet_argv("127.0.0.1:40001", none).unwrap();
+            assert_eq!(prog, "sh");
+            // The address is a parameter after the script, never inside it.
+            assert_eq!(args.last().unwrap(), "127.0.0.1:40001");
+            assert!(!args[1].contains("40001"));
+        }
+
+        let console = |serial: &str, baud: Option<u32>| Jack {
+            serial: Some(serial.into()),
+            baud,
+            ssh: Some(false),
+            ..Jack::default()
+        };
+        assert_eq!(primary(&console("/dev/cu.usbserial-1410", None)), "serial");
+        let rc = Path::new("/tmp/patchbay-screenrc");
+        assert!(serial_argv(&console("/dev/../etc/passwd", None), all, rc).is_err());
+        assert!(serial_argv(&console("-l/dev/x", None), all, rc).is_err());
+        assert!(serial_argv(&console("/dev/tty S0", None), all, rc).is_err());
+        assert!(serial_argv(&console("/dev/cu.x", Some(12345)), all, rc).is_err());
+        #[cfg(not(target_os = "windows"))]
+        {
+            let has = |p: &'static str| move |q: &str| q == p;
+            let j = console("/dev/cu.usbserial-1410", Some(115200));
+            assert_eq!(
+                serial_argv(&j, has("picocom"), rc).unwrap().1,
+                ["-b", "115200", "/dev/cu.usbserial-1410"]
+            );
+            // With an rc that keeps screen from outliving its tab on the port.
+            assert_eq!(
+                serial_argv(&j, has("screen"), rc).unwrap().1,
+                [
+                    "-c",
+                    "/tmp/patchbay-screenrc",
+                    "/dev/cu.usbserial-1410",
+                    "115200"
+                ]
+            );
+            assert_eq!(serial_argv(&j, has("cu"), rc).unwrap().0, "cu");
+            assert!(serial_argv(&j, none, rc).is_err());
+        }
+    }
+
+    #[test]
+    fn a_serial_console_is_never_probed_and_telnet_is_probed_on_its_port() {
+        let jacks = jacks_of(
+            r#"
+[jack.console]
+serial = "/dev/cu.usbserial-1410"
+ssh = false
+[jack.switch]
+host = "10.0.0.20"
+telnet = 23
+ssh = false
+"#,
+        )
+        .unwrap();
+        assert!(entry("console", &jacks).is_err());
+        assert_eq!(entry("switch", &jacks).unwrap(), ("10.0.0.20".into(), 23));
+        assert_eq!(primary(&jacks["switch"]), "telnet");
     }
 }

@@ -25,6 +25,9 @@ pub struct JackView {
     url: Option<String>,
     rdp: Option<u16>,
     vnc: Option<u16>,
+    telnet: Option<u16>,
+    serial: Option<String>,
+    baud: Option<u32>,
     ssh: bool,
     primary: String,
     desc: Option<String>,
@@ -82,6 +85,11 @@ pub struct Vaults {
     away: Option<String>,
     /// Devices of your own that are unchanged copies of the team's.
     copies: usize,
+    /// The team licence, for the sidebar to say where one is needed or has ended. Read
+    /// even when the list was refused, since the licence is why.
+    licence: Option<crate::licence::Status>,
+    /// Whether licences are on sale, so the window asks for one only once they are.
+    on_sale: bool,
 }
 
 #[derive(Serialize)]
@@ -196,6 +204,9 @@ pub async fn jacks() -> Result<Listing, String> {
                     url: j.url.clone(),
                     rdp: j.rdp,
                     vnc: j.vnc,
+                    telnet: j.telnet,
+                    serial: j.serial.clone(),
+                    baud: j.baud,
                     ssh: j.ssh.unwrap_or(true),
                     primary: patchbay::primary(j),
                     desc: j.desc.clone(),
@@ -217,6 +228,11 @@ pub async fn jacks() -> Result<Listing, String> {
                 two: shared.is_some(),
                 // The same test `copies_at` makes, on the stamps already in hand.
                 copies: own.iter().filter(|(k, s)| team.get(*k) == Some(s)).count(),
+                licence: shared
+                    .as_deref()
+                    .filter(|p| crate::licence::ON_SALE && p.is_file())
+                    .map(crate::licence::status),
+                on_sale: crate::licence::ON_SALE,
                 team: shared.map(|p| p.display().to_string()),
                 away,
             },

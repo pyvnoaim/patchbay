@@ -41,6 +41,7 @@ function devClick(e, row) {
 
 treeEl.addEventListener("click", (e) => {
   if (e.target.closest("[data-retry]")) return load();
+  if (e.target.closest("[data-licence]")) return openSettings("licence");
   const dev = e.target.closest(".jack[data-i]");
   if (dev) return devClick(e, dev);
   const el = e.target.closest(".group");
@@ -173,6 +174,7 @@ async function detailClick(e) {
   if (act === "web") openWeb(j.name);
   if (act === "rdp") openRdp(j.name);
   if (act === "vnc") openVnc(j.name);
+  if (act === "telnet" || act === "serial") openLine(j.name, act);
   if (act === "files") openFilesSession(j.name);
   if (act === "forward") {
     try {
@@ -284,6 +286,8 @@ document.addEventListener("keydown", (e) => {
       const step = e.key === "ArrowDown" ? 1 : -1;
       const to = ((at < 0 ? (step > 0 ? -1 : 0) : at) + step + rows.length) % rows.length;
       rows.forEach((r, i) => r.classList.toggle("on", i === to));
+      // Focused as well as lit, so a screen reader says which row it is on.
+      rows[to].focus({ preventScroll: true });
     } else if (e.key === "Enter" && rows[at]) {
       e.preventDefault();
       rows[at].click();
@@ -302,6 +306,13 @@ document.addEventListener("keydown", (e) => {
   if (mod && key === ",") {
     e.preventDefault();
     return openSettings();
+  }
+  // A device beside the tab in front. Only over a tab: on the list there is nothing to
+  // be beside.
+  if (mod && key === "d") {
+    e.preventDefault();
+    if (activeId !== null && !sessions.get(activeId)?.bcast) openPalette("", true);
+    return;
   }
   if (mod && key === "[") {
     e.preventDefault();
@@ -355,6 +366,24 @@ document.addEventListener("keydown", (e) => {
   // A folder note is the one text box outside a sheet; its keystrokes are its own.
   if (e.target.closest("input, textarea")) {
     if (e.key === "Escape") e.target.blur();
+    return;
+  }
+
+  // The menu key, or Shift+F10: the selected row's menu, which is otherwise only a
+  // right-click away. Dispatched as one, so there is still a single menu handler.
+  if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+    const row = treeEl.querySelector('[aria-selected="true"], [aria-current="true"]');
+    if (!row) return;
+    e.preventDefault();
+    const r = row.getBoundingClientRect();
+    row.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: r.left + 24,
+        clientY: r.bottom,
+      }),
+    );
     return;
   }
 
@@ -641,9 +670,13 @@ listen("window:close", async () => {
 
 // Last time's tabs, in order, for devices that still exist. Ends back on the list.
 async function restoreTabs() {
-  const open = { term: openSession, web: openWebSession, sftp: openFilesSession };
+  const open = {
+    term: (name, via) => openSession(name, null, null, false, via),
+    web: openWebSession,
+    sftp: openFilesSession,
+  };
   const back = lastTabs.filter((t) => open[t.kind] && all.some((j) => j.name === t.name));
-  for (const t of back) await open[t.kind](t.name);
+  for (const t of back) await open[t.kind](t.name, t.via);
   if (back.length) {
     activeId = null;
     showTab();
@@ -779,3 +812,34 @@ document.addEventListener("mouseout", (e) => {
 });
 document.addEventListener("mousedown", hideTip);
 addEventListener("blur", hideTip);
+
+// Every icon-only control named as it appears or its tooltip changes; see `nameIcons`.
+// Watched area by area rather than the whole body: xterm draws with DOM rows, and a
+// terminal in #terms rewrites them every frame it has output.
+nameIcons(document.body);
+const iconNamer = new MutationObserver((records) => {
+  for (const r of records) {
+    if (r.type === "attributes") nameIcons(r.target);
+    else for (const n of r.addedNodes) if (n.nodeType === 1) nameIcons(n);
+  }
+});
+for (const el of [
+  $("side"),
+  document.querySelector("#mid > .tabs"),
+  $("browse"),
+  $("detail"),
+  ctxEl,
+  sheetWrap,
+  setWrap,
+  askWrap,
+  impWrap,
+  paletteEl,
+  $("notices"),
+]) {
+  iconNamer.observe(el, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ["data-tip"],
+  });
+}

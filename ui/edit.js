@@ -63,14 +63,14 @@ function showCtx(x, y, head, items, os) {
 function ctxRows(items, at) {
   return items
     .map((it, i) => {
-      if (it === "-") return `<div class="ctx-sep"></div>`;
+      if (it === "-") return `<div class="ctx-sep" role="separator"></div>`;
       const id = at + i;
       if (it.sub) {
-        return `<div class="ctx-item has-sub">${icon(it.icon)}${esc(it.label)}<span class="ctx-more">${icon("chevron-right")}</span><div class="ctx-sub">${ctxRows(it.sub, `${id}.`)}</div></div>`;
+        return `<div class="ctx-item has-sub" role="menuitem" aria-haspopup="menu" tabindex="-1">${icon(it.icon)}${esc(it.label)}<span class="ctx-more">${icon("chevron-right")}</span><div class="ctx-sub" role="menu">${ctxRows(it.sub, `${id}.`)}</div></div>`;
       }
       actions.set(id, it.run);
       const key = it.key ? `<kbd>${esc(it.key)}</kbd>` : "";
-      return `<div class="ctx-item ${it.danger ? "danger" : ""}" data-a="${id}">${icon(it.icon)}${esc(it.label)}${key}</div>`;
+      return `<div class="ctx-item ${it.danger ? "danger" : ""}" data-a="${id}" role="menuitem" tabindex="-1">${icon(it.icon)}${esc(it.label)}${key}</div>`;
     })
     .join("");
 }
@@ -83,7 +83,8 @@ function copyItems(j) {
       : []),
     ...(j.url ? [{ icon: "copy", label: "Web UI address", run: copy(j.url) }] : []),
     ...(j.mac ? [{ icon: "copy", label: j.mac, run: copy(j.mac) }] : []),
-    { icon: "copy", label: "ssh command", run: copy(j.command) },
+    // Only for a device ssh reaches: anything else's command line is the error saying so.
+    ...(j.ssh ? [{ icon: "copy", label: "ssh command", run: copy(j.command) }] : []),
   ];
 }
 
@@ -147,11 +148,23 @@ document.addEventListener("contextmenu", (e) => {
     const j = shown[sel];
     // ⏎ is labelled on whichever action the device is reached by.
     const ent = (k) => (j.primary === k ? "⏎" : null);
+    const front = activeId !== null && !sessions.get(activeId)?.bcast;
     return showCtx(
       e.clientX,
       e.clientY,
       j.label,
       [
+        // The sidebar stays while a tab is open, so this is a split from the list.
+        ...(front
+          ? [
+              {
+                icon: "columns-2",
+                label: "Open beside the tab in front",
+                run: () => openBeside(j.name),
+              },
+              "-",
+            ]
+          : []),
         ...(j.ssh
           ? [
               {
@@ -191,18 +204,42 @@ document.addEventListener("contextmenu", (e) => {
                 label: "Remote desktop in system client",
                 run: () => handOffRdp(j.name),
               },
-              // Always offered: asking the keychain whether there is one is itself a
-              // prompt on macOS, and a right-click must not raise one.
+            ]
+          : []),
+        ...(j.vnc
+          ? [
+              { icon: "screen-share", label: "VNC", key: ent("vnc"), run: () => openVnc(j.name) },
               {
-                icon: "key-round",
-                label: "Forget password",
-                run: () => forgetRdp(j.name),
+                icon: "external-link",
+                label: "VNC in system viewer",
+                run: () => handOffVnc(j.name),
               },
             ]
           : []),
-        // A handoff: patchbay speaks no VNC.
-        ...(j.vnc
-          ? [{ icon: "screen-share", label: "VNC", key: ent("vnc"), run: () => openVnc(j.name) }]
+        ...(j.telnet
+          ? [
+              {
+                icon: "terminal",
+                label: "Telnet",
+                key: ent("telnet"),
+                run: () => openLine(j.name, "telnet"),
+              },
+            ]
+          : []),
+        ...(j.serial
+          ? [
+              {
+                icon: "cable",
+                label: "Serial console",
+                key: ent("serial"),
+                run: () => openLine(j.name, "serial"),
+              },
+            ]
+          : []),
+        // Always offered: asking the keychain whether there is one is itself a prompt on
+        // macOS, and a right-click must not raise one. One item forgets RDP's and VNC's.
+        ...(j.rdp || j.vnc
+          ? [{ icon: "key-round", label: "Forget password", run: () => forgetRdp(j.name) }]
           : []),
         // sftp rides the ssh connection, so it is offered exactly where ssh is.
         ...(j.ssh
@@ -271,22 +308,61 @@ document.addEventListener("contextmenu", (e) => {
     ]);
   }
 
-  // A shell's tab: the palette is where snippets are, and a menu is how you find that out.
-  const tab = e.target.closest("#tabs .tab[data-id]");
-  const onTab = tab && sessions.get(+tab.dataset.id);
-  if (onTab && onTab.kind === "term" && !onTab.task && !onTab.dead) {
-    return showCtx(e.clientX, e.clientY, labelOf(onTab.name), [
+  // A split's chip: which way its panes lie, and the way back to tabs of their own.
+  const splitChip = e.target.closest("#tabs .tab[data-sid]");
+  if (splitChip) {
+    const sid = +splitChip.dataset.sid;
+    const g = [...sessions.values()].find((s) => s.split?.sid === sid)?.split;
+    if (!g) return;
+    return showCtx(e.clientX, e.clientY, `${g.ids.length} panes`, [
       {
-        icon: "text-cursor-input",
-        label: "Snippets…",
-        key: chord("k"),
+        icon: g.dir === "row" ? "rows-2" : "columns-2",
+        label: g.dir === "row" ? "Stack the panes" : "Panes side by side",
         run: () => {
-          activeId = onTab.id;
+          g.dir = g.dir === "row" ? "col" : "row";
           showTab();
           renderTabs();
-          openPalette();
         },
       },
+      { icon: "copy", label: "Separate into tabs", run: () => separateSplit(sid) },
+      "-",
+      { icon: "x", label: "Close all", run: () => closeSplit(sid) },
+    ]);
+  }
+
+  // A tab: what can open beside it, and for a shell the snippets, which live in the
+  // palette and need a menu to be found.
+  const tab = e.target.closest("#tabs .tab[data-id]");
+  const onTab = tab && sessions.get(+tab.dataset.id);
+  if (onTab) {
+    const front = (then) => () => {
+      activeId = onTab.id;
+      showTab();
+      renderTabs();
+      then();
+    };
+    const shell = onTab.kind === "term" && !onTab.task && !onTab.dead;
+    return showCtx(e.clientX, e.clientY, labelOf(onTab.name), [
+      ...(shell
+        ? [
+            {
+              icon: "text-cursor-input",
+              label: "Snippets…",
+              key: chord("k"),
+              run: front(() => openPalette()),
+            },
+          ]
+        : []),
+      ...(onTab.bcast
+        ? []
+        : [
+            {
+              icon: "columns-2",
+              label: "Open beside…",
+              key: chord("d"),
+              run: front(() => openPalette("", true)),
+            },
+          ]),
       "-",
       { icon: "x", label: "Close", key: chord("w"), run: () => closeSession(onTab.id) },
     ]);
@@ -409,7 +485,8 @@ function ask(
   askUser.value = user ?? "";
   askLabel.hidden = user === null;
   askLabel.textContent = "Password";
-  $("ask-remember-field").hidden = user === null || remember === null;
+  // VNC asks a password with no account, and can still remember it.
+  $("ask-remember-field").hidden = remember === null;
   $("ask-remember").checked = !!remember;
   askSaved = saved;
   $("ask-saved").innerHTML = saved
@@ -448,7 +525,13 @@ function closeAsk(v) {
 askForm.addEventListener("submit", (e) => {
   e.preventDefault();
   if (askBody.hidden) return closeAsk(true);
-  if (askUserField.hidden) return closeAsk(askInput.value.trim() || null);
+  if (askUserField.hidden && !$("ask-remember-field").hidden) {
+    const password = askInput.value;
+    return closeAsk(password ? { password, remember: $("ask-remember").checked } : null);
+  }
+  // Not trimmed for a password, as below.
+  const v = askInput.type === "password" ? askInput.value : askInput.value.trim();
+  if (askUserField.hidden) return closeAsk(v || null);
   const user = askUser.value.trim();
   if (!user) return showErr(askErr, "a username, or the desktop won't let you in");
   // Not trimmed: a space in a password is a character.
@@ -633,6 +716,7 @@ function jackFields() {
   }
   if (reach === "rdp" && !f.rdp.value.trim()) f.rdp.value = "3389";
   if (reach === "vnc" && !f.vnc.value.trim()) f.vnc.value = "5900";
+  if (reach === "telnet" && !f.telnet.value.trim()) f.telnet.value = "23";
 }
 
 function openJack(j, prefillGroup) {
@@ -669,6 +753,12 @@ function openJack(j, prefillGroup) {
   f.url.value = m ? m[2] : "";
   f.rdp.value = j?.rdp ?? "";
   f.vnc.value = j?.vnc ?? "";
+  f.telnet.value = j?.telnet ?? "";
+  f.serial.value = j?.serial ?? "";
+  // A speed the menu doesn't list (a hand-edited 2400) is kept rather than reset.
+  const baud = String(j?.baud ?? 9600);
+  if (![...f.baud.options].some((o) => o.value === baud)) f.baud.add(new Option(baud, baud));
+  f.baud.value = baud;
   f.desc.value = j?.desc ?? "";
   f.mac.value = j?.mac ?? "";
   f.folders.value = (j?.folders ?? (prefillGroup?.path ? [prefillGroup.path] : [])).join(", ");
@@ -706,26 +796,36 @@ jackForm.addEventListener("submit", async (e) => {
   const port = f.port.value.trim();
   const rdp = reach === "rdp" ? f.rdp.value.trim() : "";
   const vnc = reach === "vnc" ? f.vnc.value.trim() : "";
+  const telnet = reach === "telnet" ? f.telnet.value.trim() : "";
+  const serial = reach === "serial" ? f.serial.value.trim() : "";
   if (overSsh && port && !/^\d+$/.test(port)) return showErr(jfErr, "ssh port has to be a number");
   if (reach === "rdp" && !/^\d+$/.test(rdp)) return showErr(jfErr, "rdp port has to be a number");
   if (reach === "vnc" && !/^\d+$/.test(vnc)) return showErr(jfErr, "vnc port has to be a number");
+  if (reach === "telnet" && !/^\d+$/.test(telnet))
+    return showErr(jfErr, "telnet port has to be a number");
+  if (reach === "serial" && !serial.startsWith("/dev/"))
+    return showErr(jfErr, "a serial device is a /dev/ path, like /dev/cu.usbserial-1410");
   try {
     await invoke("save_jack", {
       original: editing,
       jack: {
         name: f.name.value.trim(),
-        host: f.host.value.trim(),
+        // A console cable has no address, so a serial device keeps none.
+        host: reach === "serial" ? "" : f.host.value.trim(),
         user: f.user.value.trim() || null,
         // One way in: the other two are cleared, so a device saved with several keeps
         // only this one.
         port: overSsh && port ? +port : null,
         key: overSsh ? f.key.value.trim() || null : null,
-        jump: overSsh ? f.jump.value.trim() || null : null,
+        jump: overSsh || reach === "telnet" ? f.jump.value.trim() || null : null,
         forward: reach === "ssh" ? commaList(f.forward.value) : [],
         os: f.os.value.trim() || null,
         url: reach === "web" && f.url.value.trim() ? scheme + f.url.value.trim() : null,
         rdp: rdp ? +rdp : null,
         vnc: vnc ? +vnc : null,
+        telnet: telnet ? +telnet : null,
+        serial: serial || null,
+        baud: serial ? +f.baud.value : null,
         ssh: overSsh ? null : false,
         // Only "sftp" needs saying: a shell and files over ssh look identical otherwise.
         primary: reach === "sftp" ? "sftp" : null,
@@ -1139,9 +1239,10 @@ async function impCall(card, fn) {
     const r = await fn();
     card.dataset.state = "done";
     go.innerHTML = `${icon("check")}${r.hosts.length} found`;
-    setTimeout(() => {
-      closeSettings();
-      openImport(r, r.what);
+    setTimeout(async () => {
+      await closeSettings();
+      // Not over a sheet that stayed open on a refusal.
+      if (setWrap.hidden) openImport(r, r.what);
     }, 550);
   } catch (e) {
     delete card.dataset.state;
@@ -1216,6 +1317,7 @@ impForm.addEventListener("submit", async (e) => {
           folders: h.folders ?? [],
           forward: h.forward,
           rdp: h.rdp ?? null,
+          telnet: h.telnet ?? null,
           url: h.url ?? null,
           // An rdp or web device is not also an ssh host; without this every import
           // opens a shell, because that is what `primary` picks first.
@@ -1255,7 +1357,8 @@ function keysHtml() {
         ["Settings", [chord(",")]],
         ["Open the config file", [chord("e")]],
         ["Reload the list", [chord("r")]],
-        ["Previous, next tab", [`${chord("[")}`, `${chord("]")}`]],
+        ["Previous, next tab or pane", [`${chord("[")}`, `${chord("]")}`]],
+        ["Open a device beside the tab in front", [chord("d")]],
         ["Close the tab; twice with a live session in it", [chord("w")]],
         ["This page", ["?"]],
       ],
@@ -1314,6 +1417,7 @@ async function openSettings(pane) {
   // A pane name that names nothing would leave the sheet half empty.
   if (!setNav.querySelector(`[data-pane="${CSS.escape(String(pane ?? ""))}"]`)) pane = "devices";
   setErr.hidden = true;
+  snipRefused = saveRefused = false;
   // Same selector the submit handler writes through; theme and font size are not checkboxes.
   for (const el of setForm.querySelectorAll("input[type=checkbox]")) el.checked = !!prefs[el.name];
   setForm.elements.theme.value = ["light", "dark"].includes(prefs.theme) ? prefs.theme : "system";
@@ -1359,17 +1463,50 @@ async function openSettings(pane) {
     .catch(() => ($("appversion").textContent = "patchbay"));
   $("cfgpath").textContent = cfgPath;
   $("keylist").innerHTML = keysHtml();
+  $("lic-save").innerHTML = `${icon("check")}Add licence`;
+  $("lic-remove").innerHTML = `${icon("trash-2")}Remove`;
+  loadLicence();
   setWrap.hidden = false;
 }
-const closeSettings = () => {
+// Snippets are written here rather than as they are typed: a row half typed is not one to
+// refuse yet. A refusal keeps the sheet open on it; closing again drops the draft, so a
+// row nobody can fix never traps the sheet.
+let snipRefused = false;
+// The same for a setting that didn't save: closed once it would look on and not be.
+let saveRefused = false;
+async function closeSettings() {
+  await settingsSaved;
+  if (!setErr.hidden && !snipRefused && !saveRefused) {
+    saveRefused = true;
+    setErr.textContent = `${setErr.textContent} - close again to leave it unsaved`;
+    return;
+  }
+  const changed = JSON.stringify(snipDraft) !== snipWas;
+  if (changed && !snipRefused) {
+    try {
+      await saveSnips(snipRows());
+      listStamp = null;
+      await load();
+    } catch (err) {
+      snipRefused = true;
+      showPane("snippets");
+      showErr(setErr, `${err} - close again to discard the change`);
+      // Whatever of the snippets did go in is what the next save is compared against.
+      await invoke("snippets")
+        .then((r) => ({ list: snips, stamps: snipStamps } = r))
+        .catch(() => {});
+      return;
+    }
+  }
+  snipRefused = saveRefused = false;
   setWrap.hidden = true;
   if (upWaiting) {
     showUpdate(upWaiting);
     upWaiting = null;
   }
-};
+}
 
-// A hidden pane is still in the form, so Save stays one submit.
+// A hidden pane is still in the form, so every field is read on each save.
 function showPane(name) {
   for (const b of setNav.querySelectorAll("button")) {
     // An <svg> has no text, so a second call does not nest an icon inside an icon.
@@ -1401,8 +1538,24 @@ function showListWhere() {
 }
 setForm.elements.list.addEventListener("input", showListWhere);
 
+// Settings take effect as they change, the way the OS's own do, so a switch never looks
+// on while doing nothing. Saves queue behind one another: two quick toggles must not
+// write over each other with stale `prefs`.
+let settingsSaved = Promise.resolve();
+const applySettings = () => (settingsSaved = settingsSaved.then(saveSettings));
+setForm.addEventListener("change", (e) => {
+  // Snippets are written on close, colours by their own handler, an import by its card.
+  if (e.target.closest("#snip-rows, #swatches, .sources, #lic-add")) return;
+  applySettings();
+});
+// Enter in a field, or Done: what changed is saved, then the sheet closes.
 setForm.addEventListener("submit", async (e) => {
   e.preventDefault();
+  await applySettings();
+  if (setErr.hidden) closeSettings();
+});
+
+async function saveSettings() {
   // Over the current prefs: the sidebar width has no field here and must survive a save.
   const next = { ...prefs };
   for (const el of setForm.querySelectorAll("input[type=checkbox]")) next[el.name] = el.checked;
@@ -1415,12 +1568,13 @@ setForm.addEventListener("submit", async (e) => {
   if (!(next.font_size >= 8 && next.font_size <= 32)) {
     return showErr(setErr, "terminal font size has to be between 8 and 32");
   }
+  setErr.hidden = true;
+  saveRefused = false;
+  // Done, or Enter, after the change already went in: no second write of the same file.
+  if (JSON.stringify(next) === JSON.stringify(prefs)) return;
 
   try {
     const wasProbing = prefs.probe !== false;
-    // Snippets first: they are the write most likely to be refused, and refused after
-    // the settings went in, a second Save would send those twice.
-    await saveSnips(snipRows());
     const server = prefs.bitwarden_server ?? null;
     await invoke("save_settings", { next });
     // Host access is granted when the extension loads, so a new server is a reload.
@@ -1430,7 +1584,6 @@ setForm.addEventListener("submit", async (e) => {
     }
     prefs = next;
     listStamp = null;
-    closeSettings();
     // A reload: [defaults] changes what every device shows.
     await load();
     // The throttle would otherwise hold the first sweep back by up to 30s.
@@ -1440,16 +1593,11 @@ setForm.addEventListener("submit", async (e) => {
     }
   } catch (err) {
     showErr(setErr, String(err));
-    // Whatever of the snippets did go in is what the next Save is compared against.
-    await invoke("snippets")
-      .then((r) => ({ list: snips, stamps: snipStamps } = r))
-      .catch(() => {});
   }
-});
-$("set-cancel").addEventListener("click", closeSettings);
+}
 
 // ── snippets ───────────────────────────────────────────────────────────────
-// The sheet's own copy, written back whole per vault on Save. A row's vault is where
+// The sheet's own copy, written back whole per vault when the sheet closes. A row's vault is where
 // it is stored, so changing it is the move.
 let snipDraft = [];
 let snipWas = "[]";
@@ -1477,19 +1625,23 @@ function renderSnips() {
     : `<p class="page-note">None yet.</p>`;
   $("snip-add").innerHTML = `${icon("plus")}Add a snippet`;
 }
+// An edit after a refusal is a fix, to be saved rather than discarded on the next close.
 $("snip-rows").addEventListener("input", (e) => {
+  snipRefused = false;
   const el = e.target.closest("[data-si]");
   if (el) snipDraft[+el.dataset.si][el.dataset.k] = el.value;
 });
 $("snip-rows").addEventListener("click", (e) => {
   const del = e.target.closest("[data-sdel]");
   if (!del) return;
+  snipRefused = false;
   snipDraft.splice(+del.dataset.sdel, 1);
   renderSnips();
 });
 $("snip-add").addEventListener("click", () => {
   // Yours unless you say otherwise: a line typed onto a colleague's prompt is
   // something to choose to share.
+  snipRefused = false;
   snipDraft.push({ name: "", text: "", vault: vaults.two ? "mine" : null });
   renderSnips();
   $("snip-rows").querySelector(".snip-row:last-child input")?.focus();
@@ -1545,7 +1697,6 @@ async function sayWebext() {
     // Started when the toggle is on, so the answer describes what is *running*
     // rather than what is merely on disk. A second start just reports.
     const on = setForm.elements.webext.checked;
-    // The toggle acts at once; Save is what makes it stick for the next launch.
     if (!on) await invoke("webext_stop");
     const p = await invoke(on ? "webext_start" : "webext_inspect");
     webextRunning = p.loaded;
@@ -1569,6 +1720,8 @@ async function pickList(folder) {
     const path = await invoke("pick_list_file", { folder });
     if (path) setForm.elements.list.value = path;
     showListWhere();
+    // Set from here, so no `change` fires to save it.
+    if (path) applySettings();
   } catch (err) {
     alertish(err);
   }
@@ -1578,6 +1731,62 @@ $("pick-list").addEventListener("click", () => pickList(false));
 $("page-openconfig").addEventListener("click", () => invoke("open_config").catch(alertish));
 $("page-checkupdate").addEventListener("click", () => checkUpdates($("update-said")));
 $("page-forget").addEventListener("click", () => forgetRdp());
+
+// ── licence ────────────────────────────────────────────────────────────────
+// Rust decides (licence.rs); this only says what it decided and passes a paste in.
+// `s` is null with one vault: one person needs no licence.
+function sayLicence(s, said = "") {
+  $("lic-state").textContent = !s
+    ? "Free for you"
+    : {
+        unlicensed: vaults.on_sale ? "No licence for the team's list" : "No licence needed yet",
+        licensed: `Licensed to ${s.company}${s.until ? `, until ${licDay(s.until)}` : ""}`,
+        grace: `${s.company}'s licence ended on ${licDay(s.until ?? 0)}`,
+        ended: `${s.company}'s licence ended on ${licDay(s.until ?? 0)}`,
+      }[s.state];
+  $("lic-said").textContent =
+    said ||
+    (s?.state === "grace"
+      ? `The team's list keeps opening until ${licDay(s.closes)}.`
+      : !s
+        ? "Only a team on a shared list needs one."
+        : "");
+  $("lic-add").hidden = !s;
+  $("lic-remove").hidden = !s || s.state === "unlicensed";
+  $("lic-free").hidden = vaults.on_sale;
+}
+async function loadLicence() {
+  const s = await invoke("licence").catch(() => null);
+  sayLicence(s);
+  return s;
+}
+$("lic-save").addEventListener("click", async () => {
+  const text = $("lic-text").value;
+  if (!text.trim()) return $("lic-text").focus();
+  $("lic-save").disabled = true;
+  try {
+    const s = await invoke("save_licence", { text });
+    $("lic-text").value = "";
+    sayLicence(s, "Added beside the shared list, for everyone on it. Thank you.");
+    listStamp = null;
+    await load();
+  } catch (e) {
+    $("lic-said").textContent = String(e);
+  } finally {
+    $("lic-save").disabled = false;
+  }
+});
+$("lic-remove").addEventListener("click", async () => {
+  if (!(await ask("Remove the licence for everyone on the shared list?", null, "Remove"))) return;
+  try {
+    await invoke("remove_licence");
+    sayLicence(await invoke("licence"), "Removed.");
+    listStamp = null;
+    await load();
+  } catch (e) {
+    $("lic-said").textContent = String(e);
+  }
+});
 setWrap.addEventListener("mousedown", (e) => {
   if (e.target === setWrap) closeSettings();
 });
@@ -1680,8 +1889,10 @@ $("crumbs").addEventListener("click", (e) => {
 
 // No name is every device in the list.
 async function forgetRdp(name = null) {
-  if (name) rdpCreds.delete(name);
-  else rdpCreds.clear();
+  for (const typed of [rdpCreds, vncPasswords]) {
+    if (name) typed.delete(name);
+    else typed.clear();
+  }
   try {
     await invoke("rdp_forget", { name });
     flash(name ? `Forgot the password for ${name}` : "Forgot every saved password");

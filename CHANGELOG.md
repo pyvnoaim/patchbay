@@ -8,6 +8,17 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Settings ▸ Licence takes a team's company licence. Nothing needs one yet.
+- Telnet and serial consoles open in a tab, and Royal TS telnet connections now import.
+- Split a tab: ⌘D opens a device beside the one in front; drag the line between panes to resize.
+- Works with a screen reader, says a device's status in words, and respects Reduce Motion.
+- Remote desktop shows Windows' own pointer: the text cursor over text, the resize arrows on a window's edge.
+- Remote desktop plays the desktop's sound on this machine.
+- VNC opens in a tab, like remote desktop: no viewer to install on Windows or Linux. A Mac's Screen Sharing, or any server patchbay can't sign in to, still opens in your VNC viewer.
+- New licence: free for one person, at work too. A team on a shared list will need a company licence, €249 a year, and until it goes on sale a shared list stays free.
+
 ## 0.1.58 - 2026-10-25
 
 - A shell prints large output much faster, and accented letters, `€` or box drawing no longer turn into `�` now and then.
