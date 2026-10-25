@@ -8,6 +8,10 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- A shell prints large output much faster, and accented letters, `€` or box drawing no longer turn into `�` now and then.
+
 ## 0.1.57 - 2026-10-24
 
 - Remote desktop in a tab is much smoother: scrolling or dragging a window draws several times as many frames.

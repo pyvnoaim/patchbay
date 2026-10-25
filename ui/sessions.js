@@ -283,44 +283,34 @@ async function openSession(name, task = null, bcast = null, waiting = false) {
   let ours = true;
   term.write(`\x1b[2m── ${task ? `${taskLabel(task)} ` : ""}${name}… ──\x1b[0m\r\n`);
 
-  try {
-    s.unlisten.push(
-      await listen(`pty:${id}`, (e) => {
-        if (ours) {
-          ours = false;
-          term.write("\x1b[2J\x1b[3J\x1b[H");
-        }
-        term.write(e.payload);
-        offerHostKey(s, e.payload);
-      }),
-    );
-    s.unlisten.push(
-      await listen(`pty-exit:${id}`, (e) => {
-        s.dead = true;
-        s.bcast?.live.delete(id);
-        // 255 is ssh failing to get there or losing the box: the redial was too early.
-        if (waiting && String(e.payload) === "255") waitForIt(s);
-        else
-          term.write(
-            `\r\n\x1b[2m── ${task ? taskLabel(task) : "ssh"} exited (${e.payload}) · ⏎ to ${task ? "run it again" : "reconnect"}${task === "ping" ? " · c to ping until ^C" : task ? "" : " · r to reconnect when it's back"} · ${chord("w")} to close ──\x1b[0m\r\n`,
-          );
-        renderTabs();
-        renderTree();
-      }),
-    );
-  } catch (err) {
-    // `listen` needs a capability in src-tauri/capabilities; without it the session
-    // opens and sits there mute.
-    s.dead = true;
-    term.write(`\x1b[31mcould not subscribe to the session: ${String(err)}\x1b[0m\r\n`);
-    renderTabs();
-    return;
-  }
+  const out = ptyChannel(
+    s,
+    (bytes) => {
+      if (ours) {
+        ours = false;
+        term.write("\x1b[2J\x1b[3J\x1b[H");
+      }
+      term.write(bytes);
+      offerHostKey(s, bytes);
+    },
+    (code) => {
+      s.dead = true;
+      s.bcast?.live.delete(id);
+      // 255 is ssh failing to get there or losing the box: the redial was too early.
+      if (waiting && code === 255) waitForIt(s);
+      else
+        term.write(
+          `\r\n\x1b[2m── ${task ? taskLabel(task) : "ssh"} exited (${code}) · ⏎ to ${task ? "run it again" : "reconnect"}${task === "ping" ? " · c to ping until ^C" : task ? "" : " · r to reconnect when it's back"} · ${chord("w")} to close ──\x1b[0m\r\n`,
+        );
+      renderTabs();
+      renderTree();
+    },
+  );
 
   try {
     await (task
-      ? invoke("open_task", { id, name, task, cols: term.cols, rows: term.rows })
-      : invoke("open_session", { id, name, cols: term.cols, rows: term.rows }));
+      ? invoke("open_task", { out, id, name, task, cols: term.cols, rows: term.rows })
+      : invoke("open_session", { out, id, name, cols: term.cols, rows: term.rows }));
   } catch (err) {
     ours = false;
     s.dead = true;
@@ -328,6 +318,18 @@ async function openSession(name, task = null, bcast = null, waiting = false) {
   }
   renderTabs();
   term.focus();
+}
+
+// A pty's raw bytes, then its exit code as a number: one channel, so the code can't
+// overtake the last of the output. Bytes because a UTF-8 sequence can straddle two
+// messages and only xterm's decoder sees both halves. An array instead of an
+// ArrayBuffer is Tauri's postMessage fallback; see the CSP note in CLAUDE.md. Muted
+// when the tab goes, since output keeps coming until the far end hangs up.
+function ptyChannel(s, onBytes, onExit) {
+  const chan = new window.__TAURI__.core.Channel();
+  chan.onmessage = (m) => (typeof m === "number" ? onExit(m) : onBytes(new Uint8Array(m)));
+  s.unlisten.push(() => (chan.onmessage = () => {}));
+  return chan;
 }
 
 // A reboot: dial again once the device takes a connection. Any key stops it.
@@ -431,10 +433,13 @@ function webViewRect() {
 // where few look. Asked of the files rather than trusted from the text, which could
 // be anything the far end printed, or a bastion on the way being added.
 // Not settled by the first line: through a jump host, that one is the bastion's.
-function offerHostKey(s, chunk) {
-  if (s.keyDone || s.keyAsking || s.task || !String(chunk).includes("Permanently added")) return;
+// Decoded per chunk, not as a stream: a character split across two only spoils
+// itself, and the words looked for are ASCII.
+const utf8 = new TextDecoder();
+function offerHostKey(s, bytes) {
+  if (s.keyDone || s.keyAsking || s.task) return;
   const j = all.find((x) => x.name === s.name);
-  if (j?.vault !== "team") return;
+  if (j?.vault !== "team" || !utf8.decode(bytes).includes("Permanently added")) return;
   s.keyAsking = true;
   invoke("host_key", { name: j.name })
     .then((k) => {
@@ -905,20 +910,21 @@ async function signIn(s) {
   term.focus();
   term.onData((d) => invoke("write_session", { id, data: d }).catch(() => {}));
 
+  const out = ptyChannel(
+    s,
+    (bytes) => term.write(bytes),
+    async () => {
+      if (s.master !== id || s.entries) return;
+      // ControlPersist backgrounds the client once it has authenticated, so the
+      // socket, not the exit, says whether the sign-in worked.
+      await new Promise((r) => setTimeout(r, 400));
+      if (await invoke("sftp_ready", { name: s.name }).catch(() => false)) return connected(s);
+      failedSignIn(s, "that sign-in didn't finish");
+    },
+  );
   try {
-    s.unlisten.push(await listen(`pty:${id}`, (e) => term.write(e.payload)));
-    s.unlisten.push(
-      await listen(`pty-exit:${id}`, async () => {
-        if (s.master !== id || s.entries) return;
-        // ControlPersist backgrounds the client once it has authenticated, so the
-        // socket, not the exit, says whether the sign-in worked.
-        await new Promise((r) => setTimeout(r, 400));
-        if (await invoke("sftp_ready", { name: s.name }).catch(() => false)) return connected(s);
-        failedSignIn(s, "that sign-in didn't finish");
-      }),
-    );
     term.write(`\x1b[2m── signing in to ${s.name} for files ──\x1b[0m\r\n`);
-    await invoke("open_master", { id, name: s.name, cols: term.cols, rows: term.rows });
+    await invoke("open_master", { out, id, name: s.name, cols: term.cols, rows: term.rows });
   } catch (e) {
     return failedSignIn(s, String(e));
   }

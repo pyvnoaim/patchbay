@@ -4,6 +4,9 @@
 use super::load_jacks;
 use crate::{config, patchbay, pty, sftp, terminal};
 
+/// Where a pty's output goes; see `pty::Sessions::open`.
+type Out = tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>;
+
 /// A device name, or a `user@host` that isn't one. The device error is the one kept
 /// when neither reads: "no jack matching" is what a typo gets.
 fn ssh_target(
@@ -31,7 +34,7 @@ pub async fn connect(name: String) -> Result<String, String> {
 /// Open the device as a tab in the window.
 #[tauri::command]
 pub async fn open_session(
-    app: tauri::AppHandle,
+    out: Out,
     sessions: tauri::State<'_, pty::Shared>,
     id: u32,
     name: String,
@@ -60,7 +63,7 @@ pub async fn open_session(
     let log = config::load_settings()
         .log_sessions
         .then(|| log_path(resolved.as_deref().unwrap_or(&name)));
-    sessions.open(&app, id, "ssh", &spawned, cols.max(2), rows.max(2), log)?;
+    sessions.open(out, id, "ssh", &spawned, cols.max(2), rows.max(2), log)?;
     Ok(terminal::command_line(&args))
 }
 
@@ -88,7 +91,7 @@ fn log_path(name: &str) -> std::path::PathBuf {
 /// ^C works. The tab goes dead when the command exits.
 #[tauri::command]
 pub async fn open_task(
-    app: tauri::AppHandle,
+    out: Out,
     sessions: tauri::State<'_, pty::Shared>,
     id: u32,
     name: String,
@@ -99,7 +102,7 @@ pub async fn open_task(
     let jacks = load_jacks()?;
     let resolved = patchbay::resolve(&name, &jacks)?;
     let (program, args) = patchbay::task_argv(&task, &resolved, &jacks)?;
-    sessions.open(&app, id, &program, &args, cols.max(2), rows.max(2), None)?;
+    sessions.open(out, id, &program, &args, cols.max(2), rows.max(2), None)?;
     Ok(terminal::command_line_of(&program, &args))
 }
 
@@ -108,7 +111,7 @@ pub async fn open_task(
 /// connection multiplexing to share.
 #[tauri::command]
 pub async fn open_master(
-    app: tauri::AppHandle,
+    out: Out,
     sessions: tauri::State<'_, pty::Shared>,
     id: u32,
     name: String,
@@ -117,7 +120,7 @@ pub async fn open_master(
 ) -> Result<(), String> {
     #[cfg(windows)]
     {
-        let _ = (app, sessions, id, name, cols, rows);
+        let _ = (out, sessions, id, name, cols, rows);
         return Err(
             "ssh on Windows can't share a connection, so files need a key or your agent".into(),
         );
@@ -132,7 +135,7 @@ pub async fn open_master(
         spawned.extend(sftp::mux(&sftp::control_path(&resolved)));
         spawned.extend(crate::hostkeys::opts(&resolved, &jacks));
         spawned.extend(args);
-        sessions.open(&app, id, "ssh", &spawned, cols.max(2), rows.max(2), None)
+        sessions.open(out, id, "ssh", &spawned, cols.max(2), rows.max(2), None)
     }
 }
 

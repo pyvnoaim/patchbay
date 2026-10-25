@@ -6,7 +6,12 @@ use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::ipc::{Channel, InvokeResponseBody};
+
+/// The most one message to the window carries; a backlog past it goes as several.
+const BATCH: usize = 256 * 1024;
+/// The least time between two messages while output keeps coming.
+const GAP: std::time::Duration = std::time::Duration::from_millis(4);
 
 pub struct Session {
     writer: Box<dyn Write + Send>,
@@ -15,12 +20,18 @@ pub struct Session {
 
 /// Spawn `program` on a pty, pump its output to `on_data` until it closes, then hand
 /// the exit code to `on_exit`. Free of Tauri so it can be tested.
+///
+/// Bytes, not text: a UTF-8 sequence can straddle two reads, and only xterm's decoder
+/// sees both halves. Output after a quiet spell goes at once, so a keystroke's echo
+/// waits for nothing; while it keeps coming it is held to one message per `GAP`,
+/// because a line-buffered program is one read per line and `seq 1 300000` would
+/// otherwise be 180,000 messages to the window.
 pub fn spawn(
     program: &str,
     args: &[String],
     cols: u16,
     rows: u16,
-    on_data: impl Fn(String) + Send + 'static,
+    on_data: impl Fn(Vec<u8>) + Send + 'static,
     on_exit: impl FnOnce(u32) + Send + 'static,
 ) -> Result<Session, String> {
     let pair = NativePtySystem::default()
@@ -58,16 +69,35 @@ pub fn spawn(
         .take_writer()
         .map_err(|e| format!("could not write to the pty: {e}"))?;
 
-    std::thread::spawn(move || {
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let read = std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => break,
-                // A UTF-8 sequence can straddle two reads; xterm re-joins the pieces.
-                Ok(n) => on_data(String::from_utf8_lossy(&buf[..n]).to_string()),
+                Ok(n) => {
+                    if tx.send(buf[..n].to_vec()).is_err() {
+                        break;
+                    }
+                }
             }
         }
-        on_exit(child.wait().map(|s| s.exit_code()).unwrap_or(1));
+        child.wait().map(|s| s.exit_code()).unwrap_or(1)
+    });
+    std::thread::spawn(move || {
+        let mut due = std::time::Instant::now();
+        while let Ok(mut batch) = rx.recv() {
+            while batch.len() < BATCH {
+                let wait = due.saturating_duration_since(std::time::Instant::now());
+                match rx.recv_timeout(wait) {
+                    Ok(more) => batch.extend_from_slice(&more),
+                    Err(_) => break,
+                }
+            }
+            on_data(batch);
+            due = std::time::Instant::now() + GAP;
+        }
+        on_exit(read.join().unwrap_or(1));
     });
 
     Ok(Session {
@@ -99,11 +129,12 @@ fn open_log(path: &std::path::Path) -> std::io::Result<std::fs::File> {
 pub struct Sessions(Mutex<HashMap<u32, Session>>);
 
 impl Sessions {
-    /// Output is emitted as `pty:<id>`; on exit, `pty-exit:<id>` carries the status.
+    /// Output goes down `out` as raw bytes, then the exit status as a number: one
+    /// channel, so the status can't overtake the last of the output.
     /// `log` appends the same bytes to a file, when session logging is turned on.
     pub fn open(
         &self,
-        app: &AppHandle,
+        out: Channel<InvokeResponseBody>,
         id: u32,
         program: &str,
         args: &[String],
@@ -111,8 +142,7 @@ impl Sessions {
         rows: u16,
         log: Option<std::path::PathBuf>,
     ) -> Result<(), String> {
-        let data_handle = app.clone();
-        let exit_handle = app.clone();
+        let exit = out.clone();
         let log_file = log.and_then(|path| {
             if let Some(dir) = path.parent() {
                 let _ = std::fs::create_dir_all(dir);
@@ -127,12 +157,12 @@ impl Sessions {
             rows,
             move |chunk| {
                 if let Some(f) = &log_file {
-                    let _ = f.lock().unwrap().write_all(chunk.as_bytes());
+                    let _ = f.lock().unwrap().write_all(&chunk);
                 }
-                let _ = data_handle.emit(&format!("pty:{id}"), chunk);
+                let _ = out.send(InvokeResponseBody::Raw(chunk));
             },
             move |code| {
-                let _ = exit_handle.emit(&format!("pty-exit:{id}"), code);
+                let _ = exit.send(InvokeResponseBody::Json(code.to_string()));
             },
         )?;
         self.0.lock().unwrap().insert(id, session);
@@ -196,6 +226,7 @@ mod tests {
         let out = rx
             .recv_timeout(Duration::from_secs(5))
             .expect("no pty output arrived");
+        let out = String::from_utf8_lossy(&out);
         assert!(out.contains("patchbay-pty-works"), "got {out:?}");
         assert_eq!(erx.recv_timeout(Duration::from_secs(5)).unwrap(), 0);
     }
@@ -223,10 +254,60 @@ mod tests {
         let mut out = String::new();
         while !out.contains("ping") && std::time::Instant::now() < deadline {
             if let Ok(chunk) = rx.recv_timeout(Duration::from_millis(200)) {
-                out.push_str(&chunk);
+                out.push_str(&String::from_utf8_lossy(&chunk));
             }
         }
         assert!(out.contains("ping"), "cat echoed {out:?}");
+    }
+
+    #[test]
+    fn multibyte_text_survives_being_split_across_reads() {
+        let (tx, rx) = channel();
+        let (etx, erx) = channel();
+        // 3 bytes each and far past one read, so some sequence lands on a boundary.
+        let _s = spawn(
+            "sh",
+            &[
+                "-c".into(),
+                "for i in $(seq 4000); do printf '€'; done".into(),
+            ],
+            80,
+            24,
+            move |c| {
+                let _ = tx.send(c);
+            },
+            move |code| {
+                let _ = etx.send(code);
+            },
+        )
+        .unwrap();
+        erx.recv_timeout(Duration::from_secs(10)).unwrap();
+        let bytes: Vec<u8> = rx.try_iter().flatten().collect();
+        let text = String::from_utf8(bytes).expect("a sequence was cut");
+        assert_eq!(text.matches('€').count(), 4000);
+    }
+
+    #[test]
+    fn a_flood_of_short_lines_goes_as_few_messages() {
+        let (tx, rx) = channel();
+        let (etx, erx) = channel();
+        let _s = spawn(
+            "seq",
+            &["1".into(), "100000".into()],
+            80,
+            24,
+            move |c: Vec<u8>| {
+                let _ = tx.send(c.len());
+            },
+            move |code| {
+                let _ = etx.send(code);
+            },
+        )
+        .unwrap();
+        erx.recv_timeout(Duration::from_secs(10)).unwrap();
+        let sizes: Vec<usize> = rx.try_iter().collect();
+        assert!(sizes.iter().sum::<usize>() > 500_000);
+        assert!(sizes.len() < 1000, "{} messages", sizes.len());
     }
 
     #[test]
