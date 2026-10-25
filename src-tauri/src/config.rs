@@ -1,6 +1,23 @@
 //! The only code that writes a config. People hand-edit the file, so every change goes
 //! through toml_edit (comments, spacing and key order survive) and lands as a temp
 //! file plus rename, so a crash mid-write can't truncate it.
+//!
+//! It also owns `[settings]`, `[colors]`, `[folder]` notes, and `fold_spaces_at`, the
+//! one-way door out of spaces: it writes the merged list before renaming anything,
+//! because the other order loses the devices outright if the write fails.
+//!
+//! One list file per vault. Spaces were extra files from when a shared list had to be
+//! one of its own; folders do that job now. `fold_spaces_at` runs at startup and folds
+//! anything still in `spaces/` into the list, each device keeping the space's name as
+//! its outermost folder and the space's `[defaults]` written onto it. It writes the
+//! merged list *before* renaming what it read, because the other order loses the
+//! devices if the write fails.
+//!
+//! Writes land as temp file + `rename` so a crash can't truncate someone's hosts, and
+//! `write_doc` first keeps the file it is about to replace as `<name>.bak` beside it
+//! (`keep_a_copy`). One generation, quiet on failure: the window's Undo is a pill that
+//! only covers a delete, so the copy is the only way back from a folder rename that
+//! rewrote every device in it.
 
 use crate::patchbay;
 use serde::{Deserialize, Serialize};

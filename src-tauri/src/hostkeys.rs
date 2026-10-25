@@ -1,6 +1,23 @@
 //! Host keys the team has seen, kept beside the shared list so "is this the machine
 //! we think it is" is answered once per team instead of typed past once per person.
 //! ssh does the checking: its argv gains a `GlobalKnownHostsFile`, and that is all.
+//!
+//! The shared file is `patchbay_known_hosts`. ssh is never given the shared file
+//! itself: a `known_hosts` can say `@cert-authority` or `*`, which would make one line
+//! a signer for every host, so `plain()` keeps only `host keytype key` lines and ssh
+//! reads this machine's filtered copy (`team_known_hosts`, beside the config). And
+//! never when this machine already has a different key of that kind for the host
+//! (`disagree`): ssh accepts a host if any file it was given has the key on offer, so
+//! the team's file would outvote your own `known_hosts` and a planted key would connect
+//! with no warning. Sharing copies the key out of your own `known_hosts` through
+//! `ssh-keygen -F` (marked lines, `@revoked` and `@cert-authority`, are never taken),
+//! appends to the shared file without rewriting what is there, refuses to write over
+//! one that moved since it was read, and refuses a second key of the same kind for a
+//! host rather than adding it. Anyone who can write the list could plant a key, which
+//! is no more than they could already do by repointing the host. A first connect offers
+//! sharing on its own (`offerHostKey` in `sessions.js`): ssh's "Permanently added" is
+//! only the cue, and the files are asked before anything is offered, because that text
+//! could be anything the far end printed.
 
 use crate::patchbay;
 use std::path::PathBuf;

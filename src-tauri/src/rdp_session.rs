@@ -2,6 +2,29 @@
 //! framebuffer that the webview paints on a `<canvas>`. The only place patchbay
 //! speaks a protocol itself. A host behind a bastion arrives through the local port
 //! `rdp.rs` forwards, so this module only ever dials directly.
+//!
+//! The graphics pipeline (EGFX) is on: `support_dyn_vc_gfx_protocol` and a
+//! `GraphicsPipelineClient` go together, because the flag without the channel is a
+//! black desktop. IronRDP's compositor drains into the same framebuffer, so the pump
+//! and the window don't know which path a server took. Both dynamic channels are
+//! registered as *factories*: xrdp resizes by deactivating the session and opens them
+//! again, and a once-only processor answers that with "no listener". A factory also
+//! lets a server open the channel as often as it likes, each with a compositor allowed
+//! 256 MB, so `Gfx` counts live pipelines and the pump ends a session that has more
+//! than `MAX_PIPELINES`. IronRDP comes from git (`pyvnoaim/IronRDP`, its main plus the
+//! two speedups in Devolutions/IronRDP#2216 and #2217) until a release carries the
+//! pipeline. A resize is a round trip, not a CSS scale: the pane's new size goes down
+//! the Display Control channel as one more `Input` on the session's queue (only that
+//! thread may touch the socket), the server answers one of two ways. Without the
+//! graphics pipeline (and on xrdp) it is a Deactivate All, and `reactivate` re-runs the
+//! capabilities exchange on the same socket - rebuilding the processors too, because
+//! the frame acknowledgements carry the old share id. Windows with the pipeline sends
+//! ResetGraphics instead, and IronRDP resizes the framebuffer in place with no event of
+//! its own, so `Pending::follow` compares the size on every update and announces a
+//! change before its pixels. The new size reaches the window as a tile header with no
+//! pixels behind it, in line with the tiles so nothing painted before the change is
+//! dropped. A server without the channel says nothing and the canvas letterboxes, which
+//! is also what the window shows for the round trip.
 
 use ironrdp::connector::connection_activation::{
     ConnectionActivationFactory, ConnectionActivationState,

@@ -3,6 +3,19 @@
 //! copy reads the folder. Part of being on a shared list, with no switch: a list where
 //! some people show up and others don't answers "is anyone on this box" wrongly. Only
 //! ever about the team's devices; nothing of your own is written anywhere.
+//!
+//! Who has a session on which team device, with no server: a file per running copy in
+//! `.patchbay-presence/` beside the shared list, rewritten once a minute by a thread in
+//! Rust (a background window's timers are slowed) and emptied of devices on exit, never
+//! deleted: on a synced share a delete is a file in the bin. The heartbeat is a number
+//! in the file, not the file's time: clocks disagree and a sync client keeps the source
+//! machine's mtime, so a reader counts a file as fresh while its number keeps moving on
+//! the reader's own clock. Exit only touches the share if a file was written, and for a
+//! second at most. There is no switch, by decision: on a shared list everyone tells and
+//! everyone sees, because a list where some show up and others don't answers "is anyone
+//! on this box" wrongly. Settings ▸ Team says so in a sentence. Only the team's keys
+//! are ever written, and a colleague's file is cut to size and stripped to text before
+//! the window sees it.
 
 use crate::patchbay;
 use std::collections::HashMap;

@@ -1,5 +1,26 @@
 // Shared state and the helpers every other ui/ script uses. Loaded first: classic
 // scripts share one global scope, so nothing here may reference a later file at top level.
+//
+// A selected folder is `{ path, vault }`, not a bare string. Everything keyed by a folder -
+// `expanded`, `pending`, the notes, the folder marks - goes through `gkey()`, so there is one shape
+// for "which folder" and one place to change it. A vault's own row is `{ path: null, vault }`. A
+// drag writes `folders` and stays inside a vault; the other vault is another file, and getting
+// there is "Move to Team/Mine".
+//
+// Only the palette ranks by recency. Every open (`connect`, web, RDP, VNC, files) calls
+// `used(name)`, which keeps the last forty names in `localStorage` - a habit, not part of the list,
+// so it never touches the config. Folders are A to Z and the devices in one are in file order,
+// never by recency: rows moving under someone reading them is a worse list, not a smarter one. The
+// theme, the tabs to reopen, and the sidebar's open folders (`keepExpanded()`, read back once per
+// launch, so a folder folded stays folded and a fresh machine starts with all of them closed) are
+// there for the same reason. Those four are everything `localStorage` holds, and every one of them
+// is a habit this machine has rather than something the list says.
+//
+// Anything that goes wrong outside a form goes through `alertish()`, which flashes a pill. It used
+// to write into the detail pane's command box, which isn't there when a folder is selected and is
+// gone entirely under 720px - so a failed delete could say nothing at all. `#notices` holds two
+// pills, not one: an error arriving mid-download must not take the update's own Restart button off
+// the screen.
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
 const appEl = $("app");

@@ -9,6 +9,21 @@
 //! windows, permissions and message ports, and each of those is a protocol answered
 //! in `shim` below over the web tabs in `commands/web.rs`. Only what filling a login
 //! needs is answered; the rest takes WebKit's defaults, which deny.
+//!
+//! Off unless ticked. Loaded from the installed Bitwarden for Mac, never bundled: the
+//! Chrome build asks for offscreen documents and a side panel WebKit doesn't have, and
+//! its worker waits on them forever. patchbay answers as a browser in `shim` - a tab
+//! per web tab, one window, a delegate that draws the popup - and everything else takes
+//! WebKit's default, which denies. Host access is the device urls in the list plus
+//! Bitwarden's own servers (and a self-hosted one from `[settings].bitwarden_server`,
+//! https only), never all hosts; without the servers its fetches fail CORS and sign-in
+//! dies. Its web views say `Safari/` in the user agent because that is how Bitwarden
+//! works out where it is, and a bare WKWebView leaves it off. The context's
+//! `uniqueIdentifier` and `baseURL` are pinned to `BITWARDEN_ID`: left at WebKit's
+//! random default the extension's storage is memory-only and every launch is signed
+//! out, and changing the value later signs everyone out. WebKit state is
+//! main-thread-only and lives in a thread-local; `RUNNING` is the atomic that command
+//! threads read, because the thread-local is empty there.
 
 use serde::Serialize;
 

@@ -5,6 +5,28 @@
 //! The child webview gets no capability, and must not: its page is a remote origin
 //! that matches nothing in `capabilities/`, which is all that keeps an appliance's
 //! login page away from `delete_jack`.
+//!
+//! The web UI is a tab, like ssh and RDP - a child webview via `Window::add_child`,
+//! which is why `tauri` carries the `unstable` feature. Never an iframe: DSM, OPNsense
+//! and Proxmox all send `X-Frame-Options`, so an iframe would work only for the devices
+//! nobody points a `url` at.
+//!
+//! A child webview is an OS view above the page. It obeys no CSS of ours - not
+//! `hidden`, not z-index, not a sheet - so it is either sized exactly over its host div
+//! or sized to nothing. Tooltips check `webViewRect()` and flip, or don't draw.
+//!
+//! A webview has no certificate interstitial: an untrusted cert paints an empty pane
+//! and offers nothing. `web_check` runs *alongside* the tab, not in front of it, and
+//! `on_navigation` follows redirects a http client can't see - a Synology's http port
+//! is three lines of JavaScript pointing at its https one.
+//!
+//! Cleartext is LAN-only, enforced in `is_private_host`. `Info.plist` turns ATS off for
+//! web content because Apple offers nothing narrower that covers a bare `192.168.x.x`;
+//! the narrowing is ours, so a public `http://` url goes to the browser instead.
+//!
+//! A web tab's label carries the url, not just the jack name. Keyed on the name alone,
+//! the first view opened for a device was reused by every later click - the check never
+//! re-ran and the page never changed.
 
 use super::{blocking, load_jacks, os_open};
 use crate::patchbay::{self, is_web_url};

@@ -1,6 +1,42 @@
 // Session tabs: terminals, file listings, web views and remote desktops, all stacked in
 // #terms with only the active one shown. Classic script sharing one global scope with
 // the other ui/ files, so anything reaching across files stays inside a function body.
+//
+// A live session owns the keyboard. The global `keydown` handler returns early when `activeId !==
+// null`; every keystroke belongs to ssh. Only window-level chords (⌘K, ⌘N, ⌘W, ⌘[/]) may be
+// intercepted, and each one you add is a key someone can no longer send to their remote shell. The
+// terminal's own keys are `termKey()` in `sessions.js`: on macOS ⌘ never reached the shell, so ⌘A,
+// ⌘+ and ⌘← cost nothing, and ⌥← is *remapped* to readline's `ESC b` rather than taken. On macOS a
+// ⌘ key the menu bar has (⌘A, ⌘C, ⌘V, ⌘Z) never reaches a `keydown`: `unstable` makes the page a
+// child webview, and wry sends a child's ⌘-keys to the menu first. Catch the menu's effect instead,
+// the way ⌘A is a `selectstart` on xterm's textarea. Everything that sends bytes stops at the
+// shell's screen: in vim, ⌘←'s `^A` would increment a number.
+//
+// The find bar is the second thing deliberately *not* in `OVERLAYS()`, for the update pill's
+// reason: `modalOpen()` would hand the window's chords to a find box and shrink a web tab away
+// every time you looked through a shell. It lives inside `#terms`, so the pane hides it, and it
+// takes Escape on its own input. Its chord is ⌘F, and it was the first to be Ctrl+Shift+F elsewhere
+// - plain Ctrl+F is readline's forward-char, and a session owns the keyboard. Every chord is that
+// now: `chorded(e)` is ⌘ on macOS and Ctrl+Shift off it, and `chordKey(e)` reads punctuation off
+// `e.code` because Shift turns `[` into `{`.
+//
+// A menu only hides a web tab when it reaches over it. `covered()` in `sessions.js` asks each
+// overlay for its box, and `showCtx` keeps a menu opened in the sidebar off the page. Sheets and
+// the palette cover the window, so they still do.
+//
+// Xterm needs a laid-out element to size itself, so `fit()` after the pane is visible, not before.
+//
+// A snippet is typed, never run. `[snippet]` in either vault's file is name = one line of text,
+// picked in the palette while a shell is in front and put on the prompt with `term.paste`
+// (`typeSnippet` in `sessions.js`), which is the same `onData` a keystroke takes, so a broadcast
+// fans it out. A `{?}` or `{?label}` is a blank, asked for through `ask()` before anything is
+// typed, once for every pane of a broadcast. It is never followed by Enter, and `snippet_ok()` in
+// `patchbay.rs` refuses every control character: that check is the whole reason a colleague's file
+// can put text in front of you and cannot run it. It is made on save, on read (a refused one is
+// left out and named in a pill, because a shared file never went through a save here) and once more
+// in the window. Never add a way for one to press Enter. It stops at the shell's screen like
+// everything else that sends bytes, and in a broadcast one pane in an editor stops it for all of
+// them.
 
 const { listen } = window.__TAURI__.event;
 const tabsEl = $("tabs"),

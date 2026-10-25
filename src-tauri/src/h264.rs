@@ -6,6 +6,14 @@
 //!
 //! Elsewhere there is no decoder and none is advertised: the server then picks one of
 //! the graphics pipeline's other codecs, all of which IronRDP decodes in Rust.
+//!
+//! VideoToolbox is ours, Media Foundation is IronRDP's. It hands back the YUV planes as
+//! decoded, never asking VideoToolbox for a pixel format, because a requested one can
+//! add a range conversion IronRDP then applies again; IronRDP does the colour transform
+//! and AVC444's recombining. A decode error ends the session (the graphics pipeline
+//! passes it up), so there is no recovering mid-stream. The picture is copied into a
+//! block CoreMedia owns, because nothing says VideoToolbox lets go of a sample when the
+//! decode returns. Never an H.264 library in C.
 
 use ironrdp_egfx::decode::H264Decoder;
 

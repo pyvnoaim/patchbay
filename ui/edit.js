@@ -1,5 +1,20 @@
 // Everything that changes the config: context menu, prompts, the device sheet, settings
 // and import. Classic script; see the load order in ui/index.html.
+//
+// A device is reached one way. The sheet's row is a radio, and saving clears the other two - so a
+// device edited there keeps only what it was set to, including one written back when the row
+// allowed several. `primary` is still *read* (old configs, and hand-edited ones can still set two),
+// and it is still resolved so an option pointing at something the device no longer has falls back
+// rather than doing nothing - but the window no longer writes it, because with one field set the
+// answer is derivable. That resolution is `primary()` in `patchbay.rs`, with tests: `primary` only
+// picks the default action, so a device with a `url` *and* ssh still has both.
+//
+// Delete hands back what it removed. `delete_jack` returns a `Removed` - the table as a one-table
+// TOML document plus the position it had - and the pill's Undo sends it to `restore_jack`, which
+// makes room at that position (`make_room`: positions are renumbered by every parse, so the old
+// slot is taken by whatever followed). The comments above a deleted jack are rehomed to the next
+// table and *stay there* through an undo: stale is visible, duplicated is not. Held in the window
+// for the life of the pill, never in the config - a wrong "yes" is the case, not a history.
 
 // ── context menu ───────────────────────────────────────────────────────────
 const actions = new Map(); // id -> fn, rebuilt each time the menu opens

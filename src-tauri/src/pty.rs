@@ -1,6 +1,10 @@
 //! ssh on a real pseudo-terminal, streamed to xterm.js in the window. The system
 //! `ssh` is spawned with the argv `patchbay.rs` builds, so the agent, `~/.ssh/config`
 //! and password or host-key prompts all keep working.
+//!
+//! Output crosses as raw bytes on a `Channel`, the exit code last on the same one so it
+//! can't overtake the output. Bytes because a UTF-8 sequence straddles reads and only
+//! xterm's decoder sees both halves.
 
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::collections::HashMap;

@@ -1,6 +1,39 @@
 //! The `#[tauri::command]` surface: everything the window can call, grouped by area.
 //! Commands stay thin. Logic that is worth a test lives in the modules beside this
 //! directory, most of it in `patchbay.rs`.
+//!
+//! The list and the config can be two files. `[settings].list` in the *own* config
+//! names a shared list: the team's devices, `[defaults]` and `[folder]` notes are read
+//! and written there, and the own config's `[jack.*]` are the Mine vault beside them;
+//! `[settings]`, `[colors]` and everything beside the config stay on this machine. Each
+//! file is parsed on its own, so nothing inherits across. In memory a device of yours
+//! is `me:<key>` (`patchbay::MINE`) and the team's keeps its bare key, so both can have
+//! a `web` and every command still takes one name; a `:` can't be in a link name, so
+//! `patchbay://web` is always the team's. `file_for(name)` and `file_of(vault)` in
+//! `commands/mod.rs` turn a name or the window's word ("mine"/"team", never a path)
+//! into the file, and `load_all()` is both vaults as the one list everything reads. A
+//! jump crosses one way: `merge` points a `jump` of yours at your own device when you
+//! have one by that name and otherwise lets it find the team's; `via()` in the walk
+//! never lets a team device find one of yours, so it reaches the same machine from
+//! everyone's, whatever its file says. A move (`move_jack_at`) writes where the device
+//! is going before it removes it from where it was. `list_file()` is the team's file,
+//! and it is where a missing shared list is an *error* - for the team's half only:
+//! `load_all` keeps it as `away`, your own devices still load, and one of them whose
+//! jump may be in the missing list is refused rather than handed to ssh raw: `load`
+//! reads NotFound as a first run and `read_doc` starts from the template, which on an
+//! unmounted share would paint an empty list and then write a one-jack file where the
+//! share mounts. Only `seed_list_at` writes at a path that isn't there, and never into
+//! a directory that isn't. Every command touching the list is async: a stat on a share
+//! that has gone away hangs, and a sync command hangs the main thread with it. Edits
+//! carry a `stamp` (a hash of the raw table as read) and `save_jack_at`,
+//! `delete_jack_at` and `set_note_at` refuse one that no longer matches; the sheet
+//! takes the new stamp on refusal so the second save is a decision, not a loop. Under
+//! all of that, `read_doc` hands back the bytes it parsed and `write_doc` refuses to
+//! rename over a file that has moved since: every writer here replaces the whole
+//! document, so a colleague's save landing in between would otherwise go with it,
+//! devices the write never touched included. `list_stamp` hashes the file rather than
+//! reading its mtime and size - a sync client keeps the source machine's mtime, and a
+//! size doesn't move when `2222` becomes `2223`.
 
 pub mod app;
 pub mod files;

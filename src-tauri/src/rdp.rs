@@ -1,6 +1,17 @@
 //! Remote desktop by handoff: a `.rdp` file for the system client, and the ssh tunnels
 //! that carry RDP and VNC through a jump chain. The `rdp://` scheme drops every
 //! parameter on macOS, which is why it is a file.
+//!
+//! Ssh's stderr is read on its own thread (a pipe nobody drains blocks ssh) and its
+//! last line is the error a failed tunnel shows; `list()` drops a tunnel whose ssh has
+//! since exited and hands the reason back, so the window can say so. Its `Tunnels` and
+//! `free_port` are what `vnc = <port>` uses too - VNC is a handoff and nothing else,
+//! `vnc://` to whatever viewer the machine has, so there is no `vnc_session.rs` and
+//! adding one needs the same argument `rdp_session.rs` had to win.
+//!
+//! `.rdp` is line-based, so a newline in a host or username injects directives -
+//! `alternate shell:s:` runs a program. Control characters are rejected before anything
+//! is written.
 
 use std::collections::HashMap;
 use std::io::{BufRead, Write};

@@ -2,6 +2,17 @@
 //! files as CLIPRDR's file lists and streams. Local to remote is lazy, as CLIPRDR is: a
 //! copy only announces itself and the data crosses on paste. Remote files to local are
 //! not, because nothing tells us when this machine pastes.
+//!
+//! Remote files are fetched the moment they are copied, into a temp folder that then
+//! goes on the local clipboard, because the local clipboard can't be asked later -
+//! capped at `MAX_DOWNLOAD`. A local copy of files is walked on the session thread,
+//! capped at `MAX_ENTRIES`; the descriptors it sends and the `offered` paths behind
+//! them must stay the same length and order, because the remote asks for contents by
+//! index, which is why `describe` drops what the library would. The local side is
+//! polled (no desktop tells an unfocused process the clipboard changed), but `stamp()`
+//! asks the OS change counter first - NSPasteboard's `changeCount`,
+//! `GetClipboardSequenceNumber` - so a tick is one integer, and the text is only read
+//! once it moved. X11 has no counter, so there the text is the comparison.
 
 use ironrdp_cliprdr::backend::{ClipboardMessage, CliprdrBackend};
 use ironrdp_cliprdr::pdu::{

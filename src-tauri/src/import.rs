@@ -1,6 +1,16 @@
 //! Lists in and out: an ssh config or a Royal TS document parsed into devices (the
 //! window writes what gets ticked), and the device list written back as ssh `Host`
 //! blocks. Every key emitted is one `ssh_args` already puts on the command line.
+//!
+//! A list you already have, in; jacks out. Two readers, one shape: an ssh config, and a
+//! Royal TS document. A `.rtsz` is XML despite the z, one flat list of objects joined
+//! by `ParentID`, so a folder path is a walk up the parents. Parses only; the window
+//! shows what it found and writes what you tick through `save_jack` like any other
+//! edit. Passwords are never read across, deleted objects are left in the trash, and a
+//! connection type patchbay can't open is named in the warnings rather than guessed at.
+//! The ssh export (`~/.ssh/patchbay.conf`) is one vault or the other (`one_vault`),
+//! never both: ssh has one namespace and both can have a `web`; one of yours that jumps
+//! through a team device is left out with a comment, since that hop isn't in the file.
 
 use crate::patchbay::{self, Jack, Jacks};
 use serde::Serialize;

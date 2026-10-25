@@ -1,6 +1,38 @@
 // The device browser: the tree of vaults, folders and devices, the detail of whatever
 // is selected in it, and the command palette.
 // Classic script sharing one global scope; see the load order in ui/index.html.
+//
+// The tree is the list. There is no middle column of devices: a folder unfolds to its folders and
+// then its devices, and `shown` is the device rows as drawn, with `shownIn` the folder each sits
+// in. A device filed twice is two rows, so the selection is a row: `sel` indexes `shown`, and
+// `selKey` (name plus folder) is what finds it again after a folder unfolds above it. Whatever is
+// selected is described by one renderer in two places: wide in `#wide` while browsing, and in the
+// narrow `#detail` pane beside a session, which is hidden until the Details chip asks for it.
+// `activeId === null` is that browse view; there is no tab for it, and a click in the tree is how
+// you get back to it (`browse()`). The map is the selected folder drawn by route, in place of the
+// detail.
+//
+// Marks are names, the selection is an index. ⌘-click and shift-click pick rows out into `marked`;
+// the tree is rebuilt under them by every render, so an index would follow whatever moved into that
+// row. The first ⌘-click also marks the selected row, the way shift-click always has: otherwise
+// three rows are lit, the dock says two, and the blue one is the one Delete spares. `markedHere()`
+// is what a bulk action applies to - a mark on a device you have since filtered out of view is not
+// part of what was asked for. Broadcast is one of those actions: `openBroadcast()` in `sessions.js`
+// opens every ssh mark as its own pane inside a shared tab, and their `s.bcast.on` fans one
+// `onData` out to every live sibling. Non-ssh marks are named in a pill and skipped - a webview or
+// an RDP canvas mixed into the grid layout is a much bigger change than the feature is.
+//
+// A pane being typed into is never redrawn. `renderDetail` returns early when the focus is inside
+// it: the probe sweep re-renders every thirty seconds, and `innerHTML` takes a half-written folder
+// note with it.
+//
+// A drag is pointer events, not HTML5 drag and drop. The window's file-drop handler (uploads into a
+// files tab) takes the native drag over on some platforms, and a web tab is an OS view above the
+// page that would swallow a `dragend`. `pointerdown` on a row, a six-pixel threshold,
+// `elementFromPoint` for the folder under the pointer, and the click that ends a drag is stopped in
+// the capture phase so it doesn't reselect. A drop writes only `folders`, through `set_folders`, so
+// a hand-written key on the device survives; `moveJacks` is the one place the semantics live - a
+// *move* out of the folder you are looking at, an *add* from All devices.
 
 // ── sidebar tree ───────────────────────────────────────────────────────────
 // "prod/eu/web" nests three deep; a jack counts toward every ancestor and every

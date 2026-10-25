@@ -1,3 +1,19 @@
+/* Three rules decide how lines break, and everything obeys one of them. Headings and `.lede` get
+   `text-wrap: balance` - they are one or two lines read in a single glance, so even lines beat a
+   full first one. Every other `p` gets `pretty`, which only rescues the last line, the one that
+   strands a word. And a term that reads as one thing never splits: `.tt` for the inline mono ones,
+   `.keep` for a pair of ordinary words like "ssh agent". Reach for `.keep` before rewriting a
+   sentence to dodge a bad break.
+
+   Every animation is added by `script.js`, never assumed by the markup. The reveal sets
+   `data-rise`, the patch panel draws its own leads and sockets. A blocked script costs the page its
+   motion and nothing else - it never leaves a blank band or an invisible section.
+
+   Anything positioned against another element's box is measured, not guessed: the patch panel's
+   sockets are drawn in the same SVG as the leads, because as CSS they were positioned against the
+   line and the leads against the panel, and the two disagreed by a few pixels no matter how they
+   were written. */
+
 /* ═══ tokens ═══════════════════════════════════════════════════════════════
    The app's palette, taken deeper: a blue-tinted ink rather than neutral grey. */
 :root {

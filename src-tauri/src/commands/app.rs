@@ -1,4 +1,43 @@
 //! The app itself: version, self-update, quitting, and `patchbay://` links.
+//!
+//! The release notes are the changelog section, and nothing retypes them.
+//! `CHANGELOG.md` → release body → `latest.json` notes → the pill's "What's new", and
+//! separately the site's `#changelog`, which fetches the releases API on scroll. The
+//! notes are *not* covered by the update signature (that covers the archive), so the
+//! window escapes them like any other outside text and Rust cuts them at 4000
+//! characters - `String::truncate` is bytes and panics mid-codepoint.
+//!
+//! The update check is ours, not the plugin's JS API - `update_check` /
+//! `update_install` / `update_restart` in `commands/app.rs`, so it needs no capability
+//! and the window only ever sees a version string. `boot.js` runs it once after the
+//! first paint and the offer is `#uptoast`, a pill at the foot of the window rather
+//! than a sheet: an update is news, not a question. It is the one floating thing that
+//! is *not* in `OVERLAYS()` - putting it there would make `modalOpen()` true and give a
+//! one-button pill the keyboard. `update_install` emits `update:progress` a whole
+//! percent at a time and the pill's own button is the bar, filled through `--p`; no
+//! percent yet means the pulse, which is also the answer for a server that sends no
+//! content-length. The install never restarts you - the new bundle is swapped in, the
+//! same button becomes `Restart`, and `update_restart` is the second click. A restart
+//! takes every live session with it, so it is never something a finished download does
+//! to you. Two ways to ask for one yourself - "Check for Updates…" in the macOS menu
+//! (which only emits `menu:check-update`; what a check *looks* like stays in the
+//! window) and the button in Settings ▸ Updates, where the answer also has to appear
+//! beside the button because the pill is behind that sheet. A check someone asked for
+//! answers either way; the launch one, gated on `check_updates` in `[settings]`, stays
+//! quiet unless there is something to install.
+//!
+//! The disk image ejects itself, from `eject_install_image()` at startup: nothing in
+//! macOS ejects it when the drag finishes, and the app that came out of it is the only
+//! thing that knows it is there. Never when running *from* the image, which is someone
+//! trying it before installing.
+//!
+//! `patchbay://` links come through `tauri-plugin-deep-link`, from Rust only. The
+//! scheme is declared once in `tauri.conf.json` and the bundler registers it per
+//! platform; on Windows and Linux a link is the argv of a *second* process, which
+//! `tauri-plugin-single-instance` (with its `deep-link` feature) hands to the running
+//! one. No capability is needed because the window never calls the plugin -
+//! `deliver_link` resolves the name and emits `open:link`. macOS has no runtime
+//! registration, so testing a link there means a built bundle, never `tauri dev`.
 
 use super::load_jacks;
 use crate::rdp;

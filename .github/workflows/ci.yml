@@ -11,6 +11,22 @@
 # Ad-hoc signed on macOS and unsigned on Windows until certificates exist. The
 # APPLE_* variables go on tauri-action's env only then: a missing secret is still an
 # empty variable, and an empty APPLE_CERTIFICATE fails the bundle trying to import it.
+#
+# Releasing is a commit. `npm run bump 0.1.0`, commit `release 0.1.0`, push `main`.
+# `.github/workflows/ci.yml` is the one workflow: `test` runs on every push, and when
+# the pushed head is a `release x.y.z` commit it also builds macOS arm64 and x64,
+# Windows and Linux, and puts them in a draft release with a `latest.json`, an `install`
+# job installs the draft's own files on each OS (the `.dmg` has to pass `codesign
+# --strict`, or a download is "damaged" with no Open Anyway - that is what
+# `signingIdentity: "-"` is for), and a last `publish` job lets it out - which is what
+# creates the tag - once every one and `test` passed and `latest.json` has a signed
+# entry per platform. Publishing is the moment every installed copy starts offering the
+# update, so a failed leg leaves the draft unpublished rather than offering a release
+# one platform is missing from - a draft is not `releases/latest`, so nothing is offered
+# until it publishes. The `version` job compares the commit message against
+# `tauri.conf.json`, refuses a version already tagged, and makes the draft the build
+# legs upload into. Builds run on `main` and never on a tag because a cache saved under
+# a tag is read by that tag alone, which made every release a cold build.
 name: ci
 
 on:

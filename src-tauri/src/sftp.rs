@@ -1,5 +1,17 @@
 //! Files, by handing them to `/usr/bin/sftp`: stateless batch runs that share one ssh
 //! connection through multiplexing, so only the first one authenticates.
+//!
+//! The session is shared through `ControlMaster` because a fresh handshake per
+//! directory listing makes browsing feel broken. `sftp` takes `-P` for the port where
+//! ssh takes `-p`, and its batch language is line-based - so a path with a newline or a
+//! quote in it is refused, the same way a `.rdp` refuses one. The writes (`edit`) are
+//! one batch line each behind a verb matched exactly; there is no recursive remove, so
+//! a folder with anything in it is refused rather than emptied. "Edit here" is a
+//! download, the desktop opener and one `notify` watcher over the copies' folders
+//! (`Edits` in `commands/files.rs`) - the far end knows nothing about a file being
+//! open, so a save is the only signal there is. The *folder* is watched, not the file:
+//! editors save by rename, and a watch on the file follows the old inode into the bin.
+//! The mtime is still compared, because one save is several events.
 
 use crate::patchbay;
 use serde::Serialize;

@@ -1,5 +1,8 @@
 //! Hand the ssh command to the system terminal: Terminal.app or iTerm, Windows
 //! Terminal or a console window, or the first Linux emulator that launches.
+//!
+//! On Linux `$TERMINAL` is tried first, with the flags of the emulator it names if that
+//! is one we know and `-e` otherwise.
 
 use std::process::Command;
 

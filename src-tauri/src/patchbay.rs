@@ -1,6 +1,34 @@
 //! The config as data: load, `[defaults]` inheritance, the jump-chain walk, name
 //! resolve, and every ssh argv the app ever builds. Pure logic with its tests below;
 //! `commands/` is the surface over it.
+//!
+//! Jump chains resolve by walking `jump` until it hits a non-jack name (passed through
+//! raw) or runs out. The cycle guard is load-bearing; don't drop it.
+//!
+//! `-J` order is reversed relative to the walk. Walking `jump` goes *outward* from the
+//! target, but `ssh -J a,b` dials `a` first. `db → web → bastion` must emit `-J
+//! bastion,web`. There's a test pinning it - that bug is invisible until a chain is
+//! three deep.
+//!
+//! A `forward` is `-L` unless it says otherwise - `-R <spec>` and `-D <spec>` are
+//! written as ssh's own flag, and `forward_arg` matches those three exactly and refuses
+//! anything else starting with `-`. That check is the whole safety story: the value
+//! becomes argv, and `-L` used to be safe for free by never being anything but an
+//! operand. Everything that *strips* forwards goes through `FORWARD_FLAGS`, or an sftp
+//! run keeps the `-D` a session already bound. A `-R` has no local port, so
+//! `forward_local` gives `None` and `Tunnels::open` judges that tunnel by ssh still
+//! being alive.
+//!
+//! "Find the break" asks one link at a time (`break_steps` in `patchbay.rs`,
+//! `find_break` in `commands/jacks.rs`): a TCP connect to the first hop from here, then
+//! each hop is asked over the chain before it whether the next one answers, with
+//! `BatchMode=yes` so a hop that wants a password says so instead of waiting. ssh's own
+//! exit 255 means the hop we asked *from* would not let us in, so that is where the
+//! break is drawn. It only reads, and only runs when asked.
+//!
+//! The status dot probes the chain's *entry point* (the outermost bastion), not the
+//! target. Anything past the first hop is only reachable through ssh, so there's
+//! nothing to TCP-probe.
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};

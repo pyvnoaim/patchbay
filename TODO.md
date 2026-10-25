@@ -7,7 +7,15 @@ then) or when it's decided against (say why in the commit).
 
 Written and parked in `git stash` as `paid: team licence ...` (`git stash list`, then
 `git stash pop`). Free for one person; a team on a shared list needs a company licence,
-€249 a year, perpetual fallback, checked offline. Blocked on the store, in this order:
+€249 a year, perpetual fallback, checked offline.
+
+The licence is a minisign-signed file beside the shared list (`licence.rs`, `npm run
+licence`). Nothing is gated on it: an unlicensed list works the same and the sidebar says
+so. Its `updates_until` is held against the build date, so a team that stops paying keeps
+a licensed copy. The stash is on 0.1.38; a `git stash pop` on a newer main may conflict in
+`commands/jacks.rs`, `ui/edit.js` and `CHANGELOG.md`.
+
+Blocked on the store, in this order:
 
 1. Open a Lemon Squeezy store with the company licence as a yearly product. Licence
    keys off: the licence is ours, signed by `npm run licence "Acme GmbH" 2027-10-20`

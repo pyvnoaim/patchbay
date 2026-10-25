@@ -6,6 +6,14 @@
 //! Filed under the device's own `host:port` (the same pin its certificate has), not its
 //! name: a shared list edited to point `win01` somewhere else must not carry the
 //! password along to wherever that is.
+//!
+//! A ticked "Remember" on the RDP sign-in, in the OS keychain via `keyring`. Filed
+//! under the device's `host:port` (its cert pin), never its name, so a shared list
+//! repointed at another box doesn't carry the password there. The password never
+//! crosses into the window: `open_rdp_session` takes `password: null` to mean the saved
+//! one and reads it in Rust, and `rdp_saved` hands back only the username. Reads are
+//! held for the run because the app is ad-hoc signed, so after every update macOS asks
+//! again until "Always Allow".
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
