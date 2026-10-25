@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.58 - 2026-10-25
 
 - A shell prints large output much faster, and accented letters, `€` or box drawing no longer turn into `�` now and then.
 - A device's web page open in a tab can no longer read what a shell or a remote desktop in another tab is showing.
