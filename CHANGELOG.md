@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.66 - 2026-10-26
 
 - Connect with, Advanced, menus, colour pickers and import rows show the hand cursor like every other clickable thing.
 
