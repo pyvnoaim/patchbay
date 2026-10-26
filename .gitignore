@@ -10,6 +10,8 @@ dev/web_trusted
 dev/patchbay.toml.bak
 dev/patchbay.toml.base
 dev/spaces/
+# A shared list to try the Team vault against.
+dev/team.toml
 
 # A real one, pasted into the dev app. dev/licence.example is the ended fixture.
 dev/patchbay_licence
