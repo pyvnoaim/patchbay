@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.63 - 2026-10-26
 
 - A new look throughout: rounder cards, a calmer sidebar, and one size for every button.
 - A device's page puts Connect, Files and Open in Terminal under its name; click a host, user or port to copy it.
