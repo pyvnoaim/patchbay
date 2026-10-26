@@ -8,6 +8,11 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- A long host name no longer runs the Copy submenu off the edge of a narrow window.
+- The device form's mark lines up with the name and the line under it.
+
 ## 0.1.64 - 2026-10-26
 
 - Editing a device works properly again: the form's name, buttons and fields use its whole width.

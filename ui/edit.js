@@ -66,11 +66,11 @@ function ctxRows(items, at) {
       if (it === "-") return `<div class="ctx-sep" role="separator"></div>`;
       const id = at + i;
       if (it.sub) {
-        return `<div class="ctx-item has-sub" role="menuitem" aria-haspopup="menu" tabindex="-1">${icon(it.icon)}${esc(it.label)}<span class="ctx-more">${icon("chevron-right")}</span><div class="ctx-sub" role="menu">${ctxRows(it.sub, `${id}.`)}</div></div>`;
+        return `<div class="ctx-item has-sub" role="menuitem" aria-haspopup="menu" tabindex="-1">${icon(it.icon)}<span class="ctx-label">${esc(it.label)}</span><span class="ctx-more">${icon("chevron-right")}</span><div class="ctx-sub" role="menu">${ctxRows(it.sub, `${id}.`)}</div></div>`;
       }
       actions.set(id, it.run);
       const key = it.key ? `<kbd>${esc(it.key)}</kbd>` : "";
-      return `<div class="ctx-item ${it.danger ? "danger" : ""}" data-a="${id}" role="menuitem" tabindex="-1">${icon(it.icon)}${esc(it.label)}${key}</div>`;
+      return `<div class="ctx-item ${it.danger ? "danger" : ""}" data-a="${id}" role="menuitem" tabindex="-1">${icon(it.icon)}<span class="ctx-label">${esc(it.label)}</span>${key}</div>`;
     })
     .join("");
 }

@@ -2533,7 +2533,17 @@ button.flat:hover {
   filter: brightness(0.94);
   transition: none;
 }
+/* A copy row is the host itself, and a long one ran the submenu out of a narrow window. */
+.ctx-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.ctx-item > .i {
+  flex: none;
+}
 .ctx-item kbd {
+  flex: none;
   margin-left: auto;
   padding-left: 16px;
   background: transparent;
@@ -2550,17 +2560,22 @@ button.flat:hover {
   position: relative;
 }
 .ctx-more {
+  flex: none;
   display: flex;
   margin-left: auto;
   padding-left: 16px;
   opacity: 0.6;
 }
 /* #ctx's own backdrop-filter makes it the backdrop root, so a nested blur sees nothing and
-   the page shows straight through the wash: the panel goes over the opaque background. */
+   the page shows straight through the wash: the panel goes over the opaque background.
+   max-content: at left: 100% the row leaves it no room, so shrink-to-fit would size it to
+   the labels' min-content, which ellipsis makes zero. */
 .ctx-sub {
   display: none;
   position: absolute;
   left: 100%;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 8px));
   color: var(--fg);
   background: linear-gradient(var(--panel), var(--panel)), var(--bg);
 }
@@ -4115,10 +4130,11 @@ button:disabled {
   width: min(600px, 92vw);
   border-radius: var(--r-xl);
 }
-/* The device as it will look: its mark, its name typed in place as the title. */
+/* The device as it will look: its mark, its name typed in place as the title.
+   The mark spans the name field's top to the subtitle's foot: 27 + 1 + 16 is its 44. */
 .jf-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 14px;
   padding: 18px 20px 12px;
 }
@@ -4157,6 +4173,7 @@ button:disabled {
   color: var(--fg);
   font: inherit;
   font-size: 19px;
+  line-height: 23px;
   font-weight: 700;
   letter-spacing: -0.01em;
   -webkit-user-select: text;
@@ -4174,6 +4191,7 @@ button:disabled {
 }
 .jf-sub {
   font-size: 12px;
+  line-height: 16px;
   color: var(--fg-faint);
 }
 #jf-x {
