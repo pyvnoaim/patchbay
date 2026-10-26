@@ -26,11 +26,14 @@ src-tauri/src/
   import.rs        readers for ~/.ssh/config and Royal TS documents
   pty.rs           ssh on a pty, streamed to xterm.js
   sftp.rs          the file browser, by running /usr/bin/sftp
-  rdp.rs           remote desktop by handoff (.rdp file) and the ssh tunnels
+  rdp.rs           RDP and VNC by handoff to the system's own client, and the ssh tunnels
   rdp_session.rs   remote desktop in a tab (IronRDP to a canvas)
+  vnc_session.rs   VNC in a tab (vnc-rs to the same canvas)
   h264.rs          H.264 for it, by the OS's decoder (VideoToolbox, Media Foundation)
   clipboard.rs     the CLIPRDR backend for rdp_session.rs
-  keychain.rs      a remembered RDP password, in the OS keychain
+  sound.rs         the desktop's sound, played by the window
+  keychain.rs      a remembered RDP or VNC password, in the OS keychain
+  licence.rs       the company licence a shared list needs, checked offline
   hostkeys.rs      host keys the team has seen, beside the shared list
   presence.rs      who has a session on which team device, with no server
   webext.rs        Bitwarden's extension over web tabs (macOS 15.4+)
@@ -59,7 +62,8 @@ dev/               the sample config and local scratch (your own copy is ignored
   `*_at(path, …)` twin the tests drive against a scratch file.
 - **Frontend:** no `import`, no inline `<script>` (the CSP is `script-src 'self'`).
   Everything interpolated into `innerHTML` goes through `esc()`. Colours only from the
-  `:root` custom properties, each with a light-mode value. Icons via `icon("name")`,
+  `:root` custom properties, each with a light-mode value; corners and control heights
+  only from the `--r-*` and `--h-control` scale beside them. Icons via `icon("name")`,
   added to `USED` in `scripts/icons.mjs` and regenerated with `npm run icons`.
 - **Nothing in a config file is executed as written.** The most it can produce is an
   `ssh` argv, and `patchbay.rs` refuses anything that could become an option.

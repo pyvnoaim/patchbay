@@ -16,7 +16,7 @@
   <a href="https://github.com/pyvnoaim/patchbay/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/pyvnoaim/patchbay?label=release&color=3b82f6"></a>
   <a href="https://github.com/pyvnoaim/patchbay/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/pyvnoaim/patchbay/ci.yml?branch=main&label=ci"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-555">
-  <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-PolyForm%20Perimeter-555"></a>
+  <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-free%20for%20one%20person-555"></a>
 </p>
 
 <p align="center">
@@ -104,8 +104,9 @@ the first of gnome-terminal, konsole, alacritty, kitty, foot or xterm it finds.
 
 </details>
 
-Already have a list? Settings ▸ Import reads `~/.ssh/config` or a Royal TS `.rtsz`
-document and shows what it found with tick boxes. Nothing is written until you tick.
+Already have a list? An empty window offers the hosts it finds in `~/.ssh/config`, and
+Settings ▸ Import reads that or a Royal TS `.rtsz` document. Either way you see what it
+found with tick boxes, and nothing is written until you tick.
 
 ## Config
 
@@ -153,7 +154,7 @@ still reads it. Nothing to install and no server in the middle, and since the fi
 holds no credentials, sharing it shares hostnames and nothing more.
 
 Your own devices stay in your own file, shown beside the team's as **Mine**; moving one
-across is a right-click. `[settings]` and colours stay there too. `[defaults]` goes with the list, so a
+across is **Share with Team** on its page, or a right-click, and can be undone. `[settings]` and colours stay there too. `[defaults]` goes with the list, so a
 `user` or `key` there is for a *shared* account (`root@nas`, `~/.ssh/acme`; `~`
 expands per machine). A personal account on a shared server goes in your
 `~/.ssh/config`, which supplies what the list leaves out.
@@ -189,8 +190,8 @@ never touch your own `~/.config` while working on it.
 
 The app opens sessions in its own window - the system `ssh` on a real pty, with the argv
 `patchbay.rs` builds, streamed to xterm.js. Your agent, `~/.ssh/config` and
-host-key prompts all still work, because it *is* your ssh. "Open in Terminal" is on
-the context menu when you'd rather have your own terminal.
+host-key prompts all still work, because it *is* your ssh. **Open in Terminal**, on a
+device's page and its right-click menu, hands it to your own terminal instead.
 
 ## The rest of your machine
 
@@ -208,8 +209,8 @@ address, so a link can't point you at a machine you don't have.
 
 A folder with slashes (`prod/eu/web`) nests in the sidebar, and `folders` is a list,
 so a device can sit in several branches at once. A device says how it is reached - `ssh`
-(on by default), `rdp = <port>`, `vnc = <port>` or `url`, one of them - and that is what
-Enter and a double-click open.
+(on by default), `rdp = <port>`, `vnc = <port>`, `telnet = <port>`, `serial = "/dev/…"`
+or `url`, one of them - and that is what Enter and a double-click open.
 
 ```toml
 [jack.acme-nas]
@@ -235,8 +236,8 @@ one goes to the browser.
 
 ## Files
 
-`ssh` ships `sftp`, so patchbay uses it. Right-click a device and **Browse files**, or
-the folder button in the detail pane: a tab listing the remote side, double-click to go
+`ssh` ships `sftp`, so patchbay uses it. **Files** on a device's page, or right-click it
+and **Browse files**: a tab listing the remote side, double-click to go
 into a folder or to download a file, and drop files onto it to upload. Right-click a
 file to rename or delete it, or **Edit here** to open it in whatever this machine opens
 it with - saving puts it straight back.
@@ -254,6 +255,10 @@ wants a password typed can't be browsed - it needs a key or the agent.
 - **Marks.** ⌘-click (Ctrl-click elsewhere) and shift-click pick out several devices; a dock appears to move,
   delete or **broadcast** to them - every ssh mark as a pane in one tab, one keystroke
   reaching all of them.
+- **Background tabs** show a dot when new output arrives, and a session that drops or
+  rings its bell while you're elsewhere says so, with a button to go there.
+- **A dropped session** keeps its scrollback under a card with **Reconnect** and
+  **Wait and retry**, for a machine that is rebooting.
 - **Find** in a session: ⌘F searches that terminal's scrollback. Every window chord is
   Ctrl+Shift off macOS, because plain Ctrl+anything belongs to the shell you are in.
 - **Session logs**, off by default, append each session's output to `logs/` beside the config.

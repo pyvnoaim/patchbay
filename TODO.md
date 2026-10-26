@@ -19,9 +19,16 @@ the next push.
       right size on a Retina screen.
 - [ ] **RDP sound**: a video or a system sound plays, in sync. Does it start at once or
       only after the first click in the desktop?
-- [ ] **Settings**: a switch takes effect without Done; theme, font size and the shared
-      list save on leaving the field; an invalid snippet keeps the sheet open, closing
-      twice discards it.
+- [ ] **Settings**: a switch takes effect at once; theme, font size and the shared list
+      save on leaving the field; closing with × saves a half-typed field; an invalid
+      snippet keeps the sheet open, closing twice discards it.
+- [ ] **The 0.1.63 shell**, in light and dark: the device page, sidebar, quick connect,
+      the device form (More, Advanced, the ssh preview) and Settings at a narrow and a
+      wide window.
+- [ ] **Background tabs**: output in another tab lights its dot; a drop and a bell there
+      raise one notice and one Dock bounce, not one per line.
+- [ ] **Haptics** on a Force Touch trackpad: a device dragged onto a folder ticks; the
+      sidebar edge settles on its default width with a tick.
 - [ ] **Telnet**: a device with `telnet = 23`, without `telnet` installed (the curl
       fallback): login prompt, typing, echo, ^C. Once behind a jump host.
 - [ ] **Serial**: a console cable at `/dev/cu.usbserial-…`, 9600 and 115200.
