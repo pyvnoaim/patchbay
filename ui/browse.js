@@ -158,15 +158,10 @@ const indent = (depth) => `style="--depth:${depth}"`;
 const idAttrs = (id) =>
   `data-path="${esc(id.path ?? "")}"${id.vault ? ` data-vault="${esc(id.vault)}"` : ""}`;
 
-// The drive the shared list is on, for a row too narrow for its path; the header and the
-// tooltip have the path. A shared drive or a mounted volume by its own name, a sync
-// client's folder by the client ("GoogleDrive-me@acme.com" is "Google Drive"), and
-// anything else by the folder the list is in.
-function driveName(path) {
-  return driveOf(path).name;
-}
-// The drive, and the folders from it down to the list: what Settings shows under a path
-// too long for its field.
+// The drive the shared list is on, and the folders from it down to the list: for a row,
+// a tooltip or a field too narrow for the path. A shared drive or a mounted volume by its
+// own name, a sync client's folder by the client ("GoogleDrive-me@acme.com" is "Google
+// Drive"), and anything else by the folder the list is in.
 function driveOf(path) {
   const parts = path.split(/[\\/]/).filter(Boolean);
   // The folder after `word`, as long as it is a folder and not the list file itself.
@@ -189,11 +184,14 @@ function vaultRow(vault, n) {
   // A heading names the list; where it lives is the tooltip's. Only a share that is away
   // says anything more, because that is something to act on.
   const away = vault === "team" && vaults.away;
-  const where = vault === "mine" ? "Only on this machine" : (vaults.team ?? "");
+  // The drive and the folders down to the list, not the mount path: on macOS that is
+  // ~/Library/CloudStorage/GoogleDrive-<email>/…, three lines of noise before the answer.
+  const team = driveOf(vaults.team ?? "");
+  const where = vault === "mine" ? "Only on this machine" : [team.name, ...team.rest].join(" › ");
   const sub = away
     ? `<span class="dot down"></span>Not there`
     : vault === "team"
-      ? esc(driveName(vaults.team ?? ""))
+      ? esc(team.name)
       : "";
   return `<div class="group vault ${vault}${away ? " away" : ""}"
        data-vault="${vault}" data-path="" data-group="1" data-has-kids="false" data-tip="${esc(where)}"

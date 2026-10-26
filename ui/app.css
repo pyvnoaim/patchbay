@@ -687,11 +687,12 @@ body:not([data-os="macos"]) .tabs {
   opacity: 1;
 }
 /* A vault is a heading over its tree: its name, who can see it, and how many. Small and
-   quiet, so the devices under it are what the eye lands on. Still a row to click. */
+   quiet, so the devices under it are what the eye lands on, but not so small it reads as
+   a footnote under 13px rows. Still a row to click. */
 .group.vault {
   gap: 6px;
-  padding: 4px 8px 2px;
-  font-size: 10.5px;
+  padding: 6px 8px 4px;
+  font-size: 12px;
   color: var(--fg-faint);
 }
 .group.vault:not(:first-child) {
@@ -725,7 +726,7 @@ body:not([data-os="macos"]) .tabs {
   gap: 5px;
   min-width: 0;
   overflow: hidden;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 400;
   color: var(--fg-faint);
   text-overflow: ellipsis;
@@ -3934,6 +3935,8 @@ button:disabled {
      past the edge the placement keeps the box inside. */
   width: max-content;
   max-width: 260px;
+  /* A path is one long word; without this it runs out of the box anyway. */
+  overflow-wrap: anywhere;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   pointer-events: none;
   opacity: 0;
