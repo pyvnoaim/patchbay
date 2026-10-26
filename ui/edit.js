@@ -1007,7 +1007,8 @@ async function removeGroup(id) {
       group?.vault === id.vault &&
       (group.path === id.path || group.path?.startsWith(id.path + "/"))
     )
-      group = null;
+      // Up to the vault it was in, not out of it.
+      group = vaults.two ? { path: null, vault: id.vault } : null;
     await load();
   } catch (e) {
     alertish(e);
@@ -1038,7 +1039,9 @@ async function removeFolders(ids) {
     }
   }
   markedFolders.clear();
-  if (group?.vault === vault && group.path && under(group.path)) group = null;
+  if (group?.vault === vault && group.path && under(group.path)) {
+    group = vaults.two ? { path: null, vault } : null;
+  }
   await load();
   if (failed.length) alertish(`could not remove ${failed.join(", ")}`);
 }
@@ -1437,6 +1440,7 @@ async function openSettings(pane) {
   $("team-copies").innerHTML = `${icon("trash-2")}Remove the copies`;
   $("cfg-own").textContent = `Settings and colours stay in ${ownPath}, this machine's own.`;
   renderSwatches();
+  $("swatchrow").hidden = !setForm.elements.os_colors.checked;
   for (const el of setWrap.querySelectorAll("[data-icon]")) {
     if (!el.firstChild) el.innerHTML = icon(el.dataset.icon);
   }
@@ -1712,6 +1716,10 @@ async function sayWebext() {
 }
 
 setForm.elements.webext.addEventListener("change", sayWebext);
+// The chips only mean anything while colouring is on.
+setForm.elements.os_colors.addEventListener("change", (e) => {
+  $("swatchrow").hidden = !e.target.checked;
+});
 
 // The picker answers with null when it is cancelled, which must not clear a path
 // somebody typed.
@@ -1760,6 +1768,10 @@ async function loadLicence() {
   sayLicence(s);
   return s;
 }
+// The button waits for something to take; Enter in the box is a newline, not a save.
+$("lic-text").addEventListener("input", () => {
+  $("lic-save").disabled = !$("lic-text").value.trim();
+});
 $("lic-save").addEventListener("click", async () => {
   const text = $("lic-text").value;
   if (!text.trim()) return $("lic-text").focus();
@@ -1767,13 +1779,14 @@ $("lic-save").addEventListener("click", async () => {
   try {
     const s = await invoke("save_licence", { text });
     $("lic-text").value = "";
+    $("lic-save").disabled = true;
     sayLicence(s, "Added beside the shared list, for everyone on it. Thank you.");
     listStamp = null;
     await load();
   } catch (e) {
     $("lic-said").textContent = String(e);
   } finally {
-    $("lic-save").disabled = false;
+    $("lic-save").disabled = !$("lic-text").value.trim();
   }
 });
 $("lic-remove").addEventListener("click", async () => {

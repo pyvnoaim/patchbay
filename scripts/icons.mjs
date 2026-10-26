@@ -4,7 +4,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const USED = [
-  "layers", // All devices
   "users", // Settings > Team, and the team's vault
   "user", // your own vault
   "panel-right", // the detail pane beside a session

@@ -580,9 +580,7 @@ function renderGroup() {
     `<button type="button" data-reach="${id}" aria-pressed="${reachShow === id}">${label}<small>${n}</small></button>`;
 
   dBody().innerHTML = `
-    <div class="d-name"><span class="d-os">${icon(
-      real ? "folder-open" : (VAULTS[group?.vault]?.[0] ?? "layers"),
-    )}</span>${esc(groupLabel())}${real ? vaultBadge(group.vault) : ""}</div>
+    <div class="d-name">${esc(groupLabel())}${real ? vaultBadge(group.vault) : ""}</div>
     <div class="d-desc">${members.length} device${members.length === 1 ? "" : "s"}${
       real && group.path.includes("/")
         ? ` · in ${esc(group.path.slice(0, group.path.lastIndexOf("/")))}`
@@ -766,9 +764,7 @@ function renderJack(j, live) {
   const stops = [...j.hops, j.user ? `${j.user}@${j.host}` : j.host];
   const mine = tunnels.filter((t) => t.jack === j.name);
   dBody().innerHTML = `
-    <div class="d-name"><span class="d-os"${
-      osColor(j.os) ? ` style="color:${esc(osColor(j.os))}"` : ""
-    }>${osIcon(j.os)}</span>${esc(j.label)}${vaultBadge(j.vault)}</div>
+    <div class="d-name">${esc(j.label)}${vaultBadge(j.vault)}</div>
     ${j.desc ? `<div class="d-desc">${esc(j.desc)}</div>` : `<div class="d-desc"></div>`}
 
     <div class="d-cards">

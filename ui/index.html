@@ -335,13 +335,9 @@
               <div id="snip-rows"></div>
               <button type="button" class="ghost" id="snip-add"></button>
               <p class="page-note">
-                A line of text, typed at the prompt of the shell in front when you pick it from
-                Snippets on the toolbar or in Search. It never presses Enter: you do.
-                <code>{host}</code>, <code>{user}</code>, <code>{port}</code> and
-                <code>{name}</code> are filled in from the device, so
-                <code>scp file {user}@{host}:</code> works on every one. <code>{?}</code> is a blank
-                you are asked for when you pick it, <code>{?unit}</code> one that says what goes
-                there: <code>journalctl -u {?unit} -f</code>.
+                Typed at the prompt, never run: Enter stays yours. <code>{host}</code>,
+                <code>{user}</code>, <code>{port}</code> and <code>{name}</code> come from the
+                device; <code>{?unit}</code> asks when you pick it.
               </p>
             </section>
 
@@ -390,12 +386,14 @@
                 <label class="opt"
                   ><input type="checkbox" name="os_colors" />
                   <span
-                    ><b>Colour device icons by OS</b> Each brand's own colour, adjusted to stay
-                    readable here. Override any below.</span
+                    ><b>Colour device icons by OS</b> Each brand's own colour, kept readable. Click
+                    one to change it.</span
                   ></label
                 >
+                <div class="setrow swatchrow" id="swatchrow">
+                  <div class="swatches" id="swatches"></div>
+                </div>
               </div>
-              <div class="swatches" id="swatches"></div>
             </section>
 
             <section class="pane" data-pane="import" hidden>
@@ -428,21 +426,22 @@
                   ><input type="checkbox" name="webext" />
                   <span
                     ><b>Fill logins with Bitwarden</b> Uses your installed Bitwarden. patchbay never
-                    sees your vault.</span
-                  ></label
-                >
+                    sees your vault.<span class="opt-said" id="webext-said"></span></span
+                ></label>
+                <div class="setrow">
+                  <span
+                    ><b>Your own server</b> A self-hosted Bitwarden or Vaultwarden. Empty is
+                    bitwarden.com.</span
+                  >
+                  <label class="f url"
+                    ><input
+                      name="bitwarden_server"
+                      spellcheck="false"
+                      aria-label="Your own server"
+                      placeholder="https://vault.example.com"
+                  /></label>
+                </div>
               </div>
-              <p class="space-note" id="webext-said"></p>
-              <label class="f"
-                ><span>Your own server</span
-                ><input
-                  name="bitwarden_server"
-                  spellcheck="false"
-                  placeholder="https://vault.example.com"
-              /></label>
-              <p class="page-note">
-                Only for a self-hosted Bitwarden or Vaultwarden. Leave empty for bitwarden.com.
-              </p>
             </section>
 
             <section class="pane" data-pane="updates" hidden>
@@ -477,30 +476,28 @@
                   <span><b id="lic-state">Free for you</b><span id="lic-said"></span></span>
                   <button type="button" class="ghost" id="lic-remove" hidden></button>
                 </div>
-              </div>
-              <!-- A textarea, so Enter is a newline in the paste and never closes Settings. -->
-              <div id="lic-add" hidden>
-                <div class="setlabel">Add the team's licence</div>
-                <label class="f">
-                  <textarea
-                    id="lic-text"
-                    aria-label="Company licence"
-                    rows="6"
-                    spellcheck="false"
-                    autocomplete="off"
-                    placeholder="Paste the whole licence from your receipt"
-                  ></textarea>
-                </label>
-                <div class="btns"><button type="button" class="ghost" id="lic-save"></button></div>
+                <!-- A textarea, so Enter is a newline in the paste and never closes Settings. -->
+                <div class="licrow" id="lic-add" hidden>
+                  <label class="f">
+                    <textarea
+                      id="lic-text"
+                      rows="4"
+                      spellcheck="false"
+                      autocomplete="off"
+                      aria-label="Company licence"
+                      placeholder="Paste the licence from your receipt"
+                    ></textarea>
+                  </label>
+                  <div class="licfoot">
+                    <span>The whole block, the <code>--</code> line and all.</span>
+                    <button type="button" class="primary" id="lic-save" disabled></button>
+                  </div>
+                </div>
               </div>
               <p class="page-note">
-                patchbay is free for one person. A team on a shared list needs a company licence,
-                €249 a year for any team size. It sits beside the shared list, so one covers
-                everyone on it, and it is checked here, never sent anywhere. When it ends, the
-                team's list keeps opening for a week; your own devices always open.<span
-                  id="lic-free"
-                >
-                  Until licences go on sale, a shared list needs none.</span
+                Free for one person. A team's shared list needs a company licence, €249 a year for
+                any size, checked here and never sent anywhere.<span id="lic-free">
+                  None is needed until they go on sale.</span
                 >
               </p>
             </section>

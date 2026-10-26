@@ -118,6 +118,9 @@ const snippetOk = (t) =>
 let probes = new Map(); // name -> { target, ms }
 // The selected folder: { path, vault }, or null for every device.
 let group = null;
+// Where the list starts, and where Escape goes back to: your own devices with a shared
+// list set, every device with one list.
+const homeGroup = () => (vaults.two ? { path: null, vault: "mine" } : null);
 let expanded = new Set(); // open rows, by gkey
 let sel = 0;
 // Marks are names, not indexes: the list is refiltered under them by every render.

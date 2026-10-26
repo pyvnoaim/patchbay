@@ -8,6 +8,11 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- With a shared list set, the list opens on your own devices, and Escape goes back there.
+- Settings ▸ Appearance, Bitwarden and Licence are tidier, with less to read.
+
 ## 0.1.61 - 2026-10-26
 
 - Settings ▸ Licence takes a team's company licence. Nothing needs one yet.

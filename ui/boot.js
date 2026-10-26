@@ -406,7 +406,7 @@ document.addEventListener("keydown", (e) => {
       unmarkFolders();
       paintRows();
     } else {
-      group = null;
+      group = homeGroup();
       sel = 0;
       selKey = null;
       detailMode = "group";
@@ -487,8 +487,11 @@ async function load() {
     // what has been closed since. Nothing remembered means everything folded.
     if (!seeded) {
       expanded = new Set(recallList("expanded"));
+      group = homeGroup();
       seeded = true;
     }
+    // A shared list set or dropped since: a vault that no longer exists shows nothing.
+    if (group?.vault && !vaults.two) group = null;
     applyTheme();
     applySidebar(prefs.sidebar);
     render();
