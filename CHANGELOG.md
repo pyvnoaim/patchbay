@@ -8,6 +8,11 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Editing a device works properly again: the form's name, buttons and fields use its whole width.
+- Mine and Team in the sidebar are quiet headings now, and a value in Details turns blue to show it copies.
+
 ## 0.1.63 - 2026-10-26
 
 - A new look throughout: rounder cards, a calmer sidebar, and one size for every button.

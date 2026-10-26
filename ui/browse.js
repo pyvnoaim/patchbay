@@ -186,16 +186,19 @@ function driveOf(path) {
 // A vault's own row: who can see what is under it, and for the team's, where it is.
 function vaultRow(vault, n) {
   const name = VAULTS[vault][1];
-  const sub =
-    vault === "mine"
-      ? "Only on this machine"
-      : vaults.away
-        ? `<span class="dot down"></span>Not there`
-        : `<span class="dot up"></span><span data-tip="${esc(vaults.team ?? "")}">${esc(driveName(vaults.team ?? ""))}</span>`;
-  return `<div class="group vault ${vault}${vault === "team" && vaults.away ? " away" : ""}"
-       data-vault="${vault}" data-path="" data-group="1" data-has-kids="false"
+  // A heading names the list; where it lives is the tooltip's. Only a share that is away
+  // says anything more, because that is something to act on.
+  const away = vault === "team" && vaults.away;
+  const where = vault === "mine" ? "Only on this machine" : (vaults.team ?? "");
+  const sub = away
+    ? `<span class="dot down"></span>Not there`
+    : vault === "team"
+      ? esc(driveName(vaults.team ?? ""))
+      : "";
+  return `<div class="group vault ${vault}${away ? " away" : ""}"
+       data-vault="${vault}" data-path="" data-group="1" data-has-kids="false" data-tip="${esc(where)}"
        role="treeitem" aria-level="1" aria-label="${esc(`${name}, ${n} device${n === 1 ? "" : "s"}`)}">
-    <span class="label"><b>${name}</b><small>${sub}</small></span>
+    <span class="label"><b>${name}</b>${sub ? `<small>${sub}</small>` : ""}</span>
     <span class="n">${n}</span>
   </div>`;
 }
