@@ -25,28 +25,28 @@ toml_edit = "0.22"
 portable-pty = "0.9"
 indexmap = { version = "2", features = ["serde"] }
 dirs = "5"
-# IronRDP from git: the graphics pipeline (H.264, the client compositor) is on its main
-# branch and not yet released. The fork is that main plus two speedups sent upstream as
-# Devolutions/IronRDP#2216 and #2217.
+# IronRDP from git: the fork is its main plus two speedups sent upstream as
+# Devolutions/IronRDP#2216 and #2217. The graphics pipeline (H.264, the client
+# compositor) is on crates.io, but `ironrdp-egfx-native` and the `ironrdp` it needs aren't.
 # ponytail: a pinned fork; back to Devolutions' repo once both merge, and to crates.io
-# once a release carries the graphics pipeline.
-ironrdp = { git = "https://github.com/pyvnoaim/IronRDP", rev = "a7a793af9a2294513e2747536dc0039ee489e7cf", features = ["connector", "session", "graphics", "input", "svc", "dvc", "displaycontrol"] }
-ironrdp-blocking = { git = "https://github.com/pyvnoaim/IronRDP", rev = "a7a793af9a2294513e2747536dc0039ee489e7cf" }
-ironrdp-pdu = { git = "https://github.com/pyvnoaim/IronRDP", rev = "a7a793af9a2294513e2747536dc0039ee489e7cf" }
-ironrdp-graphics = { git = "https://github.com/pyvnoaim/IronRDP", rev = "a7a793af9a2294513e2747536dc0039ee489e7cf" }
+# once those two are released.
+ironrdp = { git = "https://github.com/pyvnoaim/IronRDP", rev = "e668459702abd8baf11b6a91a126b709ff894828", features = ["connector", "session", "graphics", "input", "svc", "dvc", "displaycontrol"] }
+ironrdp-blocking = { git = "https://github.com/pyvnoaim/IronRDP", rev = "e668459702abd8baf11b6a91a126b709ff894828" }
+ironrdp-pdu = { git = "https://github.com/pyvnoaim/IronRDP", rev = "e668459702abd8baf11b6a91a126b709ff894828" }
+ironrdp-graphics = { git = "https://github.com/pyvnoaim/IronRDP", rev = "e668459702abd8baf11b6a91a126b709ff894828" }
 rustls = "0.23.43"
 tokio-rustls = "0.26.4"
 sspi = { version = "0.23", features = ["network_client"] }
 x509-cert = "0.2"
-ironrdp-input = { git = "https://github.com/pyvnoaim/IronRDP", rev = "a7a793af9a2294513e2747536dc0039ee489e7cf" }
-ironrdp-cliprdr = { git = "https://github.com/pyvnoaim/IronRDP", rev = "a7a793af9a2294513e2747536dc0039ee489e7cf" }
+ironrdp-input = { git = "https://github.com/pyvnoaim/IronRDP", rev = "e668459702abd8baf11b6a91a126b709ff894828" }
+ironrdp-cliprdr = { git = "https://github.com/pyvnoaim/IronRDP", rev = "e668459702abd8baf11b6a91a126b709ff894828" }
 arboard = "3.6.1"
 # "Edit here" learns of a save from the OS (FSEvents, inotify, ReadDirectoryChangesW)
 # rather than a thread per open file stat-ing it every two seconds.
 notify = "8"
-ironrdp-core = { git = "https://github.com/pyvnoaim/IronRDP", rev = "a7a793af9a2294513e2747536dc0039ee489e7cf" }
-ironrdp-egfx = { git = "https://github.com/pyvnoaim/IronRDP", rev = "a7a793af9a2294513e2747536dc0039ee489e7cf" }
-ironrdp-rdpsnd = { git = "https://github.com/pyvnoaim/IronRDP", rev = "a7a793af9a2294513e2747536dc0039ee489e7cf" }
+ironrdp-core = { git = "https://github.com/pyvnoaim/IronRDP", rev = "e668459702abd8baf11b6a91a126b709ff894828" }
+ironrdp-egfx = { git = "https://github.com/pyvnoaim/IronRDP", rev = "e668459702abd8baf11b6a91a126b709ff894828" }
+ironrdp-rdpsnd = { git = "https://github.com/pyvnoaim/IronRDP", rev = "e668459702abd8baf11b6a91a126b709ff894828" }
 sha2 = "0.11.0"
 # The team licence, checked offline against the public key in licence.rs. Already in
 # the tree behind the updater; taking it directly keeps the licence off the network.
@@ -130,7 +130,7 @@ objc2-video-toolbox = { version = "0.3.2", default-features = false, features = 
 keyring = { version = "3.6", features = ["windows-native"] }
 # The same, through Media Foundation's decoder; IronRDP's own, kept beside its graphics
 # pipeline.
-ironrdp-egfx-native = { git = "https://github.com/pyvnoaim/IronRDP", rev = "a7a793af9a2294513e2747536dc0039ee489e7cf" }
+ironrdp-egfx-native = { git = "https://github.com/pyvnoaim/IronRDP", rev = "e668459702abd8baf11b6a91a126b709ff894828" }
 # Same counter, Windows' one. Already in the tree through tauri.
 windows-sys = { version = "0.60", features = [
   "Win32_Foundation",

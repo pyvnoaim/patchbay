@@ -74,8 +74,9 @@ signing, so a licence arrives with the receipt.
 
 The graphics pipeline needs IronRDP's main branch, pinned in `src-tauri/Cargo.toml` to
 `pyvnoaim/IronRDP`: that main plus two speedups sent upstream as Devolutions/IronRDP#2216
-and #2217. Once both merge, point the pin at Devolutions' repo; once a release carries the
-pipeline, go back to crates.io.
+and #2217. Once both merge, point the pin at Devolutions' repo. The pipeline is on
+crates.io since 2026-10-23, but `ironrdp-egfx-native` and a new `ironrdp` aren't; once
+they are, go back to crates.io.
 
 ## Ideas
 

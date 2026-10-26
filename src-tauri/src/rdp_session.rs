@@ -197,6 +197,11 @@ fn config(
         // The desktop is sized in device pixels, so without this a 2x screen gets
         // everything at half size.
         desktop_scale_factor: percent(scale),
+        desktop_physical_size: None,
+        desktop_orientation: None,
+        device_scale_factor: None,
+        monitor_extended_layout: None,
+        relative_mouse_input: false,
         hardware_id: None,
         license_cache: None,
         timezone_info: ironrdp::pdu::rdp::client_info::TimezoneInfo::default(),
