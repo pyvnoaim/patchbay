@@ -1,6 +1,6 @@
 [package]
 name = "patchbay-app"
-version = "0.1.61"
+version = "0.1.62"
 edition = "2021"
 license-file = "../LICENSE"   # our own terms, not an SPDX id
 rust-version = "1.94"   # ironrdp main (in-app RDP) needs it
