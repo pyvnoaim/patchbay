@@ -25,6 +25,8 @@ const USED = [
   "file-pen-line", // edit config
   "download", // import from an ssh config
   "plus",
+  "sun", // the theme switch in the sidebar's foot, set to light
+  "moon", // and to dark; "monitor" is following the system
   "pencil",
   "trash-2",
   "x",

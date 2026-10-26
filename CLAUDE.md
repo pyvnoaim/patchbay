@@ -83,6 +83,7 @@ aren't obvious from reading:
 - CSP is `script-src 'self'`: no inline `<script>`, no CDN. Inline `<style>` is allowed but put styles in `app.css` anyway.
 - Everything interpolated into `innerHTML` goes through `esc()`. No exceptions - a jack name comes from a file a colleague may have written.
 - Colours only from the `:root` custom properties, and every one needs its light-mode value in the `prefers-color-scheme` block. Never hardcode a hex outside `:root`.
+- Corners and control heights only from the scale at the top of `:root`: `--r-sm`/`--r-md`/`--r-lg`/`--r-xl`/`--r-pill` by what a thing is (key hint, control, surface, floating sheet, pill), and `--h-control` for every toolbar button, tab and field. Drawn shapes under 4px and round dots keep their own.
 - Icons are Lucide via `icon("name")`. Add the name to `USED` in `scripts/icons.mjs` and run `npm run icons` - don't paste SVG into `app.js`, and don't add `lucide-react` (there is no React here, and it wraps the same artwork).
 - A jack's `os` renders through `osIcon()` (a brand mark, else a Lucide fallback, else `server`); both maps are in `scripts/brands.mjs`, then `npm run brands`. Brand colours go through `readable()`, never painted raw: nine of the 29 fail contrast on one theme.
 - Don't fetch favicons from devices to use as icons: it needs TLS in the app, nearly every appliance's cert is self-signed, half sit behind a bastion, and opening the window would make requests to every host.

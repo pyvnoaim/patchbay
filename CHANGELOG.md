@@ -8,6 +8,18 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- A new look throughout: rounder cards, a calmer sidebar, and one size for every button.
+- A device's page puts Connect, Files and Open in Terminal under its name; click a host, user or port to copy it.
+- The sidebar has a "Go to device" box at the top, and New device and a light/dark/system switch at the foot.
+- A tab you're not looking at shows a dot when there's new output, and tells you if its session drops or rings its bell.
+- A dropped session says so over the terminal, with Reconnect and Wait and retry.
+- Moving a device to Team can be undone.
+- The device form is shorter: the rare settings fold away, and it shows the ssh command as you type.
+- Settings is easier to find your way around, and an empty list offers the hosts in your ssh config.
+- On a Mac trackpad, dragging a device onto a folder clicks into place.
+
 ## 0.1.62 - 2026-10-26
 
 - With a shared list set, the list opens on your own devices, and Escape goes back there.

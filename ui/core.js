@@ -27,8 +27,7 @@ const appEl = $("app");
 const treeEl = $("tree"),
   listEl = $("list"),
   detailEl = $("d-body");
-const detailPane = $("detail"),
-  dActions = $("d-actions");
+const detailPane = $("detail");
 const searchBtn = $("searchbtn");
 const paletteEl = $("palette"),
   pq = $("pq"),
@@ -262,6 +261,10 @@ function nameIcons(root) {
 
 // A sheet is modal to the keyboard; the palette handles its own keys.
 const sheetOpen = () => [sheetWrap, askWrap, setWrap, impWrap].some((el) => !el.hidden);
+// A tick on a Force Touch trackpad, for a drag that lines up with something: `haptic` in
+// commands/app.rs. Nothing off macOS, and nothing to report if it doesn't happen.
+const tick = () => invoke("haptic").catch(() => {});
+
 // Everything that paints over the window. A web tab is an OS view above the page and
 // shrinks away for each of these; one left out gets the webview painted over it.
 const OVERLAYS = () => [sheetWrap, askWrap, setWrap, impWrap, paletteEl, ctxEl];

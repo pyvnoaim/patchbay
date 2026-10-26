@@ -185,7 +185,7 @@ function driveOf(path) {
 
 // A vault's own row: who can see what is under it, and for the team's, where it is.
 function vaultRow(vault, n) {
-  const [glyph, name] = VAULTS[vault];
+  const name = VAULTS[vault][1];
   const sub =
     vault === "mine"
       ? "Only on this machine"
@@ -195,7 +195,6 @@ function vaultRow(vault, n) {
   return `<div class="group vault ${vault}${vault === "team" && vaults.away ? " away" : ""}"
        data-vault="${vault}" data-path="" data-group="1" data-has-kids="false"
        role="treeitem" aria-level="1" aria-label="${esc(`${name}, ${n} device${n === 1 ? "" : "s"}`)}">
-    <span class="badge">${icon(glyph)}</span>
     <span class="label"><b>${name}</b><small>${sub}</small></span>
     <span class="n">${n}</span>
   </div>`;
@@ -206,18 +205,15 @@ function row(node, depth, live, id) {
   const open = expanded.has(gkey(id));
   // The dot is always in the layout for its auto margin; painted only with a live session.
   const on = [...node.members].some((n) => live.has(n));
-  const [dot, say] = node.members.size
-    ? reachSaid([...node.members].map((name) => ({ name })))
-    : [];
+  // Heard, not drawn: the devices under it carry their own dots.
+  const [, say] = node.members.size ? reachSaid([...node.members].map((name) => ({ name }))) : [];
   // A screen reader hears the folder, whether it is open, and how much of it answers.
   const heard = `${node.name}, ${node.members.size} device${node.members.size === 1 ? "" : "s"}${say ? `, ${say.toLowerCase()}` : ""}`;
   return `<div class="group" ${idAttrs(id)} data-group="1" data-has-kids="${kids}" ${indent(depth)}
     role="treeitem" aria-level="${depth + 1}" aria-label="${esc(heard)}"${kids ? ` aria-expanded="${open}"` : ""}>
     <span class="twist ${kids ? "" : "leaf"} ${open ? "open" : ""}">${icon("chevron-right")}</span>
     <span class="gi">${icon(kids && open ? "folder-open" : "folder")}</span>
-    <span class="label">${esc(node.name)}</span>${
-      say ? `<span class="dot ${dot}" data-tip="${esc(say)}"></span>` : ""
-    }
+    <span class="label">${esc(node.name)}</span>
     <span class="live ${on ? "on" : ""}"${on ? ' data-tip="A session is open in here"' : ""}></span>
     <span class="n">${node.members.size}</span>
   </div>`;
@@ -226,10 +222,22 @@ function row(node, depth, live, id) {
 // What both kinds of device row end with: a session's dot, then how it is reached.
 const hereTip = (name) =>
   `${present.get(name).join(", ")} ${present.get(name).length === 1 ? "is" : "are"} connected`;
+// Who is on a device, as a face would be: initials, and how many more.
+const initials = (who) =>
+  who
+    .split(/[\s._@-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join("");
+const hereMark = (name) => {
+  const who = present.get(name);
+  return initials(who[0]) + (who.length > 1 ? `+${who.length - 1}` : "");
+};
 const devTail = (j, live) => `
     <span class="live ${live.has(j.name) ? "on" : ""}"${live.has(j.name) ? ' data-tip="A session is open"' : ""}></span>${
       present.has(j.name)
-        ? `<span class="here" data-tip="${esc(hereTip(j.name))}">${icon("users")}</span>`
+        ? `<span class="here" data-tip="${esc(hereTip(j.name))}">${esc(hereMark(j.name))}</span>`
         : ""
     }${
       // ssh is what a device is unless it says otherwise, so only the others are marked:
@@ -261,6 +269,15 @@ function devRow(j, i, depth, live, id) {
     }>${osIcon(j.os)}</span>
     <span class="label">${esc(j.label)}</span>${devTail(j, live)}
   </div>`;
+}
+
+// The state, short, as a pill beside a name: the detail's Reachable card says it in full.
+function statePill(name) {
+  const state = dotState(name);
+  const ms = probes.get(name)?.ms;
+  if (state === "up")
+    return `<span class="d-state up"><i></i>${ms == null ? "up" : `up · ${esc(ms)} ms`}</span>`;
+  return state === "down" ? `<span class="d-state down"><i></i>no answer</span>` : "";
 }
 
 // What the status dot says. "checking" waits on a running sweep; "unknown" means
@@ -302,14 +319,22 @@ function render() {
   $("sshkeys").innerHTML = sshKeys.map((k) => `<option value="${esc(k)}">`).join("");
 
   renderTabs();
-  searchBtn.innerHTML = `${icon("search")}Search<kbd>${chord("k")}</kbd>`;
+  searchBtn.innerHTML = `${icon("search")}<span>Go to device…</span><kbd>${chord("k")}</kbd>`;
+  $("newdev").innerHTML = `${icon("plus")}<span>New device</span>`;
+  $("newdev").dataset.tip = `New device  ${chord("n")}`;
+  // What is chosen, not what a click gives, the way the OS's own switch reads.
+  const theme = themeNow();
+  $("themebtn").innerHTML = icon({ system: "monitor", light: "sun", dark: "moon" }[theme]);
+  $("themebtn").dataset.tip = {
+    system: "Theme: like the system. Click for light",
+    light: "Theme: light. Click for dark",
+    dark: "Theme: dark. Click to follow the system",
+  }[theme];
   $("viewmode").innerHTML = listMode === "map" ? `${icon("x")}Close map` : `${icon("share-2")}Map`;
   $("viewmode").dataset.tip =
     listMode === "map" ? "Back to the detail" : "Draw this folder by the route to each device";
   $("newgroup").innerHTML = icon("folder-plus");
   $("newgroup").dataset.tip = "New folder";
-  $("editcfg").innerHTML = icon("file-pen-line");
-  $("editcfg").dataset.tip = `Open the config file  ${chord("e")}`;
   $("settings").innerHTML = icon("settings");
   $("settings").dataset.tip = `Settings  ${chord(",")}`;
 
@@ -319,24 +344,65 @@ function render() {
   listEl.hidden = !mapping;
   $("wide").hidden = mapping;
   if (!all.length) {
-    listEl.innerHTML = `<div class="firstrun">
-          <span class="fr-mark">${icon("server")}</span>
-          <h3>No devices yet</h3>
-          <p>Add one here, or write the file by hand - patchbay creates it either way,
-             and keeps your comments and formatting if you edit it later.</p>
-          <div class="mono">${esc(cfgPath)}</div>
-          <div class="btns">
-            <button class="primary" data-first="new">${icon("plus")}Add a device</button>
-            <button class="ghost" data-first="import">${icon("download")}Import a list</button>
-            <button class="ghost" data-first="cfg">${icon("file-pen-line")}Open config file</button>
-          </div>
-        </div>`;
+    listEl.innerHTML = firstRun();
   } else if (listMode === "map") {
     listEl.innerHTML = mapHtml();
   }
   paintRows();
   renderDetail();
   treeEl.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+}
+
+// No devices yet. What ~/.ssh/config already holds is asked for once and offered first:
+// most people arriving here have one, and it is the list they would otherwise retype.
+// `undefined` is not asked yet, `null` is nothing there to offer.
+let sshFound;
+function firstRun() {
+  if (sshFound === undefined) {
+    sshFound = null;
+    invoke("ssh_hosts")
+      .then((r) => {
+        sshFound = r.hosts.length ? r : null;
+        if (sshFound && !all.length) render();
+      })
+      .catch(() => {});
+  }
+  const r = sshFound;
+  const chips = r
+    ? r.hosts
+        .slice(0, 5)
+        .map((h) => `<span class="fr-chip">${esc(h.name)}</span>`)
+        .join("") +
+      (r.hosts.length > 5 ? `<span class="fr-chip more">+${r.hosts.length - 5} more</span>` : "")
+    : "";
+  const opt = (act, ic, title, said, tail = icon("chevron-right")) =>
+    `<button type="button" class="fr-opt" data-first="${act}">
+      <span class="fr-i">${icon(ic)}</span>
+      <span class="fr-t"><b>${title}</b><small>${said}</small></span>${tail}
+    </button>`;
+  return `<div class="firstrun">
+    <span class="fr-mark">${icon("square-terminal")}</span>
+    <h3>Bring your servers in</h3>
+    <p>Start from what you already have. You can add more any time.</p>
+    ${
+      r
+        ? `<div class="fr-found">
+      <b>Found ${r.hosts.length} host${r.hosts.length === 1 ? "" : "s"} in your ssh config</b>
+      <small>Jump hosts and users come along. The file itself stays as it is.</small>
+      <div class="fr-chips">${chips}</div>
+      <div class="btns"><button class="primary" data-first="ssh">${icon("download")}Choose what to import…</button></div>
+    </div>`
+        : ""
+    }
+    <div class="fr-opts">
+      ${opt("import", "download", "Import a list", "A Royal TS document, or another ssh config")}
+      ${opt("team", "users", "Open your team's list", "A shared file on a network drive or synced folder")}
+      ${opt("new", "plus", "Add one by hand", "A name and a host is all it needs", `<kbd>${chord("n")}</kbd>`)}
+    </div>
+    <p class="fr-note">Your list is one plain text file, kept with your comments if you edit it by hand.
+      No account, no cloud, no stored passwords.
+      <button type="button" class="linkish" data-first="cfg">Open it</button></p>
+  </div>`;
 }
 
 // How a device is reached, as one glyph. `primary` arrives resolved from Rust, so
@@ -468,7 +534,8 @@ function renderDetail() {
 // narrow pane beside a session.
 const wideEl = $("wide");
 const dBody = () => (activeId !== null ? detailEl : $("w-body"));
-const dActs = () => (activeId !== null ? dActions : $("w-actions"));
+// Only the wide detail has a strip of its own; beside a session the buttons are in the card.
+const dActs = () => $("w-actions");
 
 const groupLabel = () =>
   !group ? "All devices" : (group.path ?? VAULTS[group.vault]?.[1] ?? "All devices");
@@ -732,6 +799,11 @@ function hostKeyRow(j) {
   return `<div class="d-row"><dt>id</dt><dd class="d-key">${said}</dd></div>`;
 }
 
+// A value in Details is a click to copy it: an address is what gets pasted into other tools
+// most. The value rides in the attribute, so what is copied is what the file says.
+const copyable = (v) =>
+  `<button type="button" class="d-val" data-copy="${esc(v)}" data-tip="Copy">${esc(v)}</button>`;
+
 // A value the device didn't set itself, and who lent it. Nothing for a device's own:
 // the marker is there to answer "why does it say that", not to label every row.
 function lentFrom(j, key) {
@@ -759,30 +831,103 @@ function renderJack(j, live) {
           : // Up by its session: the sweep may not have come round, or may have got no answer.
             p?.ms == null
             ? `<span style="color:var(--up)">up</span> · a session is open`
-            : `<span style="color:var(--up)">up</span> · ${esc(p.target)} · ${esc(p.ms)}ms`;
+            : `<span style="color:var(--up)">up</span> · ${esc(p.target)}${
+                // Wide, the number above says it in large.
+                activeId === null ? "" : ` · ${esc(p.ms)}ms`
+              }`;
 
+  const wide = activeId === null;
+  const tint = osColor(j.os);
   const stops = [...j.hops, j.user ? `${j.user}@${j.host}` : j.host];
+  // The ways in: wide, a row of their own under the name, each saying what it is; beside a
+  // session, icons in the pane's strip, where there is no room for words.
+  const lab = (w) => (wide ? w : "");
+  const ways = `
+    ${
+      live
+        ? /* A web tab is a page: closed, not disconnected. Plain: the way out is not
+             the thing to press, and the tab has its own. */
+          `<button class="ghost" data-act="disconnect">${icon("x")}${
+            live.dead || live.kind === "web" ? "Close" : "Disconnect"
+          }</button>`
+        : `<button class="primary" data-act="${
+            {
+              rdp: "rdp",
+              vnc: "vnc",
+              telnet: "telnet",
+              serial: "serial",
+              web: "web",
+              sftp: "files",
+            }[j.primary] ?? "connect"
+          }">${icon(
+            { web: "globe", sftp: "folder" }[j.primary] ??
+              KIND[j.primary]?.[0] ??
+              "square-terminal",
+          )}${{ web: "Open", sftp: "Browse files" }[j.primary] ?? "Connect"}${
+            wide ? "<kbd>⏎</kbd>" : ""
+          }</button>`
+    }
+    ${j.ssh && j.primary !== "ssh" ? `<button class="ghost" data-act="connect" data-tip="Connect over ssh">${icon("square-terminal")}${lab("SSH")}</button>` : ""}
+    ${j.ssh && j.primary !== "sftp" ? `<button class="ghost" data-act="files" data-tip="Browse files over sftp">${icon("folder")}${lab("Files")}</button>` : ""}
+    ${j.url && j.primary !== "web" ? `<button class="ghost" data-act="web" data-tip="Open web UI">${icon("globe")}${lab("Web")}</button>` : ""}
+    ${j.rdp && j.primary !== "rdp" ? `<button class="ghost" data-act="rdp" data-tip="Remote desktop">${icon("monitor")}${lab("Desktop")}</button>` : ""}
+    ${j.vnc && j.primary !== "vnc" ? `<button class="ghost" data-act="vnc" data-tip="VNC">${icon("screen-share")}${lab("VNC")}</button>` : ""}
+    ${j.telnet && j.primary !== "telnet" ? `<button class="ghost" data-act="telnet" data-tip="Telnet">${icon("terminal")}${lab("Telnet")}</button>` : ""}
+    ${j.serial && j.primary !== "serial" ? `<button class="ghost" data-act="serial" data-tip="Serial console">${icon("cable")}${lab("Serial")}</button>` : ""}
+    ${
+      // The handoff, beside the in-window way: the context menu has it too, but a menu alone
+      // is not discoverable.
+      wide && j.ssh
+        ? `<button class="ghost" data-act="terminal" data-tip="In your own terminal app">${icon("external-link")}Open in Terminal</button>`
+        : ""
+    }`;
+  const tools = `
+    <button class="ghost" data-act="edit" data-tip="Edit device">${icon("pencil")}${lab("Edit")}</button>
+    <button class="ghost" data-act="dup" data-tip="Duplicate device">${icon("copy-plus")}</button>`;
   const mine = tunnels.filter((t) => t.jack === j.name);
   dBody().innerHTML = `
-    <div class="d-name">${esc(j.label)}${vaultBadge(j.vault)}</div>
-    ${j.desc ? `<div class="d-desc">${esc(j.desc)}</div>` : `<div class="d-desc"></div>`}
+    ${wide ? `<span class="d-os"${tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(j.os)}</span>` : ""}
+    <div class="d-name">${esc(j.label)}${vaultBadge(j.vault)}${statePill(j.name)}</div>
+    ${
+      j.desc
+        ? `<div class="d-desc">${esc(j.desc)}</div>`
+        : `<div class="d-desc">${wide && j.host ? `<span class="d-addr">${esc(stops.at(-1))}${j.port ? `:${esc(j.port)}` : ""}</span>` : ""}</div>`
+    }
+    ${
+      // Beside a session the buttons belong to the card, under the name they act on; the strip
+      // above it is left to the tab bar's row.
+      wide ? `<div class="d-go">${ways}</div>` : `<div class="d-acts">${ways}${tools}</div>`
+    }
 
     <div class="d-cards">
     <section class="d-card">
-    <div class="d-sec">${icon("server")}Target</div>
+    <div class="d-sec">${icon("server")}Details</div>
     <dl>
-      <div class="d-row"><dt>host</dt><dd>${esc(j.host)}</dd></div>
-      ${j.user ? `<div class="d-row"><dt>user</dt><dd>${esc(j.user)}${lentFrom(j, "user")}</dd></div>` : ""}
-      ${j.port ? `<div class="d-row"><dt>port</dt><dd>${esc(j.port)}${lentFrom(j, "port")}</dd></div>` : ""}
+      <div class="d-row"><dt>host</dt><dd>${copyable(j.host)}</dd></div>
+      ${j.user ? `<div class="d-row"><dt>user</dt><dd>${copyable(j.user)}${lentFrom(j, "user")}</dd></div>` : ""}
+      ${j.port ? `<div class="d-row"><dt>port</dt><dd>${copyable(j.port)}${lentFrom(j, "port")}</dd></div>` : ""}
       ${j.key ? `<div class="d-row"><dt>key</dt><dd>${esc(j.key)}${lentFrom(j, "key")}</dd></div>` : ""}
-      ${j.url ? `<div class="d-row"><dt>web</dt><dd>${esc(j.url)}</dd></div>` : ""}
-      ${j.rdp ? `<div class="d-row"><dt>rdp</dt><dd>${esc(j.rdp)}</dd></div>` : ""}
+      ${j.url ? `<div class="d-row"><dt>web</dt><dd>${copyable(j.url)}</dd></div>` : ""}
+      ${j.rdp ? `<div class="d-row"><dt>rdp</dt><dd>${copyable(j.rdp)}</dd></div>` : ""}
       ${hostKeyRow(j)}
       ${
         j.folders.length
           ? `<div class="d-row"><dt>in</dt><dd>${j.folders
               .map((f) => `<span class="d-in">${esc(f.split("/").join(" / "))}</span>`)
               .join("")}</dd></div>`
+          : ""
+      }
+      ${j.host && !j.hops.length ? `<div class="d-row"><dt>route</dt><dd>direct</dd></div>` : ""}
+      ${
+        // Who sees it, and the way to change that, where the answer is read.
+        j.vault && !live
+          ? `<div class="d-row"><dt>seen</dt><dd>${
+              j.vault === "mine" ? "only on this machine" : "by everyone on the list"
+            }<button class="linkish" data-act="move" data-tip="${
+              j.vault === "mine"
+                ? "Everyone on the list will see it"
+                : "Only this machine will see it"
+            }">${j.vault === "mine" ? "Share with Team" : "Move to Mine"}</button></dd></div>`
           : ""
       }
     </dl>
@@ -805,7 +950,8 @@ function renderJack(j, live) {
     }
 
     <section class="d-card">
-    <div class="d-sec">${icon("plug")}Reachable</div>
+    <div class="d-sec">${icon("plug")}${wide ? "Connection health" : "Reachable"}</div>
+    ${wide && said === "up" && p?.ms != null ? `<div class="d-ms">${esc(p.ms)}<small>ms</small></div>` : ""}
     <div style="font-size:12.5px">${reach}</div>
     ${
       present.has(j.name) ? `<div class="d-here">${icon("users")}${esc(hereTip(j.name))}</div>` : ""
@@ -838,24 +984,6 @@ function renderJack(j, live) {
     </div>
     </section>
 
-    <section class="d-card span"${j.host ? "" : " hidden"}>
-    <div class="d-sec">${icon("waypoints")}Route</div>
-    <div class="route">
-      <span class="here"><i class="pip"></i><em class="hop">this machine</em></span>
-      ${stops
-        .map((h, i) => {
-          // What "Find the break" heard at this stop, if it was asked.
-          const heard = breaks.get(j.name)?.steps?.[i];
-          const state = heard?.ok === true ? " ok" : heard?.ok === false ? " bad" : "";
-          return `<span class="${i === stops.length - 1 ? "last" : ""}${state}">
-        <i class="pip"></i><em class="hop" data-tip="${esc(h)}">${esc(h)}</em>${
-          i < stops.length - 1 ? `<i class="arm">jump</i>` : ""
-        }${heard?.said ? `<i class="arm said">${esc(heard.said)}</i>` : ""}</span>`;
-        })
-        .join("")}
-    </div>
-    </section>
-
     ${
       j.forward.length
         ? `<section class="d-card"><div class="d-sec">${icon("arrow-right-left")}Forwards</div>
@@ -875,9 +1003,27 @@ function renderJack(j, live) {
         : ""
     }
 
+    <section class="d-card span"${j.host && j.hops.length ? "" : " hidden"}>
+    <div class="d-sec">${icon("waypoints")}Route</div>
+    <div class="route">
+      <span class="here"><i class="pip"></i><em class="hop">this machine</em></span>
+      ${stops
+        .map((h, i) => {
+          // What "Find the break" heard at this stop, if it was asked.
+          const heard = breaks.get(j.name)?.steps?.[i];
+          const state = heard?.ok === true ? " ok" : heard?.ok === false ? " bad" : "";
+          return `<span class="${i === stops.length - 1 ? "last" : ""}${state}">
+        <i class="pip"></i><em class="hop" data-tip="${esc(h)}">${esc(h)}</em>${
+          i < stops.length - 1 ? `<i class="arm">jump</i>` : ""
+        }${heard?.said ? `<i class="arm said">${esc(heard.said)}</i>` : ""}</span>`;
+        })
+        .join("")}
+    </div>
+    </section>
+
     ${
       j.ssh
-        ? `<section class="d-card span"><div class="d-sec">${icon("square-terminal")}Command</div>
+        ? `<section class="d-card span d-cmdsec"><div class="d-sec">${icon("square-terminal")}Command</div>
     <div class="d-cmd">
       <div class="mono ${j.command.startsWith("ssh ") ? "" : "err"}">${esc(j.command)}</div>
       <button class="flat d-copy" data-act="copy" data-tip="Copy" data-tip-at="right">${icon("copy")}</button>
@@ -885,46 +1031,15 @@ function renderJack(j, live) {
         : ""
     }
     </div>
+    ${
+      // The line under the name is the device's own note: offered where it would be read.
+      wide && !j.desc && !live
+        ? `<button type="button" class="d-adddesc" data-act="edit">${icon("plus")}Add a description: what it is, who to call, what never to restart</button>`
+        : ""
+    }
 `;
 
-  dActs().innerHTML = `
-    ${
-      live
-        ? /* A web tab is a page: closed, not disconnected. Plain: the way out is not
-             the thing to press, and the tab has its own. */
-          `<button class="ghost" data-act="disconnect">${icon("x")}${
-            live.dead || live.kind === "web" ? "Close" : "Disconnect"
-          }</button>`
-        : j.primary === "rdp"
-          ? `<button class="primary" data-act="rdp">${icon("monitor")}Connect</button>`
-          : j.primary === "vnc"
-            ? `<button class="primary" data-act="vnc">${icon("screen-share")}Connect</button>`
-            : j.primary === "telnet" || j.primary === "serial"
-              ? `<button class="primary" data-act="${j.primary}">${icon(KIND[j.primary][0])}Connect</button>`
-              : j.primary === "web"
-                ? `<button class="primary" data-act="web">${icon("globe")}Open</button>`
-                : j.primary === "sftp"
-                  ? `<button class="primary" data-act="files">${icon("folder")}Browse files</button>`
-                  : `<button class="primary" data-act="connect">${icon("square-terminal")}Connect</button>`
-    }
-    ${j.ssh && j.primary !== "ssh" ? `<button class="ghost" data-act="connect" data-tip="Connect over ssh">${icon("square-terminal")}</button>` : ""}
-    ${j.ssh && j.primary !== "sftp" ? `<button class="ghost" data-act="files" data-tip="Browse files over sftp">${icon("folder")}</button>` : ""}
-    ${j.url && j.primary !== "web" ? `<button class="ghost" data-act="web" data-tip="Open web UI">${icon("globe")}</button>` : ""}
-    ${j.rdp && j.primary !== "rdp" ? `<button class="ghost" data-act="rdp" data-tip="Remote desktop">${icon("monitor")}</button>` : ""}
-    ${j.vnc && j.primary !== "vnc" ? `<button class="ghost" data-act="vnc" data-tip="VNC">${icon("screen-share")}</button>` : ""}
-    ${j.telnet && j.primary !== "telnet" ? `<button class="ghost" data-act="telnet" data-tip="Telnet">${icon("terminal")}</button>` : ""}
-    ${j.serial && j.primary !== "serial" ? `<button class="ghost" data-act="serial" data-tip="Serial console">${icon("cable")}</button>` : ""}
-    <button class="ghost" data-act="edit" data-tip="Edit device">${icon("pencil")}</button>
-    <button class="ghost" data-act="dup" data-tip="Duplicate device">${icon("copy-plus")}</button>
-    ${
-      j.vault && !live
-        ? `<button class="ghost" data-act="move" data-tip="${
-            j.vault === "mine"
-              ? "Everyone on the list will see it"
-              : "Only this machine will see it"
-          }">${icon(VAULTS[otherVault(j.vault)][0])}Move to ${VAULTS[otherVault(j.vault)][1]}</button>`
-        : ""
-    }`;
+  if (wide) dActs().innerHTML = tools;
 }
 
 // Out of a session and back to the tree's own view: what a click in the sidebar means.
@@ -1245,6 +1360,10 @@ function openPalette(seed = "", beside = false) {
   pq.value = seed;
   palSel = 0;
   $("pq-icon").innerHTML = icon("search");
+  // The keys, said once at the foot: the rows only show the one Enter would take.
+  $("pfoot").innerHTML = `<span><kbd>↑</kbd><kbd>↓</kbd>move</span>
+    <span><kbd>⏎</kbd>${beside ? "open beside" : "open"}</span><span><kbd>esc</kbd>close</span>
+    <span class="pf-what">Names, hosts, notes and folders</span>`;
   renderPalette();
   pq.focus();
   pq.setSelectionRange(seed.length, seed.length);
@@ -1299,45 +1418,54 @@ function renderPalette() {
   const rows = palMatches();
   palSel = Math.min(palSel, Math.max(0, rows.length - 1));
   const quick = adhoc();
-  // Snippets and folders lead, so the first device is where the two halves meet.
-  const cutAt = rows.findIndex((r) => !r.path && !r.snip);
+  // What Enter does, shown only on the row it would do it to (by CSS, so arrowing is a repaint).
+  const go = (verb) => `<span class="pgo">${verb}<kbd>⏎</kbd></span>`;
+  const verb = palBeside ? "Open beside" : "Connect";
+  const kindOf = (r) => (r.snip ? "Snippets" : r.path ? "Folders" : "Devices");
+  const row = (j, i) => {
+    const sel = `data-pi="${i}" role="option" aria-selected="${i === palSel}"`;
+    // The text itself, not only its name: it is about to be on your prompt, and in a
+    // shared list someone else may have written it.
+    if (j.snip) {
+      return `<div class="jack" ${sel}>
+        <span class="os">${icon("text-cursor-input")}</span>
+        <span class="pt"><span class="name">${esc(j.snip.name)}</span><span class="host snip">${esc(j.snip.text)}</span></span>${
+          j.snip.vault ? `<span class="pchip">${VAULTS[j.snip.vault][1]}</span>` : ""
+        }${go("Type")}</div>`;
+    }
+    if (j.path) {
+      const at = j.path.lastIndexOf("/");
+      const where = [VAULTS[j.vault]?.[1], at < 0 ? "" : j.path.slice(0, at).split("/").join(" / ")]
+        .filter(Boolean)
+        .join(" · ");
+      return `<div class="jack" ${sel}>
+        <span class="os">${icon("folder")}</span>
+        <span class="pt"><span class="name">${esc(j.path.slice(at + 1))}</span>${
+          where ? `<span class="host">${esc(where)}</span>` : ""
+        }</span>${go("Show")}</div>`;
+    }
+    // Same rule as the list: no brand colour on the selected row.
+    const tint = i === palSel ? null : osColor(j.os);
+    const addr = j.host ? `${j.user ? `${j.user}@` : ""}${j.host}` : "";
+    const where = j.vault === "mine" ? "Mine" : (j.folders[0] ?? "").split("/").join(" / ");
+    return `<div class="jack" ${sel}>
+        <span class="os"${tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(j.os)}</span>
+        <span class="pt"><span class="name">${esc(j.label)}</span>${
+          addr ? `<span class="host">${esc(addr)}</span>` : ""
+        }</span>${where ? `<span class="pchip">${esc(where)}</span>` : ""}${go(verb)}</div>`;
+  };
   presultsEl.innerHTML = quick
     ? `<div class="jack" data-adhoc="1" role="option" aria-selected="true">
         <span class="os">${icon("square-terminal")}</span>
-        <span class="name">${esc(quick)}</span>
-        <span class="host">quick connect</span></div>`
+        <span class="pt"><span class="name">${esc(quick)}</span><span class="host">quick connect</span></span>${go("Connect")}</div>`
     : rows.length
       ? rows
-          .map((j, i) => {
-            const cut = i === cutAt && i > 0 ? " cut" : "";
-            // The text itself, not only its name: it is about to be on your prompt,
-            // and in a shared list someone else may have written it.
-            if (j.snip) {
-              return `<div class="jack" data-pi="${i}" role="option" aria-selected="${i === palSel}">
-        <span class="os">${icon("text-cursor-input")}</span>
-        <span class="name">${esc(j.snip.name)}</span>
-        <span class="host snip">${esc(j.snip.text)}</span>${
-          j.snip.vault ? `<span class="pvault">${VAULTS[j.snip.vault][1]}</span>` : ""
-        }</div>`;
-            }
-            if (j.path) {
-              const at = j.path.lastIndexOf("/");
-              return `<div class="jack" data-pi="${i}" role="option" aria-selected="${i === palSel}">
-        <span class="os">${icon("folder")}</span>
-        <span class="name">${esc(j.path.slice(at + 1))}</span>
-        <span class="host">${esc(
-          [VAULTS[j.vault]?.[1], at < 0 ? "folder" : j.path.slice(0, at)]
-            .filter(Boolean)
-            .join(" · "),
-        )}</span></div>`;
-            }
-            // Same rule as the list: no brand colour on the selected row.
-            const tint = i === palSel ? null : osColor(j.os);
-            return `<div class="jack${cut}" data-pi="${i}" role="option" aria-selected="${i === palSel}">
-        <span class="os"${tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(j.os)}</span>
-        <span class="name">${esc(j.label)}</span>
-        <span class="host">${esc(j.host)}${j.vault === "mine" ? " · Mine" : ""}</span></div>`;
-          })
+          .map((r, i) =>
+            // A heading wherever the kind changes: snippets, then folders, then devices.
+            i === 0 || kindOf(r) !== kindOf(rows[i - 1])
+              ? `<div class="pgrp" role="presentation">${kindOf(r)}</div>${row(r, i)}`
+              : row(r, i),
+          )
           .join("")
       : `<p class="empty">no match</p>`;
   presultsEl.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });

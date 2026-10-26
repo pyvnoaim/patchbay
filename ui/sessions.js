@@ -425,6 +425,7 @@ async function openSession(
     search,
     host,
     dead: false,
+    since: Date.now(),
     unlisten: [],
     bcast,
   };
@@ -467,6 +468,7 @@ async function openSession(
     invoke("write_session", { id, data: d }).catch(() => {});
   });
   term.onResize(({ cols, rows }) => invoke("resize_session", { id, cols, rows }).catch(() => {}));
+  term.onBell(() => heads(s, "rang its bell"));
 
   // Our banner is cleared by the first byte from the far end, so a login that draws
   // with cursor moves gets a clean screen. An error we wrote on the way in stays.
@@ -483,6 +485,13 @@ async function openSession(
       }
       term.write(bytes);
       if (via === "ssh") offerHostKey(s, bytes);
+      // Output nobody is looking at: the tab says so until it is looked at. Only on the
+      // change, so a busy build doesn't redraw the strip for every line; and only once the
+      // tab has been in front, so tabs reopened at launch don't all light up with logins.
+      if (!s.news && s.seen && !inActive(s)) {
+        s.news = true;
+        renderTabs();
+      }
     },
     (code) => {
       s.dead = true;
@@ -493,6 +502,8 @@ async function openSession(
         term.write(
           `\r\n\x1b[2m── ${task ? taskLabel(task) : via} exited (${code}) · ⏎ to ${task ? "run it again" : "reconnect"}${task === "ping" ? " · c to ping until ^C" : task || via === "serial" ? "" : " · r to reconnect when it's back"} · ${chord("w")} to close ──\x1b[0m\r\n`,
         );
+      if (!task && !(waiting && code === 255)) lostCard(s, code);
+      if (!task) heads(s, "disconnected");
       renderTabs();
       renderTree();
     },
@@ -542,6 +553,7 @@ async function redial(s, task, waiting) {
 
 // A reboot: dial again once the device takes a connection. Any key stops it.
 function waitForIt(s) {
+  s.lost?.remove();
   s.term.write(`\r\n\x1b[2m── waiting for ${labelOf(s.name)} · any key to stop ──\x1b[0m\r\n`);
   let asking = false;
   s.wait = setInterval(async () => {
@@ -552,6 +564,74 @@ function waitForIt(s) {
     if (!up || !s.wait || !sessions.has(s.id)) return;
     redial(s, null, true);
   }, 3000);
+}
+
+// A shell that ended gets a card over its dimmed screen, saying so and offering the way
+// back. The line under the scrollback says the same in keys, and they still work: the card
+// never takes focus, so the dead tab keeps the keyboard and ⏎ and r mean what they did.
+function lostCard(s, code) {
+  const mins = Math.round((Date.now() - s.since) / 60000);
+  const who = esc(labelOf(s.name));
+  // ssh's 255 is "couldn't get there" as well as "lost it": the time it ran tells them apart
+  // well enough to say which, and a session that never got anywhere has no "after".
+  const lost = s.via === "ssh" && code === 255;
+  const [title, said] =
+    lost && mins < 1
+      ? [`Couldn't reach ${who}`, "It didn't answer. The scrollback is kept."]
+      : [
+          lost ? `Connection to ${who} lost` : `${who} ended`,
+          `${
+            mins < 1
+              ? "After less than a minute"
+              : `After ${mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h ${mins % 60} min`}`
+          }. The scrollback is kept.`,
+        ];
+  const card = document.createElement("div");
+  card.className = "lost";
+  card.innerHTML = `<div class="lost-card" role="status">
+    <span class="lost-i">${icon("unplug")}</span>
+    <b>${title}</b>
+    <span>${said}</span>
+    <div class="lost-b">
+      <button type="button" class="primary" data-lost="again">Reconnect<kbd>⏎</kbd></button>
+      ${
+        s.via === "serial"
+          ? ""
+          : `<button type="button" class="ghost" data-lost="wait" data-tip="Dial again once it answers">Wait and retry<kbd>r</kbd></button>`
+      }
+      <button type="button" class="ghost" data-lost="close">Close</button>
+    </div>
+  </div>`;
+  card.addEventListener("mousedown", (e) => e.preventDefault());
+  card.addEventListener("click", (e) => {
+    const act = e.target.closest("[data-lost]")?.dataset.lost;
+    if (act === "again") redial(s, null, false);
+    if (act === "wait") waitForIt(s);
+    if (act === "close") closeSession(s.id);
+  });
+  s.host.append(card);
+  s.lost = card;
+}
+
+// A session elsewhere has something to say: a pill with the way to it, and a bounce of the
+// Dock icon when the window isn't in front. Nothing for the session you are looking at, in
+// a window you are looking at - the screen already said it.
+function heads(s, what) {
+  if (inActive(s) && document.hasFocus()) return;
+  // A shell can ring its bell on every keystroke of a mistyped command: one notice a
+  // session in any ten seconds, so the foot of the window and the Dock stay readable.
+  if (Date.now() - (s.toldAt ?? 0) < 10000) return;
+  s.toldAt = Date.now();
+  flash(`${labelOf(s.name)} ${what}.`, false, {
+    label: "Show",
+    run: () => {
+      if (!sessions.has(s.id)) return;
+      activeId = s.id;
+      showTab();
+      renderTabs();
+    },
+  });
+  invoke("attention").catch(() => {});
 }
 
 // A live tab: a connected shell or desktop. Closing one is not asked about - it is
@@ -1385,6 +1465,13 @@ function renderTabs() {
   // split, named after its panes.
   const seen = new Set();
   const chips = [];
+  // Whatever is in front has been seen.
+  for (const s of sessions.values()) {
+    if (inActive(s)) {
+      s.news = false;
+      s.seen = true;
+    }
+  }
   for (const s of sessions.values()) {
     if (s.split) {
       if (seen.has(`s${s.split.sid}`)) continue;
@@ -1392,7 +1479,7 @@ function renderTabs() {
       const g = s.split;
       const panes = g.ids.map((id) => sessions.get(id));
       const names = panes.map((p) => labelOf(p.name)).join(" · ");
-      chips.push(`<div class="tab split ${panes.every((p) => p.dead) ? "dead" : ""}" data-sid="${g.sid}" role="tab" aria-selected="${g.ids.includes(activeId)}">
+      chips.push(`<div class="tab split ${panes.every((p) => p.dead) ? "dead" : ""} ${panes.some((p) => p.news) ? "news" : ""}" data-sid="${g.sid}" role="tab" aria-selected="${g.ids.includes(activeId)}">
         <span class="tabkind">${icon(g.dir === "col" ? "rows-2" : "columns-2")}</span>
         <span class="lbl">${esc(names)}</span>
         <span class="x" data-sclose="${g.sid}" data-tip="Close all" role="button">${icon("x")}</span>
@@ -1418,8 +1505,8 @@ function renderTabs() {
     // A shell tab wears its device's mark in readable()'s colour, never a raw brand hex.
     const os = s.kind === "term" && !s.task ? all.find((j) => j.name === s.name)?.os : undefined;
     const tint = os && osColor(os);
-    chips.push(`<div class="tab ${s.dead ? "dead" : ""}" data-id="${s.id}" role="tab" aria-selected="${s.id === activeId}">
-      <span class="dot ${s.dead ? "down" : "up"}" role="img" aria-label="${s.dead ? "ended" : "connected"}"></span>
+    chips.push(`<div class="tab ${s.dead ? "dead" : ""} ${s.news ? "news" : ""}" data-id="${s.id}" role="tab" aria-selected="${s.id === activeId}">
+      <span class="dot ${s.dead ? "down" : "up"}" role="img" aria-label="${s.dead ? "ended" : s.news ? "connected, new output" : "connected"}"></span>
       ${os ? `<span class="tabkind"${tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(os)}</span>` : ""}
       ${s.kind === "rdp" ? `<span class="tabkind">${icon("monitor")}</span>` : ""}
       ${s.kind === "vnc" ? `<span class="tabkind">${icon("screen-share")}</span>` : ""}

@@ -159,7 +159,7 @@ document.addEventListener("contextmenu", (e) => {
           ? [
               {
                 icon: "columns-2",
-                label: "Open beside the tab in front",
+                label: "Open in split view",
                 run: () => openBeside(j.name),
               },
               "-",
@@ -707,6 +707,9 @@ upInstall.addEventListener("click", async () => {
 // One way in per device; `primary` is resolved in Rust from the one field that is set.
 const reachOf = (f) => f.reach.value || "ssh";
 
+// The three ways in that are rare enough to sit behind More.
+const RARE = ["vnc", "telnet", "serial"];
+
 // Show only the fields the chosen way in actually needs.
 function jackFields() {
   const f = jackForm.elements;
@@ -717,6 +720,44 @@ function jackFields() {
   if (reach === "rdp" && !f.rdp.value.trim()) f.rdp.value = "3389";
   if (reach === "vnc" && !f.vnc.value.trim()) f.vnc.value = "5900";
   if (reach === "telnet" && !f.telnet.value.trim()) f.telnet.value = "23";
+  // More reads as the choice when one of its three is.
+  $("jf-more").value = RARE.includes(reach) ? reach : "";
+  $("jf-morewrap").classList.toggle("on", RARE.includes(reach));
+  jfPreview();
+}
+
+// The line ssh would be given, as you type. A sketch for reading, never run: the real argv
+// is built by patchbay.rs, which also resolves a jump host named by device to its address.
+// ponytail: the four flags people set here; forwards and [defaults] options aren't shown.
+function jfPreview() {
+  const f = jackForm.elements;
+  const val = (k) => f[k].value.trim() || f[k].dataset.inherit || "";
+  const host = val("host");
+  const port = val("port");
+  const parts = [
+    "ssh",
+    val("jump") && `-J ${val("jump")}`,
+    port && port !== "22" && `-p ${port}`,
+    val("key") && `-i ${val("key")}`,
+    `${val("user") ? `${val("user")}@` : ""}${host || "host"}`,
+  ].filter(Boolean);
+  $("jf-cmd").innerHTML = `<span class="jf-dollar">$</span><code>${esc(parts.join(" "))}</code>`;
+}
+
+// The header: the mark the Kind field names, and who will see the device.
+function jfHead() {
+  const f = jackForm.elements;
+  const tint = osColor(f.os.value.trim());
+  const mark = $("jf-os");
+  mark.innerHTML = osIcon(f.os.value.trim());
+  mark.style.color = tint ?? "";
+  $("jf-sub").textContent = vaults.two
+    ? f.vault.value === "mine"
+      ? "Mine · only on this machine"
+      : "Team · everyone on the list"
+    : editing
+      ? "Edit device"
+      : "New device";
 }
 
 function openJack(j, prefillGroup) {
@@ -725,6 +766,7 @@ function openJack(j, prefillGroup) {
   $("sheet-title").textContent = editing ? `Edit ${j.label}` : "New device";
   jfDelete.hidden = !editing;
   jfDelete.innerHTML = `${icon("trash-2")}Delete`;
+  $("jf-x").innerHTML = icon("x");
   jfErr.hidden = true;
   const f = jackForm.elements;
   // Where it is, or where you are looking; the team's when neither says, as before.
@@ -745,6 +787,8 @@ function openJack(j, prefillGroup) {
     el.placeholder = who
       ? `${j[k]} from ${who === "defaults" ? "[defaults]" : who}`
       : el.dataset.ph;
+    // What the preview shows while the field is left to inherit.
+    el.dataset.inherit = who ? String(j[k]) : "";
   }
   f.os.value = j?.os ?? "";
   // The scheme is a control, so it cannot be typoed.
@@ -766,6 +810,9 @@ function openJack(j, prefillGroup) {
   $("oschoices").innerHTML = OS_CHOICES.map((o) => `<option value="${esc(o)}">`).join("");
   renderFolderSuggestions();
   jackFields();
+  jfHead();
+  // Open when it holds something, so a value is never hidden from the person editing it.
+  $("jf-adv").open = ["key", "jump", "forward", "mac"].some((k) => f[k].value.trim());
   sheetWrap.hidden = false;
   f.name.focus();
   jfWas = jfState();
@@ -854,6 +901,17 @@ jackForm.addEventListener("submit", async (e) => {
   }
 });
 $("jf-cancel").addEventListener("click", closeJack);
+$("jf-x").addEventListener("click", leaveJack);
+$("jf-more").addEventListener("change", (e) => {
+  // Back to More with nothing picked: the way in stays what it was.
+  if (!e.target.value) return jackFields();
+  jackForm.querySelector(`[name="reach"][value="${e.target.value}"]`).checked = true;
+  jackFields();
+});
+for (const k of ["user", "host", "port", "key", "jump"]) {
+  jackForm.elements[k].addEventListener("input", jfPreview);
+}
+jackForm.elements.os.addEventListener("input", jfHead);
 sheetWrap.addEventListener("mousedown", (e) => {
   if (e.target === sheetWrap) leaveJack();
 });
@@ -942,14 +1000,16 @@ async function removeMarked(js) {
 }
 
 // To the other vault, table and all. One call per device, so a refusal names the one
-// it was on and the rest still move.
-async function moveVault(js) {
+// it was on and the rest still move. The key travels unchanged, so the name it has
+// on the other side is the `me:` prefix put on or taken off, and that is what Undo moves.
+const nameIn = (j) => (j.vault === "mine" ? j.name.replace(/^me:/, "") : `me:${j.name}`);
+async function moveVault(js, undoing = false) {
   const to = VAULTS[otherVault(js[0]?.vault)]?.[1];
   const moved = [];
   for (const j of js) {
     try {
       await invoke("move_jack", { name: j.name });
-      moved.push(j.label);
+      moved.push(j);
     } catch (e) {
       alertish(e);
     }
@@ -957,9 +1017,16 @@ async function moveVault(js) {
   marked.clear();
   selKey = null;
   await load();
-  if (moved.length) {
-    flash(`Moved ${moved.length === 1 ? `"${moved[0]}"` : `${moved.length} devices`} to ${to}.`);
-  }
+  if (!moved.length) return;
+  const what = moved.length === 1 ? `"${moved[0].label}"` : `${moved.length} devices`;
+  // Sharing is the one worth saying twice: it is what a colleague now sees.
+  const who = to === "Team" ? " Everyone on the list sees it now." : "";
+  const back = moved.map((j) => all.find((x) => x.name === nameIn(j))).filter(Boolean);
+  flash(
+    `Moved ${what} to ${to}.${who}`,
+    false,
+    undoing || !back.length ? null : { label: "Undo", run: () => moveVault(back, true) },
+  );
 }
 
 async function newGroup(parent) {
@@ -1361,7 +1428,7 @@ function keysHtml() {
         ["Open the config file", [chord("e")]],
         ["Reload the list", [chord("r")]],
         ["Previous, next tab or pane", [`${chord("[")}`, `${chord("]")}`]],
-        ["Open a device beside the tab in front", [chord("d")]],
+        ["Open a device in split view", [chord("d")]],
         ["Close the tab; twice with a live session in it", [chord("w")]],
         ["This page", ["?"]],
       ],
@@ -1552,12 +1619,30 @@ setForm.addEventListener("change", (e) => {
   if (e.target.closest("#snip-rows, #swatches, .sources, #lic-add")) return;
   applySettings();
 });
-// Enter in a field, or Done: what changed is saved, then the sheet closes.
+// Enter in a field, or the close button: what changed is saved, then the sheet closes.
 setForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   await applySettings();
   if (setErr.hidden) closeSettings();
 });
+
+// The theme switch in the sidebar's foot steps through the same three choices Settings offers,
+// and keeps the pick the way Settings does.
+const THEMES = ["system", "light", "dark"];
+const themeNow = () => (THEMES.includes(prefs.theme) ? prefs.theme : "system");
+async function flipTheme() {
+  const next = { ...prefs, theme: THEMES[(THEMES.indexOf(themeNow()) + 1) % THEMES.length] };
+  try {
+    await invoke("save_settings", { next });
+    prefs = next;
+    await applyTheme();
+    // Dark to "system" on a dark Mac paints nothing new, so applyTheme skips its render,
+    // and the switch would keep showing the choice it just left.
+    render();
+  } catch (e) {
+    alertish(e);
+  }
+}
 
 async function saveSettings() {
   // Over the current prefs: the sidebar width has no field here and must survive a save.
@@ -1574,7 +1659,7 @@ async function saveSettings() {
   }
   setErr.hidden = true;
   saveRefused = false;
-  // Done, or Enter, after the change already went in: no second write of the same file.
+  // Closed, or Enter, after the change already went in: no second write of the same file.
   if (JSON.stringify(next) === JSON.stringify(prefs)) return;
 
   try {
@@ -1890,7 +1975,10 @@ function renderCrumbs() {
 }
 
 jackForm.elements.folders.addEventListener("input", renderCrumbs);
-for (const r of jackForm.elements.vault) r.addEventListener("change", renderFolderSuggestions);
+for (const r of jackForm.elements.vault) {
+  r.addEventListener("change", renderFolderSuggestions);
+  r.addEventListener("change", jfHead);
+}
 $("crumbs").addEventListener("click", (e) => {
   const dropped = e.target.closest("[data-drop]")?.dataset.drop;
   if (!dropped) return;

@@ -21,9 +21,10 @@ $("details").addEventListener("click", () => {
   });
 });
 $("newgroup").addEventListener("click", () => newGroup({ path: null, vault: group?.vault }));
-$("editcfg").addEventListener("click", () => invoke("open_config").catch(alertish));
 // Called, not passed: the event would arrive as the pane name and match nothing.
 $("settings").addEventListener("click", () => openSettings());
+$("newdev").addEventListener("click", () => openJack(null, group));
+$("themebtn").addEventListener("click", () => flipTheme());
 
 // A device row, in the tree or on the map: select, mark, or with a second click open.
 function devClick(e, row) {
@@ -61,6 +62,8 @@ listEl.addEventListener("click", (e) => {
   const act = e.target.closest("[data-first]")?.dataset.first;
   if (act === "new") return openJack(null, group);
   if (act === "import") return openSettings("import");
+  if (act === "team") return openSettings("team");
+  if (act === "ssh") return sshFound && openImport(sshFound, sshFound.path);
   if (act === "cfg") return invoke("open_config").catch(alertish);
   const row = e.target.closest(".jack");
   // Clicking under the rows clears the marks and keeps the selection.
@@ -112,6 +115,7 @@ function dragFrom(root) {
       if (next !== over) {
         over?.classList.remove("drop-on");
         next?.classList.add("drop-on");
+        if (next) tick();
         over = next;
       }
     };
@@ -146,6 +150,17 @@ dragFrom(treeEl);
 dragFrom(listEl);
 
 async function detailClick(e) {
+  const val = e.target.closest("[data-copy]");
+  if (val) {
+    try {
+      await navigator.clipboard.writeText(val.dataset.copy);
+      val.classList.add("copied");
+      setTimeout(() => val.classList.remove("copied"), 900);
+    } catch (err) {
+      alertish(err);
+    }
+    return;
+  }
   const reach = e.target.closest("[data-reach]")?.dataset.reach;
   if (reach) {
     reachShow = reach;
@@ -169,6 +184,7 @@ async function detailClick(e) {
   const j = live ? all.find((x) => x.name === live.name) : shown[sel];
   if (!j) return;
   if (act === "connect") connect(j.name);
+  if (act === "terminal") connect(j.name, true);
   if (act === "ping" || act === "trace" || act === "key") openSession(j.name, act);
   if (act === "disconnect") closeSession(activeId);
   if (act === "web") openWeb(j.name);
@@ -585,7 +601,7 @@ async function refreshProbes() {
 }
 
 // ── sidebar width ──────────────────────────────────────────────────────────
-const SIDE_DEFAULT = 208;
+const SIDE_DEFAULT = 248;
 
 // Clamped here as well as in Rust: the config can be hand-edited.
 const applySidebar = (px) =>
@@ -616,7 +632,15 @@ grip.addEventListener("pointerdown", (e) => {
   e.preventDefault();
   grip.setPointerCapture(e.pointerId);
   grip.classList.add("on");
-  const onMove = (ev) => applySidebar(ev.clientX);
+  // Within reach of the default width the divider settles on it, ticking once as it does:
+  // the width the layout is drawn for is easy to find again by feel.
+  let settled = false;
+  const onMove = (ev) => {
+    const near = Math.abs(ev.clientX - SIDE_DEFAULT) < 8;
+    if (near && !settled) tick();
+    settled = near;
+    applySidebar(near ? SIDE_DEFAULT : ev.clientX);
+  };
   grip.addEventListener("pointermove", onMove);
   // Not pointerup: a drag crossing a web tab (an OS view above the page) loses the
   // pointer, and losing the capture is what happens either way.

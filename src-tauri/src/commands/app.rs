@@ -49,6 +49,35 @@ pub fn app_version(app: tauri::AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
+/// One bounce of the Dock icon (a flash of the taskbar button off macOS) while the window is
+/// in the background: a session there has something to say. Ours rather than the window
+/// API's, so it needs no capability. Nothing happens while patchbay is in front.
+#[tauri::command]
+pub fn attention(app: tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.request_user_attention(Some(tauri::UserAttentionType::Informational));
+    }
+}
+
+/// A tick on a Force Touch trackpad, the one macOS gives a guide a dragged thing snaps to:
+/// the window asks for it when a drag lines up with something it would land on. A sync
+/// command, so it runs on the main thread AppKit wants. Nothing off macOS, and nothing on
+/// a Mac without that trackpad: the system decides, and a missed tick is not an error.
+#[tauri::command]
+pub fn haptic() {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{
+            NSHapticFeedbackManager, NSHapticFeedbackPattern, NSHapticFeedbackPerformanceTime,
+            NSHapticFeedbackPerformer,
+        };
+        NSHapticFeedbackManager::defaultPerformer().performFeedbackPattern_performanceTime(
+            NSHapticFeedbackPattern::Alignment,
+            NSHapticFeedbackPerformanceTime::Now,
+        );
+    }
+}
+
 /// The close button is held by Rust and answered by the window, because only the
 /// window knows which tabs are still live. This is the answer.
 #[tauri::command]

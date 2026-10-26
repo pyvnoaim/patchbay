@@ -260,6 +260,8 @@ fn main() {
             files::sftp_open,
             files::open_full_disk_access,
             app::app_version,
+            app::haptic,
+            app::attention,
             app::update_check,
             app::update_install,
             app::update_restart,

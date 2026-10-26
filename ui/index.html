@@ -11,11 +11,15 @@
     <div id="app" hidden>
       <aside id="side">
         <div class="drag" data-tauri-drag-region></div>
+        <div class="side-top">
+          <button class="goto" id="searchbtn"></button>
+        </div>
         <nav id="tree" role="tree" aria-label="Devices" tabindex="0"></nav>
         <div class="side-foot">
+          <button class="newdev" id="newdev"></button>
           <button class="flat" id="newgroup"></button>
+          <button class="flat" id="themebtn"></button>
           <button class="flat" id="settings"></button>
-          <button class="flat" id="editcfg"></button>
         </div>
         <!-- The sidebar's resize grip. Sits over the drag region, so it opts out of it. -->
         <div class="grip" id="sidegrip"></div>
@@ -33,46 +37,45 @@
             <button class="chip" id="viewmode"></button>
             <button class="chip" id="snipbtn" hidden></button>
             <button class="chip" id="details" hidden></button>
-            <button class="chip" id="searchbtn"></button>
           </div>
         </div>
-        <div class="pane" id="browse">
-          <main id="list"></main>
-          <!-- The detail of whatever the tree has selected. The same markup the side pane
+        <!-- What the tab bar is over: the list or the sessions, and the pane beside a session.
+           Under the bar rather than beside it, so the bar and its buttons span the window. -->
+        <div class="work">
+          <div class="pane" id="browse">
+            <main id="list"></main>
+            <!-- The detail of whatever the tree has selected. The same markup the side pane
              beside a session takes, drawn wide. -->
-          <section id="wide" hidden>
-            <div class="dactions" id="w-actions"></div>
-            <div class="d-body" id="w-body"></div>
-          </section>
-          <!-- The dock for bulk actions on marked rows, rendered by renderDock() in browse.js. Every action
+            <section id="wide" hidden>
+              <div class="dactions" id="w-actions"></div>
+              <div class="d-body" id="w-body"></div>
+            </section>
+            <!-- The dock for bulk actions on marked rows, rendered by renderDock() in browse.js. Every action
              the context menu offers is here too, so the gesture is discoverable. -->
-          <div id="dock" hidden></div>
-        </div>
-        <div class="terms" id="terms" hidden>
-          <!-- Find in a session. Over the terminal, not a sheet, and deliberately not in OVERLAYS():
-             modalOpen() would take the window's chords and shrink a web tab away. -->
-          <div id="find" hidden>
-            <span id="find-icon" class="fi"></span>
-            <input
-              id="find-q"
-              placeholder="Find in session"
-              spellcheck="false"
-              autocomplete="off"
-            />
-            <span id="find-n"></span>
-            <button type="button" id="find-prev" class="flat" data-tip="Previous"></button>
-            <button type="button" id="find-next" class="flat" data-tip="Next"></button>
-            <button type="button" id="find-x" class="flat" data-tip="Close"></button>
+            <div id="dock" hidden></div>
           </div>
+          <div class="terms" id="terms" hidden>
+            <!-- Find in a session. Over the terminal, not a sheet, and deliberately not in OVERLAYS():
+             modalOpen() would take the window's chords and shrink a web tab away. -->
+            <div id="find" hidden>
+              <span id="find-icon" class="fi"></span>
+              <input
+                id="find-q"
+                placeholder="Find in session"
+                spellcheck="false"
+                autocomplete="off"
+              />
+              <span id="find-n"></span>
+              <button type="button" id="find-prev" class="flat" data-tip="Previous"></button>
+              <button type="button" id="find-next" class="flat" data-tip="Next"></button>
+              <button type="button" id="find-x" class="flat" data-tip="Close"></button>
+            </div>
+          </div>
+          <aside id="detail">
+            <div class="d-body" id="d-body"></div>
+          </aside>
         </div>
       </section>
-
-      <aside id="detail">
-        <div class="drag dbar" data-tauri-drag-region>
-          <div class="dactions" id="d-actions"></div>
-        </div>
-        <div class="d-body" id="d-body"></div>
-      </aside>
     </div>
 
     <!-- right-click menu; replaces the webview's own Reload/Inspect one -->
@@ -81,15 +84,30 @@
 
     <div id="sheetwrap" hidden>
       <form
-        class="sheet"
+        class="sheet jack"
         id="jackform"
         autocomplete="off"
         role="dialog"
         aria-modal="true"
         aria-labelledby="sheet-title"
       >
-        <div class="sheet-head" id="sheet-title"></div>
-        <div class="sheet-body">
+        <!-- The device as it will look: its mark, and its name typed in place as the title. -->
+        <div class="jf-head">
+          <span class="jf-os" id="jf-os"></span>
+          <div class="jf-id">
+            <span class="sr-only" id="sheet-title"></span>
+            <input
+              name="name"
+              class="jf-name"
+              spellcheck="false"
+              placeholder="Name this device"
+              aria-label="Name"
+            />
+            <span class="jf-sub" id="jf-sub"></span>
+          </div>
+          <button type="button" class="flat" id="jf-x" data-tip="Close"></button>
+        </div>
+        <div class="sheet-body jf-body">
           <!-- Only with a shared list set: with one vault there is nothing to choose. -->
           <div class="how" id="jf-vault" hidden>
             <span class="how-q">Who can see it?</span>
@@ -106,129 +124,139 @@
               >
             </div>
           </div>
+          <!-- The common ways as a segmented control; the rare three behind More, whose radios
+             stay in the form so the group's value covers them. -->
           <div class="how">
-            <span class="how-q">How do you reach it?</span>
-            <div class="how-row">
-              <label class="how-opt"
+            <span class="how-q">Connect with</span>
+            <div class="seg" role="radiogroup" aria-label="Connect with">
+              <label class="seg-opt"
                 ><input type="radio" name="reach" value="ssh" checked /><span>Terminal</span></label
               >
-              <label class="how-opt"
-                ><input type="radio" name="reach" value="rdp" /><span>Remote desktop</span></label
+              <label class="seg-opt"
+                ><input type="radio" name="reach" value="rdp" /><span>Desktop</span></label
               >
-              <label class="how-opt"
-                ><input type="radio" name="reach" value="vnc" /><span>VNC</span></label
+              <label class="seg-opt"
+                ><input type="radio" name="reach" value="web" /><span>Web</span></label
               >
-              <label class="how-opt"
-                ><input type="radio" name="reach" value="telnet" /><span>Telnet</span></label
+              <label class="seg-opt"
+                ><input type="radio" name="reach" value="sftp" /><span>Files</span></label
               >
-              <label class="how-opt"
-                ><input type="radio" name="reach" value="serial" /><span>Serial</span></label
-              >
-              <label class="how-opt"
-                ><input type="radio" name="reach" value="web" /><span>Web UI</span></label
-              >
-              <label class="how-opt"
-                ><input type="radio" name="reach" value="sftp" /><span>SFTP</span></label
-              >
+              <label class="seg-opt" hidden><input type="radio" name="reach" value="vnc" /></label>
+              <label class="seg-opt" hidden
+                ><input type="radio" name="reach" value="telnet"
+              /></label>
+              <label class="seg-opt" hidden
+                ><input type="radio" name="reach" value="serial"
+              /></label>
+              <label class="seg-more" id="jf-morewrap">
+                <select id="jf-more" aria-label="Other ways to connect">
+                  <option value="">More</option>
+                  <option value="vnc">VNC</option>
+                  <option value="telnet">Telnet</option>
+                  <option value="serial">Serial</option>
+                </select>
+              </label>
             </div>
           </div>
-          <label class="f wide req"
-            ><span>Name</span><input name="name" spellcheck="false" placeholder="prod-web"
-          /></label>
-          <!-- A console cable has no address. -->
-          <label class="f wide req" data-need="ssh sftp rdp vnc telnet web"
-            ><span>Host</span><input name="host" spellcheck="false" placeholder="10.0.0.4"
-          /></label>
-          <label class="f" data-need="ssh sftp rdp vnc"
-            ><span>User</span><input name="user" spellcheck="false" placeholder="from its folder"
-          /></label>
-          <label class="f" data-need="ssh sftp"
-            ><span>SSH port</span><input name="port" inputmode="numeric" placeholder="22"
-          /></label>
-          <label class="f wide" data-need="ssh sftp"
-            ><span>Private key file</span
-            ><input
-              name="key"
-              spellcheck="false"
-              list="sshkeys"
-              placeholder="only if it isn't your default"
-          /></label>
-          <label class="f wide" data-need="ssh sftp telnet"
-            ><span>Jump host</span
-            ><input
-              name="jump"
-              spellcheck="false"
-              list="jacknames"
-              placeholder="another device, or user@host"
-          /></label>
-          <label class="f wide" data-need="ssh"
-            ><span>Port forwards</span
-            ><input
-              name="forward"
-              spellcheck="false"
-              placeholder="8080:localhost:80, -R 9000:localhost:9000, -D 1080"
-          /></label>
-          <label class="f req" data-need="rdp"
-            ><span>RDP port</span><input name="rdp" inputmode="numeric" placeholder="3389"
-          /></label>
-          <label class="f req" data-need="vnc"
-            ><span>VNC port</span><input name="vnc" inputmode="numeric" placeholder="5900"
-          /></label>
-          <label class="f req" data-need="telnet"
-            ><span>Telnet port</span><input name="telnet" inputmode="numeric" placeholder="23"
-          /></label>
-          <!-- cu, not tty: on macOS a tty device waits for a carrier a console never raises. -->
-          <label class="f wide req" data-need="serial"
-            ><span>Serial device</span
-            ><input name="serial" spellcheck="false" placeholder="/dev/cu.usbserial-1410"
-          /></label>
-          <label class="f" data-need="serial"
-            ><span>Speed</span
-            ><select name="baud">
-              <option value="9600">9600</option>
-              <option value="19200">19200</option>
-              <option value="38400">38400</option>
-              <option value="57600">57600</option>
-              <option value="115200">115200</option>
-            </select></label
-          >
-          <label class="f wide" data-need="web"
-            ><span>URL</span>
-            <span class="withprefix">
-              <button type="button" class="prefix" id="url-scheme" data-tip="Switch to http://">
-                https://
-              </button>
-              <input name="url" spellcheck="false" placeholder="10.0.0.20:5001" /> </span
-          ></label>
-          <label class="f wide"
-            ><span>OS / kind</span
-            ><input
-              name="os"
-              spellcheck="false"
-              list="oschoices"
-              placeholder="ubuntu, synology, proxmox…"
-          /></label>
+          <!-- Where: the address on one line, the way ssh reads it. -->
+          <div class="jf-where">
+            <label class="f f-user" data-need="ssh sftp rdp vnc"
+              ><span>User</span><input name="user" spellcheck="false" placeholder="from its folder"
+            /></label>
+            <!-- A console cable has no address. -->
+            <label class="f f-host req" data-need="ssh sftp rdp vnc telnet web"
+              ><span>Host</span><input name="host" spellcheck="false" placeholder="10.0.0.4"
+            /></label>
+            <label class="f f-port" data-need="ssh sftp"
+              ><span>Port</span><input name="port" inputmode="numeric" placeholder="22"
+            /></label>
+            <label class="f f-port req" data-need="rdp"
+              ><span>Port</span><input name="rdp" inputmode="numeric" placeholder="3389"
+            /></label>
+            <label class="f f-port req" data-need="vnc"
+              ><span>Port</span><input name="vnc" inputmode="numeric" placeholder="5900"
+            /></label>
+            <label class="f f-port req" data-need="telnet"
+              ><span>Port</span><input name="telnet" inputmode="numeric" placeholder="23"
+            /></label>
+            <!-- cu, not tty: on macOS a tty device waits for a carrier a console never raises. -->
+            <label class="f f-serial req" data-need="serial"
+              ><span>Serial device</span
+              ><input name="serial" spellcheck="false" placeholder="/dev/cu.usbserial-1410"
+            /></label>
+            <label class="f f-port" data-need="serial"
+              ><span>Speed</span
+              ><select name="baud">
+                <option value="9600">9600</option>
+                <option value="19200">19200</option>
+                <option value="38400">38400</option>
+                <option value="57600">57600</option>
+                <option value="115200">115200</option>
+              </select></label
+            >
+            <label class="f f-url" data-need="web"
+              ><span>URL</span>
+              <span class="withprefix">
+                <button type="button" class="prefix" id="url-scheme" data-tip="Switch to http://">
+                  https://
+                </button>
+                <input name="url" spellcheck="false" placeholder="10.0.0.20:5001" /> </span
+            ></label>
+          </div>
+          <div class="jf-cmd" id="jf-cmd" data-need="ssh sftp" aria-live="polite"></div>
+          <!-- Where it sits in the list, and what it is. -->
+          <div class="jf-list">
+            <label class="f"
+              ><span>Folders</span>
+              <input
+                name="folders"
+                spellcheck="false"
+                list="folderlist"
+                placeholder="prod/eu/web, customer-facing" />
+              <datalist id="folderlist"></datalist
+            ></label>
+            <div class="crumbs" id="crumbs"></div>
+            <div class="jf-pair">
+              <label class="f"
+                ><span>Kind</span
+                ><input
+                  name="os"
+                  spellcheck="false"
+                  list="oschoices"
+                  placeholder="ubuntu, synology…"
+              /></label>
+              <label class="f"
+                ><span>Description</span><input name="desc" placeholder="what it is, who to call"
+              /></label>
+            </div>
+          </div>
           <datalist id="oschoices"></datalist>
-          <label class="f wide"
-            ><span>Folders</span>
-            <input
-              name="folders"
-              spellcheck="false"
-              list="folderlist"
-              placeholder="prod/eu/web, customer-facing" />
-            <datalist id="folderlist"></datalist
-          ></label>
-          <div class="crumbs" id="crumbs"></div>
-          <label class="f wide"
-            ><span>Description</span><input name="desc" placeholder="optional"
-          /></label>
-          <label class="f wide"
-            ><span>MAC address</span
-            ><input
-              name="mac"
-              spellcheck="false"
-              placeholder="for Wake on LAN, e.g. 00:1b:21:92:0a:1f"
-          /></label>
+          <!-- The rest, folded: most devices need none of it. Opened by openJack() when any of it
+             is set, so a value is never hidden from the person editing it. -->
+          <details class="jf-adv" id="jf-adv">
+            <summary>Advanced<span>key, jump host, forwards, wake</span></summary>
+            <div class="jf-advbody">
+              <label class="f" data-need="ssh sftp"
+                ><span>Private key file</span
+                ><input name="key" spellcheck="false" list="sshkeys" placeholder="your default"
+              /></label>
+              <label class="f" data-need="ssh sftp telnet"
+                ><span>Jump host</span
+                ><input name="jump" spellcheck="false" list="jacknames" placeholder="direct"
+              /></label>
+              <label class="f wide" data-need="ssh"
+                ><span>Port forwards</span
+                ><input
+                  name="forward"
+                  spellcheck="false"
+                  placeholder="8080:localhost:80, -R 9000:localhost:9000, -D 1080"
+              /></label>
+              <label class="f wide"
+                ><span>MAC address · for Wake on LAN</span
+                ><input name="mac" spellcheck="false" placeholder="00:1b:21:92:0a:1f"
+              /></label>
+            </div>
+          </details>
           <datalist id="jacknames"></datalist>
           <datalist id="sshkeys"></datalist>
         </div>
@@ -251,21 +279,29 @@
         aria-modal="true"
         aria-labelledby="set-title"
       >
-        <div class="sheet-head" id="set-title">Settings</div>
+        <!-- Closing is saving: a submit, as Done was, so a half-typed field is kept. -->
+        <button type="submit" class="flat set-x" data-icon="x" data-tip="Close"></button>
         <div class="sheet-body">
+          <!-- The sections, grouped by what you came to do. -->
           <nav class="setnav" id="setnav">
+            <div class="setnav-title" id="set-title">Settings</div>
+            <div class="setnav-note">Changes save as you make them</div>
+            <div class="setnav-g">General</div>
             <button type="button" data-pane="devices" data-icon="server">Devices</button>
+            <button type="button" data-pane="appearance" data-icon="monitor">Appearance</button>
+            <button type="button" data-pane="keys" data-icon="keyboard">Shortcuts</button>
+            <div class="setnav-g">Your list</div>
+            <button type="button" data-pane="team" data-icon="users">Team</button>
+            <button type="button" data-pane="import" data-icon="download">Import</button>
+            <button type="button" data-pane="config" data-icon="file-pen-line">Config file</button>
+            <div class="setnav-g">In sessions</div>
             <button type="button" data-pane="snippets" data-icon="text-cursor-input">
               Snippets
             </button>
-            <button type="button" data-pane="team" data-icon="users">Team</button>
-            <button type="button" data-pane="appearance" data-icon="monitor">Appearance</button>
-            <button type="button" data-pane="import" data-icon="download">Import</button>
             <button type="button" data-pane="webext" data-icon="key-round" hidden>Bitwarden</button>
+            <div class="setnav-g setnav-foot">About</div>
             <button type="button" data-pane="updates" data-icon="rotate-cw">Updates</button>
             <button type="button" data-pane="licence" data-icon="badge-check">Licence</button>
-            <button type="button" data-pane="config" data-icon="file-pen-line">Config file</button>
-            <button type="button" data-pane="keys" data-icon="keyboard">Shortcuts</button>
           </nav>
           <div class="setpanes">
             <section class="pane" data-pane="devices">
@@ -523,10 +559,6 @@
           </div>
         </div>
         <p class="sheet-err" id="set-err" hidden></p>
-        <div class="sheet-foot">
-          <span style="flex: 1"></span>
-          <button type="submit" class="primary">Done</button>
-        </div>
       </form>
     </div>
 
@@ -633,6 +665,7 @@
           />
         </div>
         <div id="presults" role="listbox" aria-label="Devices"></div>
+        <div class="pal-foot" id="pfoot" aria-hidden="true"></div>
       </div>
     </div>
 
