@@ -991,6 +991,29 @@ footer {
 .w-light:nth-child(3) {
   background: #28c840;
 }
+/* The palette's door at the top of the list. */
+.w-goto {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  margin: 0 10px 8px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: var(--fill);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-faint);
+}
+.w-goto span {
+  flex: 1;
+}
+.w-goto kbd {
+  padding: 0 5px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  font: inherit;
+  font-size: 10.5px;
+}
 .w-list {
   flex: 1;
   min-height: 0;
@@ -999,40 +1022,29 @@ footer {
   flex-direction: column;
   gap: 1px;
 }
+/* A vault is a heading over its tree, as in the app: small and quiet. */
 .w-vault {
-  display: grid;
-  grid-template-columns: 22px 1fr;
-  column-gap: 8px;
-  align-items: center;
-  padding: 6px 8px 5px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 .w-vault:not(:first-child) {
-  margin-top: 6px;
-}
-.w-vault .badge {
-  grid-row: span 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 22px;
-  border-radius: 6px;
-  background: var(--fill-hi);
-  color: var(--ink-dim);
-}
-.w-vault .badge svg {
-  width: 12px;
-  height: 12px;
+  margin-top: 12px;
 }
 .w-vault .vn {
   font-weight: 600;
+  color: var(--ink-dim);
 }
 .w-vault .vs {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
   color: var(--ink-faint);
-  white-space: nowrap;
 }
 .w-vault .vs .w-dot {
   width: 5px;
@@ -1093,9 +1105,8 @@ footer {
   background: var(--fill-hi);
 }
 .w-jack[data-sel] {
-  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
-  color: #fff;
-  box-shadow: 0 4px 14px -4px var(--glow);
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 35%, transparent);
 }
 /* Marks and the dock they raise, the same gesture the app has. */
 .w-jack[data-mark]:not([data-sel]) {
@@ -1106,20 +1117,33 @@ footer {
 .w-jack[data-mark]:not([data-sel]):hover {
   background: color-mix(in oklab, var(--accent) 24%, transparent);
 }
+/* The foot, as in the app: New device widest, then a folder, the theme, Settings. */
 .w-foot {
   display: flex;
   gap: 4px;
-  padding: 6px 10px 10px;
+  padding: 9px 8px;
   flex: none;
-  color: var(--ink-faint);
+  border-top: 1px solid var(--line);
+  color: var(--ink-dim);
 }
 .w-foot span {
   display: flex;
-  padding: 5px;
-  border-radius: 6px;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--fill);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    inset 0 1px 0 var(--lift);
 }
-.w-foot .push {
-  margin-left: auto;
+.w-foot .w-new {
+  flex: 1;
+  gap: 6px;
+  width: auto;
+  color: var(--ink);
+  font-weight: 550;
 }
 
 /* A device that doesn't answer is grey, not red: it is usually a VPN that is off. */
@@ -1137,11 +1161,6 @@ footer {
   background: transparent;
   box-shadow: inset 0 0 0 1.5px var(--ink-faint);
 }
-/* The dot keeps its own colour on a selected row: it is the only state in the row.
-   A ring separates it from the accent underneath. */
-.w-jack[data-sel] .w-dot {
-  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.55);
-}
 .w-os {
   display: flex;
   flex: none;
@@ -1150,9 +1169,6 @@ footer {
   width: 14px;
   height: 14px;
   display: block;
-}
-.w-jack[data-sel] .w-os {
-  color: rgba(255, 255, 255, 0.92) !important;
 }
 .w-name {
   font-weight: 450;
@@ -1172,10 +1188,6 @@ footer {
   width: 12px;
   height: 12px;
 }
-.w-jack[data-sel] .w-web,
-.w-jack[data-sel] .w-rdp {
-  color: rgba(255, 255, 255, 0.8);
-}
 
 .w-main {
   position: relative;
@@ -1190,10 +1202,9 @@ footer {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 46px;
+  height: 50px;
   flex: none;
   padding: 0 12px;
-  border-bottom: 1px solid var(--line);
 }
 .w-strip {
   display: flex;
@@ -1209,9 +1220,9 @@ footer {
   gap: 6px;
   flex: 0 1 auto;
   min-width: 0;
-  height: 27px;
+  height: 30px;
   padding: 0 10px;
-  border-radius: 7px;
+  border-radius: 9px;
   max-width: 200px;
   font-size: 12.5px;
   color: var(--ink-dim);
@@ -1252,19 +1263,12 @@ footer {
   align-items: center;
   gap: 6px;
   flex: none;
-  height: 27px;
+  height: 30px;
   padding: 0 10px;
-  border-radius: 7px;
-  box-shadow: inset 0 0 0 1px var(--line);
+  border-radius: 8px;
   color: var(--ink-dim);
   font-size: 12px;
-  font-weight: 450;
-}
-.w-chip kbd {
-  padding-left: 3px;
-  color: var(--ink-faint);
-  font: inherit;
-  font-size: 11px;
+  font-weight: 500;
 }
 .shot-hint {
   margin-top: 16px;
@@ -1348,19 +1352,31 @@ footer {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 27px;
-  padding: 0 11px;
-  border-radius: 7px;
-  background: var(--fill-hi);
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 9px;
+  background: var(--fill);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    inset 0 1px 0 var(--lift);
   color: var(--ink);
   font-weight: 550;
   font-size: 12.5px;
   white-space: nowrap;
 }
+.w-btn kbd {
+  padding: 0 4px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+  font: inherit;
+  font-size: 10.5px;
+}
 .w-btn.primary {
   background: linear-gradient(180deg, var(--accent), var(--accent-deep));
   color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 4px 14px -4px var(--glow);
 }
 .w-btn.ghost {
   padding: 0 8px;
@@ -1379,7 +1395,12 @@ footer {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 18px;
+}
+/* The ways in, a row of their own under the name. */
+.w-go {
+  display: flex;
+  gap: 8px;
+  margin: 14px 0 16px;
 }
 .w-acts {
   display: flex;
@@ -1398,10 +1419,13 @@ footer {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: var(--fill-hi);
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--fill);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    inset 0 1px 0 var(--lift);
   flex: none;
 }
 .w-tile svg {
@@ -1420,9 +1444,24 @@ footer {
 .w-card {
   min-width: 0;
   padding: 12px 14px 14px;
-  border-radius: 10px;
-  background: var(--fill);
-  box-shadow: inset 0 0 0 1px var(--line);
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--fill-hi), var(--fill));
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    inset 0 1px 0 var(--lift);
+}
+/* The command is a line of shell, not a card about one. */
+.w-card:has(.w-cmd) {
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+.w-card:has(.w-cmd) .w-sec {
+  display: none;
+}
+.w-cmd .w-mono::before {
+  content: "$ ";
+  color: var(--ink-faint);
 }
 .w-card.wide {
   grid-column: 1 / -1;
@@ -1440,19 +1479,25 @@ footer {
   margin-bottom: 7px;
 }
 .w-sec svg {
-  width: 13px;
-  height: 13px;
-  color: var(--ink-faint);
+  display: none;
 }
+/* Rows read as a list: a hairline between them, the label wide enough for words. */
 .w-row {
   display: flex;
   gap: 10px;
-  padding: 2px 0;
+  padding: 4px 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--line) 60%, transparent);
+}
+.w-row:last-child {
+  border-bottom: 0;
 }
 .w-row dt {
   color: var(--ink-faint);
-  width: 42px;
+  width: 56px;
   flex: none;
+}
+.w-row dt::first-letter {
+  text-transform: uppercase;
 }
 .w-row dd {
   margin: 0;
