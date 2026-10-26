@@ -1822,12 +1822,21 @@ button,
 .jack,
 .twist,
 .opt,
+.seg-opt,
+.imp-row,
+.source,
+.sw .reset,
+input[type="color"],
+summary,
+select,
 .setnav button,
 [data-act],
 [data-a] {
   cursor: pointer;
 }
-button:disabled {
+button:disabled,
+select:disabled,
+.imp-row:has(input:disabled) {
   cursor: default;
 }
 /* One hover curve for every clickable thing, the sheets' ease-out. Box-shadow and
