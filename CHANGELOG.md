@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.69 - 2026-10-27
 
 - Folders can be pinned (right-click, or the pin beside Rename): a pinned folder sits above the others at its level. Pins are yours alone, not written into a shared list.
 
