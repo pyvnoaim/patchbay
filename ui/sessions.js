@@ -1516,7 +1516,7 @@ function renderTabs() {
       <span class="lbl">${esc(s.task ? `${taskLabel(s.task)} ${labelOf(s.name)}` : labelOf(s.name))}</span>
       ${
         s.kind === "web" && webextRunning && !s.dead
-          ? `<span class="x" data-bw="${s.id}" data-tip="Fill · right-click for Bitwarden" role="button">${icon("key-round")}</span>`
+          ? `<span class="x ${s.filling ? "busy" : ""}" data-bw="${s.id}" data-tip="Fill · right-click for Bitwarden" role="button">${icon("key-round")}</span>`
           : ""
       }
       <span class="x" data-close="${s.id}" data-tip="Close  ${chord("w")}" role="button">${icon("x")}</span>
@@ -1606,7 +1606,21 @@ function bitwardenKey(el, popup) {
   const r = el.getBoundingClientRect();
   const at = { x: r.left, y: r.top, width: r.width, height: r.height };
   const id = el.dataset.bw ? +el.dataset.bw : null;
-  invoke("webext_key", { id, ...at, popup }).catch(alertish);
+  // A fill answers once it has landed, which can be seconds while Bitwarden's worker
+  // wakes, so the key pulses until then.
+  const s = popup ? undefined : sessions.get(id);
+  // A count, so a second click doesn't stop the pulse when the first fill lands.
+  if (s) {
+    s.filling = (s.filling ?? 0) + 1;
+    renderTabs();
+  }
+  invoke("webext_key", { id, ...at, popup })
+    .catch(alertish)
+    .finally(() => {
+      if (!s) return;
+      s.filling--;
+      renderTabs();
+    });
 }
 tabsEl.addEventListener("contextmenu", (e) => {
   const bw = e.target.closest("[data-bw]");

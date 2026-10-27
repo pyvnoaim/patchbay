@@ -277,7 +277,7 @@ mod shim {
 
     pub struct TabIvars {
         pub id: u32,
-        view: Retained<WKWebView>,
+        pub view: Retained<WKWebView>,
     }
 
     define_class!(
@@ -549,13 +549,16 @@ pub fn activate(id: u32) {
 ///
 /// `view` is the window's content view and `at` the button's rect, in CSS pixels from
 /// the top. A locked vault answers a fill with the popup, which hangs from there too.
+///
+/// A fill hands back a receiver that fires once the page sees it land, for the key to
+/// pulse until then; see `watch_fill`.
 #[cfg(target_os = "macos")]
 pub fn key(
     view: *mut std::ffi::c_void,
     id: Option<u32>,
     at: (f64, f64, f64, f64),
     popup: bool,
-) -> Result<(), String> {
+) -> Result<Option<std::sync::mpsc::Receiver<()>>, String> {
     let (x, y, width, height) = at;
     use objc2::{rc::Retained, runtime::ProtocolObject, DefinedClass, MainThreadMarker};
     use objc2_app_kit::NSView;
@@ -586,19 +589,60 @@ pub fn key(
         (h.context.clone(), tab)
     })
     .ok_or("Bitwarden isn't running")?;
+    let mut landed = None;
     if popup {
         unsafe { context.performActionForTab(tab.as_deref().map(ProtocolObject::from_ref)) };
     } else {
-        tab.ok_or("this tab opened before Bitwarden was on - close it and open it again")?;
+        let tab =
+            tab.ok_or("this tab opened before Bitwarden was on - close it and open it again")?;
         // Bitwarden's own "autofill_login", which acts on the active tab `activate` set.
         let fill = unsafe { context.commands() }
             .iter()
             .find(|c| unsafe { c.identifier() }.to_string() == "autofill_login")
             .ok_or("this Bitwarden has no fill command - right-click the key to fill by hand")?;
+        // Listening before the command goes, or a quick fill lands before the listener.
+        landed = Some(watch_fill(&tab.ivars().view));
         unsafe { context.performCommand(&fill) };
     }
     log_errors(&context);
-    Ok(())
+    Ok(landed)
+}
+
+/// Fires once the page sees an `input` event, which is how Bitwarden's fill announces
+/// itself to the form, or once the page goes away under it. Bitwarden itself says
+/// nothing when a fill is done, and its worker can take seconds to wake first. The
+/// listener runs in a world of its own, so the page can neither see nor touch it.
+/// ponytail: a field filled inside an iframe doesn't reach the top document; the key
+/// pulses until the 15 s give-up then.
+#[cfg(target_os = "macos")]
+fn watch_fill(view: &objc2_web_kit::WKWebView) -> std::sync::mpsc::Receiver<()> {
+    use objc2::MainThreadMarker;
+    use objc2_foundation::NSString;
+    use objc2_web_kit::WKContentWorld;
+    const LISTEN: &str = "return await new Promise((r) => {
+        addEventListener(\"input\", () => r(true), { capture: true, once: true });
+        setTimeout(() => r(false), 15000);
+    });";
+    let (tx, rx) = std::sync::mpsc::channel();
+    let tx = std::cell::Cell::new(Some(tx));
+    let done = block2::RcBlock::new(
+        move |_: *mut objc2::runtime::AnyObject, _: *mut objc2_foundation::NSError| {
+            if let Some(tx) = tx.take() {
+                let _ = tx.send(());
+            }
+        },
+    );
+    let mtm = MainThreadMarker::from(view);
+    unsafe {
+        view.callAsyncJavaScript_arguments_inFrame_inContentWorld_completionHandler(
+            &NSString::from_str(LISTEN),
+            None,
+            None,
+            &WKContentWorld::defaultClientWorld(mtm),
+            Some(&done),
+        )
+    };
+    rx
 }
 
 /// What WebKit recorded going wrong in the extension since it loaded, to the dev log.

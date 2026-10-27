@@ -352,6 +352,11 @@ body:not([data-os="macos"]) .tabs {
   opacity: 1;
   background: var(--row-hover);
 }
+.tab .x.busy {
+  opacity: 1;
+  color: var(--accent);
+  animation: dot-wait 0.9s ease-in-out infinite;
+}
 .tab .x .i {
   width: 11px;
   height: 11px;

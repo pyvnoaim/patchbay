@@ -451,7 +451,8 @@ pub async fn webext_stop(app: tauri::AppHandle) -> Result<(), String> {
 
 /// The key button: a fill, or with `popup` Bitwarden itself. `id` is the web tab it
 /// sits on, or `None` for the toolbar's key, which is the vault rather than a page.
-/// The rect is the button's, so whatever Bitwarden shows hangs from it.
+/// The rect is the button's, so whatever Bitwarden shows hangs from it. A fill answers
+/// once it has landed, so the key can show it is working until then.
 #[tauri::command]
 pub async fn webext_key(
     app: tauri::AppHandle,
@@ -465,11 +466,20 @@ pub async fn webext_key(
     #[cfg(target_os = "macos")]
     {
         let window = app.get_window("main").ok_or("the main window has gone")?;
-        on_main(&app, move || {
+        let landed = on_main(&app, move || {
             let view = window.ns_view().map_err(|e| e.to_string())?;
             crate::webext::key(view, id, (x, y, width, height), popup)
         })
-        .await
+        .await?;
+        if let Some(landed) = landed {
+            // The page gives up at 15 s; this only outlasts a page that never answers.
+            blocking(move || {
+                let _ = landed.recv_timeout(std::time::Duration::from_secs(20));
+                Ok(())
+            })
+            .await?;
+        }
+        Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
