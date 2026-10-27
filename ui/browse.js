@@ -110,7 +110,9 @@ function renderTree() {
     const js = all.filter((j) => inVault(j, vault));
     if (vault) rows.push(vaultRow(vault, js.length));
     const walk = (level, depth) => {
-      for (const node of [...level.values()].sort((a, b) => collate(a.name, b.name))) {
+      const pin = (n) => (pinned.has(gkey({ path: n.path, vault })) ? 0 : 1);
+      const order = (a, b) => pin(a) - pin(b) || collate(a.name, b.name);
+      for (const node of [...level.values()].sort(order)) {
         const id = { path: node.path, vault };
         const here = js.filter((j) => j.folders.some((f) => normPath(f) === node.path));
         rows.push(row(node, depth, live, id));
@@ -215,6 +217,7 @@ function row(node, depth, live, id) {
     <span class="twist ${kids ? "" : "leaf"} ${open ? "open" : ""}">${icon("chevron-right")}</span>
     <span class="gi">${icon(kids && open ? "folder-open" : "folder")}</span>
     <span class="label">${esc(node.name)}</span>
+    ${pinned.has(gkey(id)) ? `<span class="pinned" data-tip="Pinned">${icon("pin")}</span>` : ""}
     <span class="live ${on ? "on" : ""}"${on ? ' data-tip="A session is open in here"' : ""}></span>
     <span class="n">${node.members.size}</span>
   </div>`;
@@ -768,7 +771,8 @@ function renderGroup() {
   }
 
   dActs().innerHTML = real
-    ? `<button class="ghost" data-gact="rename" data-tip="Rename folder">${icon("pencil")}</button>
+    ? `<button class="ghost" data-gact="pin" data-tip="${pinned.has(gkey(group)) ? "Unpin" : "Pin to top"}">${icon(pinned.has(gkey(group)) ? "pin-off" : "pin")}</button>
+    <button class="ghost" data-gact="rename" data-tip="Rename folder">${icon("pencil")}</button>
     <button class="ghost danger" data-gact="del" data-tip="Delete folder" data-tip-at="right">${icon("trash-2")}</button>`
     : "";
 }

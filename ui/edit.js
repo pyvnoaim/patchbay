@@ -302,6 +302,9 @@ document.addEventListener("contextmenu", (e) => {
           $("gdefs")?.querySelector("input")?.focus();
         },
       },
+      pinned.has(gkey(id))
+        ? { icon: "pin-off", label: "Unpin", run: () => togglePin(id) }
+        : { icon: "pin", label: "Pin to top", run: () => togglePin(id) },
       "-",
       { icon: "pencil", label: "Rename…", run: () => renameGroup(id) },
       { icon: "trash-2", label: "Delete folder", danger: true, run: () => removeGroup(id) },
@@ -1053,6 +1056,14 @@ async function renameGroup(id) {
   try {
     await invoke("rename_group", { from: id.path, to: next.path, vault: id.vault ?? null });
     if (pending.delete(gkey(id))) pending.set(gkey(next), next);
+    // A pin inside the folder moves with it, the way the folders list is a prefix rewrite.
+    const was = gkey(id);
+    pinned = new Set(
+      [...pinned].map((k) =>
+        k === was || k.startsWith(was + "/") ? gkey(next) + k.slice(was.length) : k,
+      ),
+    );
+    keepPinned();
     if (sameGroup(group, id)) group = next;
     await load();
   } catch (e) {

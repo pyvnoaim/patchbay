@@ -922,6 +922,14 @@ body.dragging * {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.group .pinned {
+  margin-left: 4px;
+  color: var(--fg-dim);
+}
+.group .pinned .i {
+  width: 11px;
+  height: 11px;
+}
 /* Always laid out, painted only when a session is open under this node, so the count never shifts. */
 .group .live {
   margin-left: auto;

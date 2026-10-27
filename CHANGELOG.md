@@ -8,6 +8,10 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Folders can be pinned (right-click, or the pin beside Rename): a pinned folder sits above the others at its level. Pins are yours alone, not written into a shared list.
+
 ## 0.1.68 - 2026-10-27
 
 - The Bitwarden key on a web tab pulses until the fill lands, so a slow fill no longer looks like a missed click.

@@ -9,12 +9,13 @@
 //
 // Only the palette ranks by recency. Every open (`connect`, web, RDP, VNC, files) calls
 // `used(name)`, which keeps the last forty names in `localStorage` - a habit, not part of the list,
-// so it never touches the config. Folders are A to Z and the devices in one are in file order,
-// never by recency: rows moving under someone reading them is a worse list, not a smarter one. The
-// theme, the tabs to reopen, and the sidebar's open folders (`keepExpanded()`, read back once per
-// launch, so a folder folded stays folded and a fresh machine starts with all of them closed) are
-// there for the same reason. Those four are everything `localStorage` holds, and every one of them
-// is a habit this machine has rather than something the list says.
+// so it never touches the config. Folders are A to Z, pinned ones first, and the devices in one are
+// in file order, never by recency: rows moving under someone reading them is a worse list, not a
+// smarter one. The theme, the tabs to reopen, the sidebar's open folders (`keepExpanded()`, read
+// back once per launch, so a folder folded stays folded and a fresh machine starts with all of them
+// closed) and the pinned ones are there for the same reason. Those five are everything
+// `localStorage` holds, and every one of them is a habit this machine has rather than something
+// the list says.
 //
 // Anything that goes wrong outside a form goes through `alertish()`, which flashes a pill. It used
 // to write into the detail pane's command box, which isn't there when a folder is selected and is
@@ -185,6 +186,16 @@ const openGroup = (key) => {
 const toggleGroup = (key) => {
   expanded.has(key) ? expanded.delete(key) : expanded.add(key);
   keepExpanded();
+};
+// Folders pinned above their siblings, by gkey. A habit like `expanded`: the colleague
+// reading the same shared list has their own customers to keep at the top.
+let pinned = new Set(recallList("pinned"));
+const keepPinned = () => remember("pinned", JSON.stringify([...pinned]));
+const togglePin = (id) => {
+  const key = gkey(id);
+  pinned.has(key) ? pinned.delete(key) : pinned.add(key);
+  keepPinned();
+  render();
 };
 
 const esc = (s) =>

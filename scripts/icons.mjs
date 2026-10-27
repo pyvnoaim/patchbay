@@ -61,6 +61,8 @@ const USED = [
   "keyboard", // the shortcuts page
   "key-round", // the Bitwarden key on a web tab, and its settings page
   "power", // wake on lan
+  "pin", // a folder pinned above its siblings
+  "pin-off",
 ];
 
 const inner = (name) =>

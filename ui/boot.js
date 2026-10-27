@@ -175,6 +175,7 @@ async function detailClick(e) {
   }
   const gact = e.target.closest("[data-gact]")?.dataset.gact;
   if (gact) {
+    if (gact === "pin") togglePin(group);
     if (gact === "rename") renameGroup(group);
     if (gact === "del") removeGroup(group);
     return;
