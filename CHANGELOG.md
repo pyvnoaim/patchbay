@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.70 - 2026-10-29
 
 - When the Bitwarden key can't fill a page (signed out, no saved login for it, or a login form it doesn't recognise), it opens Bitwarden after a few seconds instead of giving up without a word.
 
