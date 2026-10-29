@@ -550,15 +550,15 @@ pub fn activate(id: u32) {
 /// `view` is the window's content view and `at` the button's rect, in CSS pixels from
 /// the top. A locked vault answers a fill with the popup, which hangs from there too.
 ///
-/// A fill hands back a receiver that fires once the page sees it land, for the key to
-/// pulse until then; see `watch_fill`.
+/// A fill hands back a receiver that answers whether the page saw it land, for the key
+/// to pulse until then and open the popup on a miss; see `watch_fill`.
 #[cfg(target_os = "macos")]
 pub fn key(
     view: *mut std::ffi::c_void,
     id: Option<u32>,
     at: (f64, f64, f64, f64),
     popup: bool,
-) -> Result<Option<std::sync::mpsc::Receiver<()>>, String> {
+) -> Result<Option<std::sync::mpsc::Receiver<bool>>, String> {
     let (x, y, width, height) = at;
     use objc2::{rc::Retained, runtime::ProtocolObject, DefinedClass, MainThreadMarker};
     use objc2_app_kit::NSView;
@@ -608,27 +608,35 @@ pub fn key(
     Ok(landed)
 }
 
-/// Fires once the page sees an `input` event, which is how Bitwarden's fill announces
-/// itself to the form, or once the page goes away under it. Bitwarden itself says
-/// nothing when a fill is done, and its worker can take seconds to wake first. The
-/// listener runs in a world of its own, so the page can neither see nor touch it.
-/// ponytail: a field filled inside an iframe doesn't reach the top document; the key
-/// pulses until the 15 s give-up then.
+/// Answers `true` once the page sees an `input` event, which is how Bitwarden's fill
+/// announces itself to the form, or once the page goes away under it; `false` when
+/// nothing came. Bitwarden itself says nothing when a fill is done or failed: signed
+/// out, no login saved for this address, or a form it doesn't recognise (a Vistas NAS)
+/// all look the same, so a miss opens the popup and the user sees which it was. Its
+/// worker can take seconds to wake, hence the 5 s rather than one. The listener runs
+/// in a world of its own, so the page can neither see nor touch it.
+/// ponytail: a field filled inside an iframe doesn't reach the top document, so a fill
+/// there also opens the popup after 5 s; listen in every frame if a device does that.
 #[cfg(target_os = "macos")]
-fn watch_fill(view: &objc2_web_kit::WKWebView) -> std::sync::mpsc::Receiver<()> {
+fn watch_fill(view: &objc2_web_kit::WKWebView) -> std::sync::mpsc::Receiver<bool> {
     use objc2::MainThreadMarker;
     use objc2_foundation::NSString;
     use objc2_web_kit::WKContentWorld;
     const LISTEN: &str = "return await new Promise((r) => {
-        addEventListener(\"input\", () => r(true), { capture: true, once: true });
-        setTimeout(() => r(false), 15000);
+        addEventListener(\"input\", () => r(\"landed\"), { capture: true, once: true });
+        setTimeout(() => r(\"missed\"), 5000);
     });";
     let (tx, rx) = std::sync::mpsc::channel();
     let tx = std::cell::Cell::new(Some(tx));
     let done = block2::RcBlock::new(
-        move |_: *mut objc2::runtime::AnyObject, _: *mut objc2_foundation::NSError| {
+        move |got: *mut objc2::runtime::AnyObject, err: *mut objc2_foundation::NSError| {
+            // An error is the page navigating away mid-wait, which a submitted login does.
+            let missed = err.is_null()
+                && unsafe { got.as_ref() }
+                    .and_then(|g| g.downcast_ref::<NSString>())
+                    .is_some_and(|g| g.to_string() == "missed");
             if let Some(tx) = tx.take() {
-                let _ = tx.send(());
+                let _ = tx.send(!missed);
             }
         },
     );

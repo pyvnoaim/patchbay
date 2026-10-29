@@ -1607,7 +1607,9 @@ function bitwardenKey(el, popup) {
   const at = { x: r.left, y: r.top, width: r.width, height: r.height };
   const id = el.dataset.bw ? +el.dataset.bw : null;
   // A fill answers once it has landed, which can be seconds while Bitwarden's worker
-  // wakes, so the key pulses until then.
+  // wakes, so the key pulses until then. One that never lands opens the popup instead,
+  // so signed out or no login for this page says so; only if the tab is still in front,
+  // and from the key as it is now, since the strip has re-rendered since.
   const s = popup ? undefined : sessions.get(id);
   // A count, so a second click doesn't stop the pulse when the first fill lands.
   if (s) {
@@ -1615,6 +1617,10 @@ function bitwardenKey(el, popup) {
     renderTabs();
   }
   invoke("webext_key", { id, ...at, popup })
+    .then((filled) => {
+      const key = tabsEl.querySelector(`[data-bw="${id}"]`);
+      if (s && !filled && activeId === id && key) bitwardenKey(key, true);
+    })
     .catch(alertish)
     .finally(() => {
       if (!s) return;
