@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.72 - 2026-10-31
 
 - A device's page says when you last opened it, or how long your session has been open.
 - On a shared list, a colleague on a device shows with how long they've been connected.
