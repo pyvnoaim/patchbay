@@ -257,6 +257,11 @@ wants a password typed can't be browsed - it needs a key or the agent.
   reaching all of them.
 - **Background tabs** show a dot when new output arrives, and a session that drops or
   rings its bell while you're elsewhere says so, with a button to go there.
+- **When** is on a device's page: how long your session there has been open, or when you
+  last opened it. On a shared list, a colleague on it shows with how long they've been on.
+- **Quitting** with sessions or tunnels open asks first, naming each one. On the next
+  launch a pill offers last time's tabs back, splits and forwards included; Settings ▸
+  Devices can reopen them at once or start empty.
 - **A dropped session** keeps its scrollback under a card with **Reconnect** and
   **Wait and retry**, for a machine that is rebooting.
 - **Find** in a session: ⌘F searches that terminal's scrollback. Every window chord is

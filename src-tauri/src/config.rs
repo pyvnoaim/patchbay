@@ -898,6 +898,11 @@ pub struct Settings {
     /// Ask the update endpoint once per launch. The only request the app makes on its own.
     #[serde(default = "yes")]
     pub check_updates: bool,
+    /// Last time's tabs and forwards on launch: "ask" (a pill), "always" or "never".
+    /// Asked by default: reopening is a login per tab, and a desktop asks for a password,
+    /// so a launch that does it unasked is a row of prompts nobody is looking at.
+    #[serde(default = "ask")]
+    pub reopen: String,
     /// Append each session's output to a file under `logs/` beside the config. Off by default.
     #[serde(default)]
     pub log_sessions: bool,
@@ -933,6 +938,10 @@ fn team() -> String {
     "team".into()
 }
 
+fn ask() -> String {
+    "ask".into()
+}
+
 fn system() -> String {
     "system".into()
 }
@@ -954,6 +963,7 @@ impl Default for Settings {
             ssh_config_vault: team(),
             os_colors: true,
             check_updates: true,
+            reopen: ask(),
             log_sessions: false,
             theme: system(),
             font_size: font_size(),
@@ -1008,6 +1018,11 @@ pub fn save_settings_at(file: &Path, s: &Settings) -> Result<(), String> {
     t["os_colors"] = value(s.os_colors);
     t["check_updates"] = value(s.check_updates);
     t["log_sessions"] = value(s.log_sessions);
+    t["reopen"] = value(match s.reopen.as_str() {
+        "always" => "always",
+        "never" => "never",
+        _ => "ask",
+    });
     t["write_ssh_config"] = value(s.write_ssh_config);
     t["ssh_config_vault"] = value(match s.ssh_config_vault.as_str() {
         "mine" => "mine",
@@ -1362,12 +1377,14 @@ folders = ["prod/eu/web"]
         let back = load_settings_at(&p);
         assert_eq!(back.theme, "system");
         assert_eq!(back.font_size, 32.0);
+        assert_eq!(back.reopen, "ask");
 
         save_settings_at(
             &p,
             &Settings {
                 theme: "light".into(),
                 font_size: 14.0,
+                reopen: "never".into(),
                 ..Settings::default()
             },
         )
@@ -1375,6 +1392,7 @@ folders = ["prod/eu/web"]
         let back = load_settings_at(&p);
         assert_eq!(back.theme, "light");
         assert_eq!(back.font_size, 14.0);
+        assert_eq!(back.reopen, "never");
         assert!(read(&p).contains("keep this comment"));
     }
 

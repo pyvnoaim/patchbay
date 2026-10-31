@@ -8,6 +8,13 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- A device's page says when you last opened it, or how long your session has been open.
+- On a shared list, a colleague on a device shows with how long they've been connected.
+- ⌘Q now asks before quitting with sessions open, as the close button did, and the question lists each session and tunnel that will close.
+- Remote desktops, VNC, split panes and open forwards come back on launch too. By default a pill offers them; Settings ▸ Devices can reopen them at once or start empty.
+
 ## 0.1.71 - 2026-10-31
 
 - A key you make while patchbay is open now shows up in the Private key file suggestions straight away, without restarting the app.

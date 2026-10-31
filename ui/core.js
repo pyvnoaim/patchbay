@@ -8,8 +8,9 @@
 // there is "Move to Team/Mine".
 //
 // Only the palette ranks by recency. Every open (`connect`, web, RDP, VNC, files) calls
-// `used(name)`, which keeps the last forty names in `localStorage` - a habit, not part of the list,
-// so it never touches the config. Folders are A to Z, pinned ones first, and the devices in one are
+// `used(name)`, which keeps when each name was last opened in `localStorage` - a habit, not part of
+// the list, so it never touches the config. The device page's "last opened" reads the same times,
+// so it is this machine's answer: a colleague's opens are not in it. Folders are A to Z, pinned ones first, and the devices in one are
 // in file order, never by recency: rows moving under someone reading them is a worse list, not a
 // smarter one. The theme, the tabs to reopen, the sidebar's open folders (`keepExpanded()`, read
 // back once per launch, so a folder folded stays folded and a fresh machine starts with all of them
@@ -157,6 +158,9 @@ let listStamp = null; // mtime and size of the list, as the poll last saw them
 let lastConflict = ""; // the conflicted copy already named, so the pill shows once
 let sshKeys = []; // private keys found in ~/.ssh, to suggest in the key field
 let tunnels = []; // live ssh -L forwards holding RDP open
+// Devices whose own `forward` list was opened here, as against a tunnel a desktop holds:
+// only these are remembered for the next launch, the desktop brings its own back.
+const forwarded = new Set();
 
 // A private window, or a webview with site data blocked, throws on the accessor itself.
 // Everything kept here is a habit rather than part of the list, so losing it costs nothing.
@@ -227,13 +231,16 @@ function flash(text, bad = false, action = null) {
     gone();
     action.run();
   });
-  fade = setTimeout(
-    () => {
-      el.classList.add("leaving");
-      fade = setTimeout(gone, 280);
-    },
-    bad || action ? 8000 : 4000,
-  );
+  // `stay`: an offer made at launch, when nobody may be looking yet.
+  if (!action?.stay) {
+    fade = setTimeout(
+      () => {
+        el.classList.add("leaving");
+        fade = setTimeout(gone, 280);
+      },
+      bad || action ? 8000 : 4000,
+    );
+  }
   // Past four, the oldest plain line goes before any pill still holding an Undo.
   const shown = [...document.querySelectorAll("#notices .msg")];
   if (shown.length >= 4) (shown.find((p) => !p.querySelector(".primary")) ?? shown[0]).remove();
@@ -401,14 +408,33 @@ const hit = (j, f) =>
   (j.desc ?? "").toLowerCase().includes(f) ||
   j.folders.some((x) => x.toLowerCase().includes(f));
 
-// Names opened, most recent first, for the palette's ranking. localStorage, not the
-// config: a habit, not part of the list. A name that no longer exists never matches.
-let recent = recallList("recent");
+// When each name was last opened, oldest first, for the palette's ranking and the
+// device page. localStorage, not the config: a habit, not part of the list. A name that
+// no longer exists never matches.
+let opened = new Map(recallList("opened").filter((e) => Array.isArray(e) && e.length === 2));
 // Tabs open at last close, reopened on launch. Read before the first renderTabs
 // overwrites it.
 let lastTabs = recallList("tabs");
 
 function used(name) {
-  recent = [name, ...recent.filter((n) => n !== name)].slice(0, 40);
-  remember("recent", JSON.stringify(recent));
+  opened.delete(name);
+  opened.set(name, Date.now());
+  // ponytail: the 500 newest, so a list of thousands forgets its oldest opens first.
+  for (const n of opened.keys()) if (opened.size > 500) opened.delete(n);
+  remember("opened", JSON.stringify([...opened]));
 }
+
+// "12 min", "2 h 5 min": how long something has been open.
+const lasted = (ms) => {
+  const m = Math.max(0, Math.floor(ms / 60000));
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
+};
+// "3 minutes ago", "yesterday". English like the rest of the window.
+const ago = (t) => {
+  const m = Math.round((Date.now() - t) / 60000);
+  const say = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  if (m < 1) return "just now";
+  if (m < 60) return say.format(-m, "minute");
+  if (m < 1440) return say.format(-Math.round(m / 60), "hour");
+  return say.format(-Math.round(m / 1440), "day");
+};

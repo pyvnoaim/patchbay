@@ -300,7 +300,11 @@ fn setup_links(app: &tauri::App) {
 /// Vibrancy and the menu bar. The menu is spelled out rather than filtered from
 /// `Menu::default` because a predefined item's id is a counter, and Close Window has
 /// to be left out: as a native key equivalent it closed the window before the page
-/// was ever asked. Edit is here because without it ⌘C and ⌘V stop working.
+/// was ever asked. Quit is ours for the same reason: the predefined one is `terminate:`,
+/// which tao answers with no way to say no, so ⌘Q quit past the live-session question.
+/// ponytail: the Dock's Quit, a logout and a shutdown still send `terminate:` and are
+/// not asked; `applicationShouldTerminate:` on tao's delegate if that matters.
+/// Edit is here because without it ⌘C and ⌘V stop working.
 #[cfg(target_os = "macos")]
 fn setup_macos(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
@@ -314,6 +318,7 @@ fn setup_macos(app: &tauri::App) -> tauri::Result<()> {
 
     let h = app.handle();
     let check = MenuItem::with_id(h, "check-update", "Check for Updates…", true, None::<&str>)?;
+    let quit = MenuItem::with_id(h, "quit", "Quit patchbay", true, Some("Cmd+Q"))?;
     let about = SubmenuBuilder::new(h, "patchbay")
         .about(None)
         .separator()
@@ -325,7 +330,7 @@ fn setup_macos(app: &tauri::App) -> tauri::Result<()> {
         .hide_others()
         .show_all()
         .separator()
-        .quit()
+        .item(&quit)
         .build()?;
     let edit = SubmenuBuilder::new(h, "Edit")
         .undo()
@@ -359,6 +364,9 @@ fn setup_macos(app: &tauri::App) -> tauri::Result<()> {
             }
             "shortcuts" => {
                 let _ = app.emit("menu:shortcuts", ());
+            }
+            "quit" => {
+                let _ = app.emit("window:close", ());
             }
             _ => {}
         }

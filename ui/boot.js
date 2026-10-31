@@ -196,6 +196,7 @@ async function detailClick(e) {
   if (act === "forward") {
     try {
       await invoke("open_forwards", { name: j.name });
+      forwarded.add(j.name);
     } catch (err) {
       alertish(err);
     }
@@ -205,6 +206,7 @@ async function detailClick(e) {
     try {
       for (const t of tunnels.filter((x) => x.jack === j.name))
         await invoke("close_tunnel", { id: t.id });
+      forwarded.delete(j.name);
     } catch (err) {
       alertish(err);
     }
@@ -580,7 +582,9 @@ async function seePresence() {
   try {
     const next = new Map();
     for (const p of await invoke("presence")) {
-      for (const n of p.names) next.set(n, [...(next.get(n) ?? []), p.who]);
+      for (const [n, mins] of p.names) {
+        next.set(n, [...(next.get(n) ?? []), { who: p.who, mins }]);
+      }
     }
     const said = JSON.stringify([...next]);
     if (said !== JSON.stringify([...present])) {
@@ -693,31 +697,86 @@ listen("open:link", ({ payload: name }) => primary(name)).catch(() => {
   /* no capability, so a link only works on a cold start */
 });
 
-// The close button, held by Rust until the window answers: a live session is asked
-// about. `quit` is `app.exit`, so tunnels are still closed on the way out.
+// The close button and ⌘Q, held by Rust until the window answers. What would end is
+// named, each with how long it has been open: a count said nothing about the tunnel
+// a database client is still using. `quit` is `app.exit`, so tunnels are still closed
+// on the way out.
+const KIND_SAID = { rdp: "remote desktop", vnc: "VNC" };
+const COMES_BACK = {
+  always: "They reopen next time, as new logins.",
+  never: "They won't reopen next time.",
+};
 listen("window:close", async () => {
-  const live = liveSessions().length;
-  if (live && !(await ask(`Quit with ${live} live session${live === 1 ? "" : "s"}?`, null, "Quit")))
-    return;
+  const rows = [
+    ...liveSessions().map((s) => [
+      labelOf(s.name),
+      `${KIND_SAID[s.kind] ?? s.via ?? "ssh"} · ${lasted(Date.now() - s.since)}`,
+    ]),
+    ...tunnels.map((t) => [
+      labelOf(t.jack),
+      t.local ? `tunnel on 127.0.0.1:${t.local}` : "tunnel, held open on the far end",
+    ]),
+  ];
+  const note = COMES_BACK[prefs.reopen] ?? "You'll be offered them back next time.";
+  if (rows.length && !(await askFacts("Quit and close these?", note, rows, "Quit"))) return;
   invoke("quit");
 }).catch(() => {
   /* no capability - and then the close is held with nobody to answer it */
 });
 
-// Last time's tabs, in order, for devices that still exist. Ends back on the list.
+// Last time's tabs, in order, for devices that still exist, and the forwards that were
+// open. `prefs.reopen` says whether to ask first (the default, a pill that stays), just
+// do it, or not. A desktop is asked for its password as it opens, which is why asking
+// first is the default. Ends back on the list.
+const REOPEN = {
+  term: (t) => openSession(t.name, null, null, false, t.via),
+  web: (t) => openWebSession(t.name),
+  sftp: (t) => openFilesSession(t.name),
+  rdp: (t) => openRdpSession(t.name),
+  vnc: (t) => openVncSession(t.name),
+  forward: async (t) => {
+    await invoke("open_forwards", { name: t.name });
+    forwarded.add(t.name);
+  },
+};
 async function restoreTabs() {
-  const open = {
-    term: (name, via) => openSession(name, null, null, false, via),
-    web: openWebSession,
-    sftp: openFilesSession,
-  };
-  const back = lastTabs.filter((t) => open[t.kind] && all.some((j) => j.name === t.name));
-  for (const t of back) await open[t.kind](t.name, t.via);
-  if (back.length) {
-    activeId = null;
-    showTab();
-    render();
+  const back = lastTabs.filter((t) => REOPEN[t.kind] && all.some((j) => j.name === t.name));
+  if (!back.length || prefs.reopen === "never") return;
+  if (prefs.reopen === "always") return reopen(back);
+  const tabs = back.filter((t) => t.kind !== "forward").length;
+  const fwds = back.length - tabs;
+  const said = [
+    tabs && `${tabs} tab${tabs === 1 ? "" : "s"}`,
+    fwds && `${fwds} forward${fwds === 1 ? "" : "s"}`,
+  ].filter(Boolean);
+  flash(`Reopen ${said.join(" and ")} from last time?`, false, {
+    label: "Reopen",
+    run: () => reopen(back).catch(alertish),
+    stay: true,
+  });
+}
+
+// One at a time, in the order they sat, so a split's panes rejoin the first of them.
+// ponytail: a split comes back at even shares, not the sizes it was dragged to.
+async function reopen(back) {
+  const anchors = new Map();
+  for (const t of back) {
+    const had = new Set(sessions.keys());
+    try {
+      await REOPEN[t.kind](t);
+    } catch (e) {
+      alertish(e);
+      continue;
+    }
+    const id = [...sessions.keys()].find((k) => !had.has(k));
+    if (id === undefined || t.split == null) continue;
+    if (anchors.has(t.split)) joinSplit(anchors.get(t.split), id, t.dir);
+    else anchors.set(t.split, id);
   }
+  await refreshTunnels();
+  activeId = null;
+  showTab();
+  render();
 }
 
 async function takeLink() {

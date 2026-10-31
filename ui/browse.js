@@ -224,8 +224,20 @@ function row(node, depth, live, id) {
 }
 
 // What both kinds of device row end with: a session's dot, then how it is reached.
-const hereTip = (name) =>
-  `${present.get(name).join(", ")} ${present.get(name).length === 1 ? "is" : "are"} connected`;
+// `mins` is null from a copy that predates sending them.
+const onFor = ({ who, mins }) => (mins == null ? who : `${who} (${lasted(mins * 60000)})`);
+const hereTip = (name) => `Connected: ${present.get(name).map(onFor).join(", ")}`;
+// This machine's side of "when": how long the oldest open tab has run, else the last
+// open. Redrawn with everything else, which the reachability sweep does twice a minute.
+function openedRow(j) {
+  const open = [...sessions.values()].filter((s) => !s.dead && s.name === j.name);
+  const said = open.length
+    ? `now, for ${lasted(Date.now() - Math.min(...open.map((s) => s.since)))}`
+    : opened.has(j.name)
+      ? ago(opened.get(j.name))
+      : "";
+  return said ? `<div class="d-row"><dt>opened</dt><dd>${esc(said)}</dd></div>` : "";
+}
 // Who is on a device, as a face would be: initials, and how many more.
 const initials = (who) =>
   who
@@ -236,7 +248,7 @@ const initials = (who) =>
     .join("");
 const hereMark = (name) => {
   const who = present.get(name);
-  return initials(who[0]) + (who.length > 1 ? `+${who.length - 1}` : "");
+  return initials(who[0].who) + (who.length > 1 ? `+${who.length - 1}` : "");
 };
 const devTail = (j, live) => `
     <span class="live ${live.has(j.name) ? "on" : ""}"${live.has(j.name) ? ' data-tip="A session is open"' : ""}></span>${
@@ -640,8 +652,13 @@ function renderGroup() {
   );
   // Yours first, then whoever else the shared list says is on something in here.
   const on = [
-    ...open.map((s) => ["You", labelOf(s.name)]),
-    ...members.flatMap((j) => (present.get(j.name) ?? []).map((who) => [who, j.label])),
+    ...open.map((s) => ["You", `${labelOf(s.name)} · ${lasted(Date.now() - s.since)}`]),
+    ...members.flatMap((j) =>
+      (present.get(j.name) ?? []).map((p) => [
+        p.who,
+        p.mins == null ? j.label : `${j.label} · ${lasted(p.mins * 60000)}`,
+      ]),
+    ),
   ];
   // Every device, or a whole vault, has no folder to rename or delete.
   const real = !!group && group.path !== null;
@@ -927,6 +944,7 @@ function renderJack(j, live) {
           : ""
       }
       ${j.host && !j.hops.length ? `<div class="d-row"><dt>route</dt><dd>direct</dd></div>` : ""}
+      ${openedRow(j)}
       ${
         // Who sees it, and the way to change that, where the answer is read.
         j.vault && !live
@@ -1323,6 +1341,7 @@ async function handOffRdp(name) {
 function takeTunnels(t) {
   tunnels = t.live;
   for (const why of t.ended) alertish(why);
+  rememberTabs();
 }
 
 async function refreshTunnels() {
@@ -1387,10 +1406,7 @@ function closePalette() {
 // device typed in full is one arrow key away.
 function palMatches() {
   const f = pq.value.trim().toLowerCase();
-  const rank = (j) => {
-    const i = recent.indexOf(j.name);
-    return i < 0 ? recent.length : i;
-  };
+  const rank = (j) => -(opened.get(j.name) ?? 0);
   const jacks = all.filter((j) => hit(j, f)).sort((a, b) => rank(a) - rank(b));
   const named = jacks.filter((j) => j.label.toLowerCase().includes(f));
   const folders = f

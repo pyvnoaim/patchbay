@@ -15,7 +15,11 @@
 //! everyone sees, because a list where some show up and others don't answers "is anyone
 //! on this box" wrongly. Settings ▸ Team says so in a sentence. Only the team's keys
 //! are ever written, and a colleague's file is cut to size and stripped to text before
-//! the window sees it.
+//! the window sees it. How long each session has been open goes in as minutes, never a
+//! start time, for the same reason as the heartbeat: a colleague's clock three minutes
+//! ahead would have them connected for minus three. The minutes are one `@` line after
+//! the devices rather than on each device's line, so a copy from before them reads the
+//! devices as it always did and takes the `@` line for a device nobody has.
 
 use crate::patchbay;
 use std::collections::HashMap;
@@ -78,37 +82,70 @@ fn my_file(dir: &std::path::Path) -> PathBuf {
     dir.join(safe)
 }
 
-/// The file's text: who, a number that moves with every write, then a device per line.
-/// The number is the heartbeat. Not the file's time: clocks disagree between machines,
-/// and a sync client keeps the time of the machine a file came from.
-fn written(who: &str, beat: u64, names: &[String]) -> String {
+/// The file's text: who, a number that moves with every write, a device per line, then
+/// the minutes each has been open. The number is the heartbeat. Not the file's time:
+/// clocks disagree between machines, and a sync client keeps the time of the machine a
+/// file came from.
+fn written(who: &str, beat: u64, names: &[(String, u64)]) -> String {
+    let team: Vec<_> = names
+        .iter()
+        .filter(|(n, _)| !n.starts_with(patchbay::MINE))
+        .collect();
     let mut out = format!("{who}\n{beat}\n");
-    for n in names.iter().filter(|n| !n.starts_with(patchbay::MINE)) {
+    for (n, _) in &team {
         out.push_str(&tidy(n));
         out.push('\n');
+    }
+    if !team.is_empty() {
+        let mins: Vec<String> = team.iter().map(|(_, m)| m.to_string()).collect();
+        out.push_str(&format!("@ {}\n", mins.join(" ")));
     }
     out
 }
 
+type On = Vec<(String, Option<u64>)>;
+
 /// What a colleague's file says. Somebody else wrote it, so it is cut to size and
-/// stripped of anything that isn't text before it gets near the window.
-fn read(src: &str) -> Option<(String, u64, Vec<String>)> {
+/// stripped of anything that isn't text before it gets near the window. Minutes that
+/// don't line up with the devices, or a file from before them, are no minutes at all.
+fn read(src: &str) -> Option<(String, u64, On)> {
     let mut lines = src.lines().map(tidy).filter(|l| !l.is_empty());
     let who = lines.next()?;
     let beat = lines.next()?.parse().ok()?;
-    let names: Vec<String> = lines.take(200).collect();
-    (!names.is_empty()).then_some((who, beat, names))
+    let mut names: Vec<String> = lines.take(201).collect();
+    let mins: Vec<u64> = match names.last().and_then(|l| l.strip_prefix("@ ")) {
+        Some(m) => {
+            let m = m.split(' ').map_while(|x| x.parse().ok()).collect();
+            names.pop();
+            m
+        }
+        None => vec![],
+    };
+    names.truncate(200);
+    let lined_up = mins.len() == names.len();
+    let on = names
+        .into_iter()
+        .enumerate()
+        .map(|(i, n)| (n, lined_up.then(|| mins[i])))
+        .collect::<On>();
+    (!on.is_empty()).then_some((who, beat, on))
 }
 
 /// What this copy last said, and where, so the heartbeat and the exit need not ask the
-/// share where the folder is.
-static SAID: Mutex<Option<(PathBuf, Vec<String>)>> = Mutex::new(None);
+/// share where the folder is. Each device keeps the moment it first appeared here, on
+/// this machine's own clock, for as long as it stays in the list.
+type Since = Vec<(String, Instant)>;
+static SAID: Mutex<Option<(PathBuf, Since)>> = Mutex::new(None);
 static BEATS: AtomicU64 = AtomicU64::new(0);
 
 fn write_now() {
     let said = SAID.lock().unwrap().clone();
     if let Some((file, names)) = said {
-        let text = written(&me(), BEATS.fetch_add(1, Relaxed), &names);
+        let mins: Vec<(String, u64)> = names
+            .into_iter()
+            .map(|(n, at)| (n, at.elapsed().as_secs() / 60))
+            .collect();
+        let text = written(&me(), BEATS.fetch_add(1, Relaxed), &mins);
         let _ = write_own(&file, &text);
     }
 }
@@ -181,7 +218,21 @@ pub fn set(names: &[String]) {
     if std::fs::create_dir_all(&dir).is_err() {
         return;
     }
-    *SAID.lock().unwrap() = Some((my_file(&dir), team));
+    {
+        let mut said = SAID.lock().unwrap();
+        let had = said.take().map(|(_, h)| h).unwrap_or_default();
+        let team = team
+            .into_iter()
+            .map(|n| {
+                let at = had
+                    .iter()
+                    .find(|(h, _)| *h == n)
+                    .map_or_else(Instant::now, |h| h.1);
+                (n, at)
+            })
+            .collect();
+        *said = Some((my_file(&dir), team));
+    }
     write_now();
     static BEATING: OnceLock<()> = OnceLock::new();
     BEATING.get_or_init(|| {
@@ -213,7 +264,8 @@ pub fn clear() {
 #[derive(serde::Serialize)]
 pub struct Seen {
     who: String,
-    names: Vec<String>,
+    /// Each device, and the minutes it has been open if the file said.
+    names: On,
 }
 
 /// Everyone else with a session open right now: every file whose number has moved
@@ -253,24 +305,43 @@ mod tests {
 
     #[test]
     fn only_the_teams_devices_are_ever_written() {
-        let names = ["web".to_string(), "me:nas".into(), "db".into()];
+        let names = [
+            ("web".to_string(), 42),
+            ("me:nas".into(), 1),
+            ("db".into(), 0),
+        ];
         assert_eq!(
             written("maya on mbp", 7, &names),
-            "maya on mbp\n7\nweb\ndb\n"
+            "maya on mbp\n7\nweb\ndb\n@ 42 0\n"
         );
+        assert_eq!(written("maya", 8, &[]), "maya\n8\n");
     }
 
     #[test]
     fn a_colleagues_file_is_read_as_text_and_nothing_else() {
         let (who, beat, names) = read("maya on mbp\n12\nweb\n\ndb\x1b[2J\n").unwrap();
         assert_eq!((who.as_str(), beat), ("maya on mbp", 12));
-        assert_eq!(names, ["web", "db[2J"]);
+        assert_eq!(names, [("web".into(), None), ("db[2J".into(), None)]);
         // Nobody named, no heartbeat, or nothing open, is nobody.
         assert!(read("").is_none());
         assert!(read("maya\n3\n").is_none());
         assert!(read("maya\nweb\ndb\n").is_none());
         let long = "x".repeat(500);
         assert_eq!(read(&format!("{long}\n1\nweb\n")).unwrap().0.len(), 64);
+    }
+
+    #[test]
+    fn minutes_are_read_only_when_they_line_up_with_the_devices() {
+        let mins = |src: &str| read(src).unwrap().2;
+        assert_eq!(
+            mins(&written("maya", 1, &[("web".into(), 42), ("db".into(), 3)])),
+            [("web".to_string(), Some(42)), ("db".into(), Some(3))]
+        );
+        // One short, or not numbers: the devices stand, the minutes don't.
+        assert_eq!(mins("maya\n1\nweb\ndb\n@ 42\n")[1], ("db".into(), None));
+        assert_eq!(mins("maya\n1\nweb\n@ soon\n"), [("web".into(), None)]);
+        // Only minutes is nobody.
+        assert!(read("maya\n1\n@ 5\n").is_none());
     }
 
     #[cfg(unix)]

@@ -37,6 +37,13 @@ the next push.
       "Separate into tabs" from the tab's menu; a second shell of the same device.
 - [ ] **VoiceOver** (⌘F5): the tree reads names and status, tabs read as tabs, icon
       buttons have names, the menu key opens a device's menu.
+- [ ] **Connected for**: a device's page says "opened now, for N min" with a tab open and
+      "N minutes ago" after; a colleague on a team device shows "(N min)" in the tooltip and
+      On now. A colleague on 0.1.71 still shows, without minutes.
+- [ ] **Quit and relaunch**: ⌘Q with a shell and a forward open asks and lists both; Cancel
+      keeps them. Relaunch: the pill offers the tabs (RDP asks its password only after
+      Reopen), a split comes back as a split, the forward is up. "Reopen them" and "Start
+      empty" in Settings ▸ Devices do what they say.
 - [ ] **Licence pane**: with one vault it says free; with a shared list it shows no
       licence needed yet; a fresh `npm run licence` paste is accepted and removable.
 

@@ -233,7 +233,6 @@ async function openBroadcast(marks) {
 // A split is an object every pane points at, as a broadcast is; one level, panes in a
 // row or a column, each with a share of the room that a divider moves.
 // ponytail: one level of split; a tree of them if someone wants a 2x2 of mixed panes.
-// A split is not remembered across launches: its panes come back as tabs of their own.
 // Broadcast panes stay out: their grid is a layout of its own, and their keystrokes go
 // to every pane, which a split's must not.
 let nextSid = 1;
@@ -1098,7 +1097,17 @@ async function openFilesSession(name) {
 
   watchDrops();
   watchEdits();
-  const s = { id, name, kind: "sftp", key, host, cwd: ".", dead: false, unlisten: [] };
+  const s = {
+    id,
+    name,
+    kind: "sftp",
+    key,
+    host,
+    cwd: ".",
+    dead: false,
+    since: Date.now(),
+    unlisten: [],
+  };
   sessions.set(id, s);
   activeId = id;
   showTab();
@@ -1404,7 +1413,17 @@ async function openWebSession(name) {
   host.className = "termhost webhost";
   termsEl.append(host);
 
-  const s = { id, name, kind: "web", key, host, dead: false, loaded: false, unlisten: [] };
+  const s = {
+    id,
+    name,
+    kind: "web",
+    key,
+    host,
+    dead: false,
+    loaded: false,
+    since: Date.now(),
+    unlisten: [],
+  };
   host.innerHTML = `<div class="webwait">${icon("globe")}<b>${esc(labelOf(name))}</b>
     <span>${esc(key.slice(`web:${name}:`.length))}</span></div>`;
   sessions.set(id, s);
@@ -1574,17 +1593,24 @@ function tellPresence() {
   invoke("presence_set", { names }).catch(() => {});
 }
 
-// Shells, pages and file listings come back on the next launch. Stored in localStorage
-// like `recent`: a habit, not part of the list.
+// What comes back on the next launch (`restoreTabs`): every tab but a broadcast or a
+// task, which split it sat in, and the forwards opened from a device page. Stored in
+// localStorage like `opened`: a habit, not part of the list. Written on every change,
+// so a crash leaves it as current as a quit does.
 function rememberTabs() {
   const open = [...sessions.values()]
-    .filter((s) => !s.dead && !s.bcast && !s.task && s.kind !== "rdp" && s.kind !== "vnc")
+    .filter((s) => !s.dead && !s.bcast && !s.task)
     .map((s) => ({
       kind: s.kind,
       name: s.name,
       ...(s.via !== "ssh" && s.via ? { via: s.via } : {}),
+      ...(s.split ? { split: s.split.sid, dir: s.split.dir } : {}),
     }));
-  remember("tabs", JSON.stringify(open));
+  const fwd = new Set(tunnels.filter((t) => forwarded.has(t.jack)).map((t) => t.jack));
+  remember(
+    "tabs",
+    JSON.stringify([...open, ...[...fwd].map((name) => ({ kind: "forward", name }))]),
+  );
 }
 
 // The strip hides its scrollbar, so fade whichever edge still has tabs beyond it.
@@ -2011,7 +2037,7 @@ function desktopTab(name, kind) {
   const ctx = canvas.getContext("2d");
   watchDrops();
 
-  const s = { id, name, kind, key, canvas, host, dead: false, unlisten: [] };
+  const s = { id, name, kind, key, canvas, host, dead: false, since: Date.now(), unlisten: [] };
   sessions.set(id, s);
   activeId = id;
   showTab();
