@@ -302,6 +302,10 @@ const inGroup = (j) =>
         (f) => normPath(f) === group.path || normPath(f).startsWith(group.path + "/"),
       )));
 
+function fillKeys() {
+  $("sshkeys").innerHTML = sshKeys.map((k) => `<option value="${esc(k)}">`).join("");
+}
+
 // ── everything, redrawn ────────────────────────────────────────────────────
 function render() {
   // Not while a press is in flight: `innerHTML` takes away the row or button being
@@ -320,7 +324,7 @@ function render() {
         `<option value="${esc(key)}">${x.label === key ? "" : esc(`${x.label} · ${x.folders.join(", ")}`)}</option>`,
     )
     .join("");
-  $("sshkeys").innerHTML = sshKeys.map((k) => `<option value="${esc(k)}">`).join("");
+  fillKeys();
 
   renderTabs();
   searchBtn.innerHTML = `${icon("search")}<span>Go to device…</span><kbd>${chord("k")}</kbd>`;

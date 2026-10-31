@@ -275,6 +275,14 @@ document.addEventListener("selectstart", (e) => {
   markAll();
 });
 
+// load() reads ~/.ssh once per run, so a key made while the window is open would be
+// missing until a restart. Asked again on focus; a read_dir is cheap.
+document.addEventListener("focusin", async (e) => {
+  if (e.target.getAttribute?.("list") !== "sshkeys") return;
+  sshKeys = await invoke("ssh_keys").catch(() => sshKeys);
+  fillKeys();
+});
+
 document.addEventListener("keydown", (e) => {
   const mod = chorded(e);
   const key = mod ? chordKey(e) : e.key;
