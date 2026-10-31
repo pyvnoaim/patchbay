@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.71 - 2026-10-31
 
 - A key you make while patchbay is open now shows up in the Private key file suggestions straight away, without restarting the app.
 
