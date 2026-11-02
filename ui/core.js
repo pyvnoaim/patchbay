@@ -332,7 +332,8 @@ const mix = (hex, target, t) => {
   return `#${ch(1)}${ch(3)}${ch(5)}`;
 };
 
-const onDark = () => !matchMedia("(prefers-color-scheme: light)").matches;
+// The attribute, not `prefers-color-scheme`: our own `color-scheme` makes that echo the last pin.
+const onDark = () => document.documentElement.dataset.theme !== "light";
 
 /** Nudge a colour toward the readable side until it clears 3:1 on this theme. */
 function readable(hex) {

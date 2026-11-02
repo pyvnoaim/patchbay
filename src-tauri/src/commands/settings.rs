@@ -72,13 +72,32 @@ pub fn set_theme(window: tauri::WebviewWindow, theme: String) -> String {
         _ => None,
     };
     let _ = window.set_theme(want);
-    let pick = match want.or_else(|| window.theme().ok()) {
+    let pick = match want.or_else(|| system_theme(&window)) {
         Some(tauri::Theme::Light) => "light",
         _ => "dark",
     };
     #[cfg(windows)]
     paint_caption(&window, pick == "dark");
     pick.into()
+}
+
+/// macOS: not `window.theme()`. Unpinning reads `NSApp.effectiveAppearance` in the same
+/// breath, and that still says the old pin while the window has already gone dark, so a
+/// light page sat on dark vibrancy. The global default is what the system itself says.
+#[cfg(target_os = "macos")]
+fn system_theme(_: &tauri::WebviewWindow) -> Option<tauri::Theme> {
+    use objc2_foundation::{ns_string, NSUserDefaults};
+    let style =
+        NSUserDefaults::standardUserDefaults().stringForKey(ns_string!("AppleInterfaceStyle"));
+    Some(match style {
+        Some(s) if s.to_string() == "Dark" => tauri::Theme::Dark,
+        _ => tauri::Theme::Light,
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_theme(window: &tauri::WebviewWindow) -> Option<tauri::Theme> {
+    window.theme().ok()
 }
 
 /// Windows paints the title bar its own dark, a few shades off ours, so the window reads

@@ -101,7 +101,7 @@ objc2-app-kit = { version = "0.3", features = ["NSHapticFeedback", "NSPasteboard
 # no version that wasn't being built anyway.
 objc2 = "0.6"
 block2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSArray", "NSDate", "NSDictionary", "NSEnumerator", "NSError", "NSGeometry", "NSSet", "NSString", "NSURL"] }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSDate", "NSDictionary", "NSEnumerator", "NSError", "NSGeometry", "NSSet", "NSString", "NSURL", "NSUserDefaults"] }
 objc2-web-kit = { version = "0.3.2", features = [
     "WKContentWorld",
     "WKFrameInfo",

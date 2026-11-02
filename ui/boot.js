@@ -832,13 +832,18 @@ window.addEventListener("focus", () => {
   seePresence();
   refreshTunnels();
 });
-// Not `matchMedia`: with a theme pinned, our own `color-scheme` fixes what
-// `prefers-color-scheme` reports.
-listen("tauri://theme-changed", () => {
+// Following the system, any of these is only a nudge: set_theme asks the OS itself. Tao's
+// event alone missed flips (it compares against the stale appearance it read last), so the
+// media query and a refocus nudge too. Never read matchMedia's answer: with a theme pinned,
+// our own `color-scheme` fixes what `prefers-color-scheme` reports.
+const followSystem = () => {
   if (prefs.theme !== "light" && prefs.theme !== "dark") applyTheme();
-}).catch(() => {
-  /* no capability, so the theme only follows on reload */
+};
+listen("tauri://theme-changed", followSystem).catch(() => {
+  /* no capability: the media query and focus still nudge */
 });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", followSystem);
+window.addEventListener("focus", followSystem);
 
 // ── tooltips ───────────────────────────────────────────────────────────────
 // One element at body level, so no overflow:hidden ancestor clips it.
