@@ -8,7 +8,7 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
-## Unreleased
+## 0.1.73 - 2026-11-02
 
 - Following the system theme on a dark Mac no longer shows a light window on a dark sidebar, and a theme switch while patchbay is open now reaches the whole window.
 
