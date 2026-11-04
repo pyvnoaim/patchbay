@@ -4574,8 +4574,9 @@ body.intro #uptoast {
 .msg.bad .msg-text {
   color: var(--down);
 }
-/* A message wraps, and a 999px radius around two lines clips them. */
-.msg {
+/* One line is a pill like the update offer; once it wraps, a 999px radius around two lines
+   clips them, so flash() marks it. */
+.msg.wrapped {
   border-radius: var(--r-xl);
 }
 .msg-text {

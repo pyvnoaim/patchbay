@@ -749,7 +749,7 @@ async function restoreTabs() {
     tabs && `${tabs} tab${tabs === 1 ? "" : "s"}`,
     fwds && `${fwds} forward${fwds === 1 ? "" : "s"}`,
   ].filter(Boolean);
-  flash(`Reopen ${said.join(" and ")} from last time?`, false, {
+  flash(`${said.join(" and ")} from last time`, false, {
     label: "Reopen",
     run: () => reopen(back).catch(alertish),
     stay: true,

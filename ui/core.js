@@ -245,6 +245,8 @@ function flash(text, bad = false, action = null) {
   const shown = [...document.querySelectorAll("#notices .msg")];
   if (shown.length >= 4) (shown.find((p) => !p.querySelector(".primary")) ?? shown[0]).remove();
   $("notices").insertBefore(el, $("ssh-leftover"));
+  // One line is ~38px tall with or without a button, two are ~46.
+  el.classList.toggle("wrapped", el.offsetHeight > 42);
   return el;
 }
 
