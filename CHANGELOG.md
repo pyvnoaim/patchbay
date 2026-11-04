@@ -8,6 +8,10 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## 0.1.74 - 2026-11-04
+
+- The pill offering last time's tabs back reads more cleanly, and one-line pills have fully round ends like the update pill.
+
 ## 0.1.73 - 2026-11-02
 
 - Following the system theme on a dark Mac no longer shows a light window on a dark sidebar, and a theme switch while patchbay is open now reaches the whole window.
