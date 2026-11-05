@@ -153,7 +153,7 @@ fn stale(what: &str, stamp: Option<&str>, current: Option<&Item>) -> Result<(), 
     let now = current.map(stamp_of).unwrap_or_default();
     if sent != now {
         return Err(format!(
-            "\"{what}\" was changed by someone else since you opened it - saving again replaces their change"
+            "\"{what}\" was changed by someone else since you opened it, and saving again replaces their change"
         ));
     }
     Ok(())
@@ -321,13 +321,13 @@ const FIRST_RUN: &str = r#"# patchbay - your devices, one file. Uncomment a bloc
 # [jack.bastion]
 # host = "bastion.example.com"
 # port = 2222
-# os = "debian"         # picks the icon; the names are under Settings > Appearance
+# os = "debian"         # picks the icon, the names are under Settings > Appearance
 # folders = ["prod"]    # a list: "prod/eu/web" nests, and a device can sit in several
 #
 # [jack.web]
 # host = "10.0.0.4"
 # user = "deploy"
-# jump = "bastion"      # another device's name, or a raw host; chains follow the jumps
+# jump = "bastion"      # another device's name, or a raw host, chains follow the jumps
 # forward = ["8080:localhost:80"]
 # url = "https://10.0.0.4"   # opens as a tab
 # rdp = 3389            # or vnc = 5900; remote desktop through the jump chain

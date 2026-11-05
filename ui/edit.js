@@ -1445,7 +1445,7 @@ function keysHtml() {
         ["Reload the list", [chord("r")]],
         ["Previous, next tab or pane", [`${chord("[")}`, `${chord("]")}`]],
         ["Open a device in split view", [chord("d")]],
-        ["Close the tab; twice with a live session in it", [chord("w")]],
+        ["Close the tab, twice with a live session in it", [chord("w")]],
         ["This page", ["?"]],
       ],
     ],

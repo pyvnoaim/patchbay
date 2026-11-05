@@ -350,7 +350,7 @@
                   <span
                     ><b>Add these devices to your ssh config</b> So <code>ssh web-01</code>, scp and
                     rsync reach them, jump chains and all. One file of its own and an
-                    <code>Include</code> line; hosts you wrote yourself are left alone.</span
+                    <code>Include</code> line. Hosts you wrote yourself are left alone.</span
                   ></label
                 >
                 <!-- ssh has one namespace and both vaults can have a "web", so one or the other. -->
@@ -388,9 +388,9 @@
                 Typed at the prompt, never run: Enter stays yours. <code>{host}</code>,
                 <code>{user}</code>, <code>{port}</code> and <code>{name}</code> come from the
                 device. <code>{?unit}</code> is a blank asked for when you pick it, with the word
-                after <code>?</code> as the question; leave it empty to finish the line yourself.
+                after <code>?</code> as the question. Leave it empty to finish the line yourself.
                 <span id="snip-vaults" hidden
-                  >Mine is only for you; Team is for everyone on the shared list.</span
+                  >Mine is only for you, Team is for everyone on the shared list.</span
                 >
               </p>
             </section>
@@ -559,7 +559,7 @@
             <section class="pane" data-pane="config" hidden>
               <div class="d-sec">Config file</div>
               <p class="page-note">
-                The devices are in this file. It's plain TOML - edit it by hand whenever you prefer;
+                The devices are in this file. It's plain TOML: edit it by hand whenever you prefer,
                 patchbay keeps your comments and formatting.
               </p>
               <div class="mono" id="cfgpath"></div>
