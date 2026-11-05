@@ -58,7 +58,7 @@
 
   --pad: clamp(22px, 5vw, 68px);
   --measure: 58ch;
-  --band: clamp(76px, 9vw, 136px);
+  --band: clamp(56px, 6.5vw, 96px);
   --ease: cubic-bezier(0.22, 0.75, 0.28, 1);
 }
 :root[data-theme="light"] {
@@ -258,17 +258,6 @@ footer {
   padding-top: calc(var(--band) - clamp(40px, 5vw, 68px));
 }
 
-/* Every other section sits on the raised ground, faded at the edges so the change never reads as a seam. */
-.band.raise {
-  background: linear-gradient(
-    180deg,
-    var(--ground) 0,
-    var(--ground-2) 7%,
-    var(--ground-2) 93%,
-    var(--ground) 100%
-  );
-}
-
 /* Heading beside its content, so not every section is the same stack. */
 .band.split > .wrap {
   display: grid;
@@ -278,10 +267,6 @@ footer {
 }
 .band.split .full {
   margin-top: 0;
-}
-.band.split .body {
-  position: sticky;
-  top: 96px;
 }
 @media (max-width: 900px) {
   .band.split > .wrap {
@@ -388,9 +373,22 @@ footer {
   max-width: calc(1240px - var(--pad) * 2);
   height: 56px;
   padding: 0 10px 0 18px;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: 16px;
-  background: color-mix(in srgb, var(--raise) 52%, transparent);
+  transition:
+    max-width 0.4s var(--ease),
+    height 0.4s var(--ease),
+    background 0.3s var(--ease),
+    border-color 0.3s var(--ease),
+    box-shadow 0.3s var(--ease);
+}
+/* At the top it is part of the hero: no box, so the headline has the stage. Scrolled, it gathers
+   into a narrower glass dock, since now it floats over content rather than over the plasma. */
+.top[data-scrolled] > .wrap {
+  max-width: min(980px, calc(100% - var(--pad) * 2));
+  height: 52px;
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--raise) 62%, transparent);
   backdrop-filter: blur(22px) saturate(1.8);
   -webkit-backdrop-filter: blur(22px) saturate(1.8);
   box-shadow:
@@ -456,10 +454,12 @@ footer {
     opacity 0.24s var(--ease),
     transform 0.3s cubic-bezier(0.34, 1.4, 0.5, 1);
 }
-.top nav a:not(.btn):hover {
+.top nav a:not(.btn):hover,
+.top nav a[aria-current] {
   color: var(--ink);
 }
-.top nav a:not(.btn):hover::before {
+.top nav a:not(.btn):hover::before,
+.top nav a[aria-current]::before {
   opacity: 1;
   transform: scale(1);
 }
@@ -469,6 +469,55 @@ footer {
 @media (max-width: 700px) {
   .top nav .sm {
     display: none;
+  }
+}
+/* The theme switch: the icon is the theme it switches to. Which one shows is decided in CSS, the
+   same way the colours are, so it is right before any script runs. */
+.tg {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: -8px -8px -8px -14px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition:
+    color 0.2s var(--ease),
+    background 0.2s var(--ease);
+}
+.tg:hover {
+  color: var(--ink);
+  background: var(--fill-hi);
+}
+.w-theme {
+  cursor: pointer;
+}
+.tg:focus-visible,
+.w-theme:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.tg svg {
+  width: 17px;
+  height: 17px;
+}
+.tg .moon,
+:root[data-theme="light"] .tg .sun {
+  display: none;
+}
+:root[data-theme="light"] .tg .moon {
+  display: block;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .tg .sun {
+    display: none;
+  }
+  :root:not([data-theme="dark"]) .tg .moon {
+    display: block;
   }
 }
 
@@ -660,6 +709,14 @@ footer {
   padding: 0 16px;
   font-size: 14px;
   border-radius: 9px;
+  transition:
+    height 0.4s var(--ease),
+    transform 0.2s var(--ease),
+    box-shadow 0.2s var(--ease);
+}
+/* The scrolled dock is 52px, so the button steps down with it and keeps a margin inside. */
+.top[data-scrolled] .btn {
+  height: 36px;
 }
 
 /* ═══ hero ═════════════════════════════════════════════════════════════════ */
@@ -688,9 +745,19 @@ footer {
 .hero h1 {
   max-width: 15ch;
 }
+/* One sentence a line, so a break never lands mid-thought. */
+.lede .line {
+  display: block;
+}
 .hero .lede {
   margin-top: 26px;
   font-size: clamp(17px, 1.5vw, 19px);
+  /* The plasma's mask still reaches the lede on a wide screen; a halo of the ground keeps it
+     readable over the bright stripes without dimming the art. */
+  color: var(--ink);
+  text-shadow:
+    0 0 2px var(--ground),
+    0 1px 14px var(--ground);
 }
 .cta {
   display: flex;
@@ -743,7 +810,6 @@ footer {
    saying which line produced which flag. */
 .xform {
   position: relative;
-  margin-top: clamp(48px, 6vw, 76px);
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   border: 1px solid var(--line);
@@ -832,9 +898,9 @@ footer {
 .f-default {
   color: var(--from-default);
 }
-/* A tint in the value's own colour, so it reads as a field you can click into. */
-[data-f] {
-  outline: none;
+/* A tint in the value's own colour, so it reads as a field you can click into. The quotes sit
+   outside the editable part, so a value can be changed but its TOML shape can't be broken. */
+.field {
   border-radius: 5px;
   padding: 0 4px;
   margin: 0 -4px;
@@ -845,64 +911,37 @@ footer {
     background 0.15s var(--ease),
     box-shadow 0.15s var(--ease);
 }
-[data-f]:hover {
+.field:hover {
   background: color-mix(in srgb, currentColor 16%, transparent);
 }
-[data-f]:focus {
+.field:focus-within {
   background: color-mix(in srgb, currentColor 22%, transparent);
   box-shadow: inset 0 -1px 0 color-mix(in srgb, currentColor 65%, transparent);
+}
+/* Emptied, it keeps just enough width for the caret: a click on the quotes lands here anyway. */
+[data-f] {
+  outline: none;
+  display: inline-block;
+  min-width: 1px;
 }
 .argv .bad {
   color: var(--down);
 }
+/* A flag and its value wrap as one, so `-L` never ends a line without its forward. */
 .argv {
   font-size: 13.6px;
   line-height: 2.1;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.argv > span {
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .argv > span {
+    white-space: normal;
+  }
 }
 .argv .cmd {
-  color: var(--ink);
-  font-weight: 500;
-}
-.legend {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 24px;
-  padding-top: 22px;
-  border-top: 1px solid var(--hair);
-}
-.legend div {
-  display: flex;
-  align-items: baseline;
-  gap: 11px;
-  font-size: 13.5px;
-  color: var(--ink-dim);
-}
-.legend i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex: none;
-  transform: translateY(-1px);
-  animation: breathe 4.5s var(--ease) infinite;
-}
-.legend div:nth-child(2) i {
-  animation-delay: 0.5s;
-}
-.legend div:nth-child(3) i {
-  animation-delay: 1s;
-}
-@keyframes breathe {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 transparent;
-  }
-  50% {
-    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 18%, transparent);
-  }
-}
-.legend b {
   color: var(--ink);
   font-weight: 500;
 }
@@ -1276,6 +1315,12 @@ footer {
   color: var(--ink-faint);
   text-align: center;
 }
+/* A touch screen has no ⌘ to hold, and a window this small is for looking at, not clicking. */
+@media (hover: none), (max-width: 700px) {
+  .shot-hint {
+    display: none;
+  }
+}
 .shot-hint kbd {
   font: inherit;
   padding: 1px 6px;
@@ -1434,7 +1479,25 @@ footer {
 }
 .w-ddesc {
   color: var(--ink-dim);
-  margin: 2px 0 0 42px;
+  margin-top: 2px;
+}
+/* As in the app: the device's icon is a tile to the left of both the name and the line under it. */
+.w-dhead > div {
+  position: relative;
+  min-height: 46px;
+  padding-left: 58px;
+}
+.w-dhead .w-tile {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+}
+.w-dhead .w-tile svg {
+  width: 21px;
+  height: 21px;
 }
 .w-cards {
   display: grid;
@@ -1601,23 +1664,58 @@ footer {
   color: var(--ink);
   font-weight: 550;
 }
-.w-onnow {
-  display: flex;
-  gap: 18px;
-}
-.w-onnow span {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.w-onnow b {
-  font-weight: 550;
-}
-.w-onnow small {
-  color: var(--ink-faint);
+/* Beside the name, as in the app: which vault, and whether it answers. */
+.w-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 2px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--fill-hi);
+  color: var(--ink-dim);
   font-size: 11px;
+  font-weight: 450;
+  letter-spacing: 0;
 }
-#w-on[hidden] {
+.w-badge svg {
+  width: 11px;
+  height: 11px;
+}
+.w-badge.team {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+.w-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.w-state i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.w-state.up {
+  background: color-mix(in oklab, var(--up) 14%, transparent);
+  color: var(--up);
+}
+.w-state.down {
+  background: color-mix(in oklab, var(--down) 14%, transparent);
+  color: var(--down);
+}
+.w-here {
+  color: var(--accent);
+  font-size: 12px;
+}
+.w-card[hidden],
+.w-here[hidden] {
   display: none;
 }
 
@@ -1980,179 +2078,6 @@ footer {
   max-width: var(--measure);
 }
 
-/* The team band: two copies of patchbay on one list, played a step at a time by script.js. */
-.duo {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 14px;
-  font:
-    400 12.5px/1.45 -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Inter,
-    system-ui,
-    sans-serif;
-  user-select: none;
-}
-.mini {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--ground-2);
-  box-shadow:
-    inset 0 1px 0 var(--lift),
-    var(--shadow-2);
-  overflow: hidden;
-}
-.mini-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--line);
-}
-.mini-bar .w-light {
-  width: 9px;
-  height: 9px;
-}
-.mini-bar .who {
-  margin-left: auto;
-  color: var(--ink-dim);
-  font-weight: 550;
-}
-.mini-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 8px;
-  min-height: 196px;
-}
-.mg {
-  padding: 5px 8px 3px;
-  color: var(--ink-faint);
-  font-size: 11.5px;
-}
-.mj {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px 4px 18px;
-  border-radius: 6px;
-  transition: background 0.6s var(--ease);
-}
-.mj[hidden],
-.mini-note[hidden],
-.pres[hidden] {
-  display: none;
-}
-/* What just changed, lit for a moment the way the eye needs to find it. */
-.mj[data-flash] {
-  background: color-mix(in oklab, var(--accent) 22%, transparent);
-  animation: duo-in 0.45s var(--ease) both;
-}
-@keyframes duo-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-}
-.mj[data-live] {
-  background: var(--fill-hi);
-  font-weight: 550;
-}
-.pres {
-  margin-left: auto;
-  padding: 1px 7px;
-  border-radius: 20px;
-  background: color-mix(in oklab, var(--accent) 18%, transparent);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 550;
-  animation: duo-in 0.45s var(--ease) both;
-}
-.mini-note {
-  margin: 0 8px 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--fill-hi);
-  color: var(--ink);
-  font-size: 12px;
-  animation: duo-in 0.45s var(--ease) both;
-}
-.mini-note.warn {
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-.share {
-  grid-column: 1 / -1;
-  order: 3;
-  justify-self: center;
-  position: relative;
-  padding: 5px 12px;
-  border-radius: 20px;
-  border: 1px solid var(--line);
-  background: var(--raise);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 12px;
-  color: var(--ink-faint);
-  transition:
-    color 0.4s var(--ease),
-    border-color 0.4s var(--ease);
-}
-.share[data-pulse] {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-.duo-steps {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  margin-top: 16px;
-}
-.duo-cap {
-  margin: 0;
-  color: var(--ink-dim);
-  min-height: 3em;
-}
-.duo-dots {
-  display: flex;
-  gap: 6px;
-  flex: none;
-}
-.duo-dots button {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: var(--fill-hi);
-  color: var(--ink-faint);
-  font:
-    600 11px/24px "IBM Plex Mono",
-    monospace;
-  cursor: pointer;
-}
-.duo-dots button[aria-current] {
-  background: var(--accent);
-  color: #fff;
-}
-.duo-dots button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-@media (max-width: 560px) {
-  .duo {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .duo-steps {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .share {
-    order: 0;
-  }
-}
 .ln .c-cm {
   margin-left: 3ch;
 }
@@ -2169,9 +2094,6 @@ footer {
 }
 
 /* ═══ close ════════════════════════════════════════════════════════════════ */
-.close {
-  background: linear-gradient(180deg, var(--ground), var(--ground-2) clamp(90px, 12vw, 180px));
-}
 .close > .wrap {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 404px;
@@ -2258,10 +2180,8 @@ footer {
 }
 
 /* ═══ pricing ══════════════════════════════════════════════════════════════
-   Two prices side by side, and under them the three questions legal always asks. The team
-   card is the lit one because it is the only one with something to buy. The small print is
-   scoped under `.sheet` because `.sheet dl` and its mono terms belong to the specification
-   card, and a bare `.faq` loses to them: these are questions and sentences, not a table. */
+   Two prices side by side, each ending in its button. The team card is the lit one because it
+   is the only one with something to buy. The questions sit beside them, under the heading. */
 .prices {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -2343,24 +2263,24 @@ footer {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.sheet .faq {
+.faq {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
   margin: 0;
 }
-.sheet .faq > div {
+.faq > div {
   padding: 18px 0;
   border-top: 1px solid var(--hair);
 }
-.sheet .faq > div:first-child {
+.faq > div:first-child {
   border-top: 0;
   padding-top: 0;
 }
-.sheet .faq > div:last-child {
+.faq > div:last-child {
   padding-bottom: 0;
 }
-.sheet .faq dt {
+.faq dt {
   font-family: inherit;
   font-size: 15px;
   letter-spacing: normal;
@@ -2368,7 +2288,7 @@ footer {
   padding-top: 0;
   color: var(--ink);
 }
-.sheet .faq dd {
+.faq dd {
   margin: 6px 0 0;
   font-size: 14.5px;
   line-height: 1.55;

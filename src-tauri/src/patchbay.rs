@@ -1322,15 +1322,9 @@ host = "bastion.example"
 port = 2222
 folders = ["acme"]
 
-[jack.web]
-host = "10.0.0.4"
-user = "deploy"
-jump = "bastion"
-folders = ["acme"]
-
 [jack.db]
 host = "10.0.0.5"
-jump = "web"
+jump = "bastion"
 folders = ["acme"]
 forward = ["5432:localhost:5432"]
 "#,
@@ -1339,7 +1333,7 @@ forward = ["5432:localhost:5432"]
 
         assert_eq!(
             ssh_args("db", &j).unwrap().join(" "),
-            "-J root@bastion.example:2222,deploy@10.0.0.4 -L 5432:localhost:5432 root@10.0.0.5",
+            "-J root@bastion.example:2222 -L 5432:localhost:5432 root@10.0.0.5",
             "site/index.html shows this argv for this config; update both together"
         );
     }

@@ -318,11 +318,10 @@
   var ddesc = document.getElementById("w-ddesc");
   var target = document.getElementById("w-target");
   var route = document.getElementById("w-route");
-  var fwrap = document.getElementById("w-fwrap");
   var reach = document.getElementById("w-reach");
   var cmdtext = document.getElementById("w-cmdtext");
   if (!list || !dname) return;
-  var onnow = document.getElementById("w-on");
+  var here = document.getElementById("w-here");
   var dbody = document.getElementById("w-dbody");
   var term = document.getElementById("w-term");
   var desk = document.getElementById("w-desk");
@@ -387,17 +386,20 @@
     })();
   }
 
-  function row(host, user, ...more) {
+  function row(host, user, folder, ...more) {
     var rows = [["host", host]];
     if (user) rows.push(["user", user]);
     rows.push(...more);
+    if (folder) rows.push(["in", folder]);
     return rows
       .map(function (r) {
         return '<div class="w-row"><dt>' + r[0] + "</dt><dd>" + r[1] + "</dd></div>";
       })
       .join("");
   }
+  // A direct device has no route to draw; the app leaves the card out.
   function hops(chain, dest) {
+    if (!chain.length) return null;
     var spans = ['<span><i class="pip"></i>this machine</span>'];
     chain.forEach(function (h) {
       spans.push('<span><i class="pip"></i>' + h + '<i class="arm">jump</i></span>');
@@ -409,98 +411,98 @@
   var DATA = {
     bastion: {
       desc: "the way into infra",
-      target: row("bastion.example", "root", ["port", "2222"]),
+      target: row("bastion.example", "root", "infra", ["port", "2222"]),
       route: hops([], "root@bastion.example:2222"),
-      fwd: null,
       reach: { ok: true, via: "this machine", ms: 9 },
       cmd: "ssh -p 2222 root@bastion.example",
     },
     web: {
       desc: "webserver, eu",
-      target: row("10.0.0.4", "deploy"),
+      target: row("10.0.0.4", "deploy", "prod / eu"),
       route: hops(["bastion.example:2222"], "deploy@10.0.0.4"),
-      fwd: null,
       reach: { ok: true, via: "bastion.example:2222", ms: 19 },
       cmd: "ssh -J bastion.example:2222 deploy@10.0.0.4",
     },
     db: {
-      on: true,
+      on: "anna (2 h 10 min), jonas (42 min)",
       desc: "primary, replicas behind it",
-      target: row("10.0.0.5", "root"),
+      target: row("10.0.0.5", "root", "prod / eu"),
       route: hops(["bastion.example:2222", "deploy@10.0.0.4"], "root@10.0.0.5"),
-      fwd: [["-L", "5432:localhost:5432"]],
       reach: { ok: true, via: "bastion.example:2222", ms: 24 },
-      cmd: "ssh -J bastion.example:2222,deploy@10.0.0.4 -L 5432:localhost:5432 root@10.0.0.5",
+      cmd: "ssh -J bastion.example:2222,deploy@10.0.0.4 root@10.0.0.5",
     },
     "staging-web": {
+      vault: "mine",
       desc: "staging",
-      target: row("10.0.0.60", "deploy"),
+      target: row("10.0.0.60", "deploy", null),
       route: hops([], "deploy@10.0.0.60"),
-      fwd: null,
       reach: { unknown: true },
       cmd: "ssh deploy@10.0.0.60",
     },
     nas: {
       desc: "Synology, backups land here",
-      target: row("10.0.0.20", "root"),
+      target: row("10.0.0.20", "root", "infra"),
       route: hops([], "root@10.0.0.20"),
-      fwd: null,
       reach: { down: true },
       cmd: "ssh root@10.0.0.20",
     },
     hypervisor: {
       desc: "Proxmox host",
-      target: row("10.0.0.30", "root"),
+      target: row("10.0.0.30", "root", "infra"),
       route: hops([], "root@10.0.0.30"),
-      fwd: null,
       reach: { ok: true, via: "this machine", ms: 4 },
       cmd: "ssh root@10.0.0.30",
     },
     gateway: {
       desc: "OPNsense, the edge",
-      target: row("10.0.0.1", "root"),
+      target: row("10.0.0.1", "root", "infra"),
       route: hops([], "root@10.0.0.1"),
-      fwd: null,
       reach: { ok: true, via: "this machine", ms: 2 },
       cmd: "ssh root@10.0.0.1",
     },
     pi: {
+      vault: "mine",
       desc: "homelab",
-      target: row("10.0.0.40", "root"),
+      target: row("10.0.0.40", "root", null),
       route: hops([], "root@10.0.0.40"),
-      fwd: null,
       reach: { down: true },
       cmd: "ssh root@10.0.0.40",
     },
     "acme-app": {
       desc: "acme's app server",
-      target: row("10.0.0.10", "deploy"),
+      target: row("10.0.0.10", "deploy", "acme"),
       route: hops([], "deploy@10.0.0.10"),
-      fwd: null,
       reach: { ok: true, via: "this machine", ms: 71 },
       cmd: "ssh deploy@10.0.0.10",
     },
     "acme-dc": {
       desc: "acme's domain controller",
-      target: row("10.0.0.50", "administrator"),
+      target: row("10.0.0.50", "administrator", "acme"),
       route: hops([], "administrator@10.0.0.50"),
-      fwd: null,
       reach: { ok: true, via: "this machine", ms: 68 },
       cmd: "ssh administrator@10.0.0.50",
     },
   };
 
+  // The pill beside the name says the milliseconds, so the card doesn't repeat them: the app's wide view.
   function reachHtml(r) {
-    if (r.unknown) return '<span style="color:var(--ink-faint)">not probed yet</span>';
-    if (r.down)
-      return '<span style="color:var(--ink-faint)">out of reach</span> &middot; timed out';
-    return '<span style="color:var(--up)">up</span> &middot; ' + r.via + " &middot; " + r.ms + "ms";
+    if (r.unknown) return '<span style="color:var(--ink-faint)">not checked</span>';
+    if (r.down) return '<span style="color:var(--down)">no answer</span>';
+    return '<span style="color:var(--up)">up</span> &middot; ' + r.via;
+  }
+  function pill(r) {
+    if (r.unknown) return "";
+    if (r.down) return '<span class="w-state down"><i></i>no answer</span>';
+    return '<span class="w-state up"><i></i>up &middot; ' + r.ms + " ms</span>";
   }
 
   // Marks and the dock they raise, the same gesture as the app: cmd-click picks a row out,
   // shift-click takes the run between, a plain click drops the lot.
   var dock = document.getElementById("w-dock");
   var ICON = {
+    user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>',
+    users:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>',
     bcast:
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/></svg>',
     del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
@@ -577,21 +579,24 @@
     jack.setAttribute("data-sel", "");
 
     var os = jack.querySelector(".w-os");
-    dname.innerHTML = '<span class="w-tile">' + os.innerHTML + "</span>" + name;
+    dname.innerHTML =
+      '<span class="w-tile">' +
+      os.innerHTML +
+      "</span>" +
+      name +
+      (d.vault === "mine"
+        ? '<span class="w-badge">' + ICON.user + "Mine</span>"
+        : '<span class="w-badge team">' + ICON.users + "Team</span>") +
+      pill(d.reach);
     dname.firstChild.style.color = os.style.color || "";
     ddesc.textContent = d.desc;
     target.innerHTML = d.target;
-    route.innerHTML = d.route;
-    fwrap.hidden = !d.fwd;
-    if (d.fwd)
-      fwrap.querySelector("dl").innerHTML = d.fwd
-        .map(function (f) {
-          return '<div class="w-row"><dt>' + f[0] + "</dt><dd>" + f[1] + "</dd></div>";
-        })
-        .join("");
+    route.closest(".w-card").hidden = !d.route;
+    if (d.route) route.innerHTML = d.route;
     reach.innerHTML = reachHtml(d.reach);
     cmdtext.textContent = d.cmd;
-    onnow.hidden = !d.on;
+    here.hidden = !d.on;
+    if (d.on) here.textContent = "Connected: " + d.on;
     show(null);
   });
 })();
@@ -609,13 +614,13 @@
   };
 
   function read() {
-    var j = { acme: {}, bastion: {}, web: {}, db: {} };
+    var j = { acme: {}, bastion: {}, db: {} };
     fields.forEach(function (el) {
       var parts = el.dataset.f.split(".");
       j[parts[0]][parts[1]] = unquote(el.textContent);
     });
-    ["bastion", "web", "db"].forEach(function (n) {
-      if (!j[n].user) j[n].user = j.acme.user; // [folder.acme], lent to all three
+    ["bastion", "db"].forEach(function (n) {
+      if (!j[n].user) j[n].user = j.acme.user; // [folder.acme], lent to both
     });
     return j;
   }
@@ -669,12 +674,22 @@
     }).length;
     html +=
       inherited && j.db.user
-        ? '<span class="f-default">' + esc(j.db.user) + "@</span>" + esc(j.db.host)
-        : esc(spec(j.db));
+        ? '<span><span class="f-default">' +
+          esc(j.db.user) +
+          "@</span>" +
+          esc(j.db.host) +
+          "</span>"
+        : "<span>" + esc(spec(j.db)) + "</span>";
     out.innerHTML = html;
   }
 
   fields.forEach(function (el) {
+    // A click on the quotes around a value lands in the value.
+    el.parentElement.addEventListener("mousedown", function (e) {
+      if (e.target === el) return;
+      e.preventDefault();
+      el.focus();
+    });
     el.addEventListener("input", render);
     // A value is one line; Enter would put a <br> in it.
     el.addEventListener("keydown", function (e) {
@@ -1135,104 +1150,81 @@
   ).observe(panel);
 })();
 
-// The team band: one list, two copies of patchbay. Each step is drawn from scratch by apply(),
-// so a click on any step lands in the same state the loop would have reached.
+// The masthead: flat over the hero, a dock once the page moves, and the link for the section in
+// view lit. Without the script it stays flat, which still reads.
 (function () {
-  var duo = document.getElementById("duo");
-  var cap = document.getElementById("duo-cap");
-  if (!duo || !cap || !window.IntersectionObserver) return;
-  var you = duo.querySelector('[data-who="you"]');
-  var anna = duo.querySelector('[data-who="anna"]');
-  var share = duo.querySelector(".share");
-
-  var STEPS = [
-    "Two copies of patchbay, one list on the team drive.",
-    "Anna adds acme-db to the team's list.",
-    "It turns up in your window on its own. Nobody pressed sync.",
-    "She connects to bastion, and your list says she is on it.",
-    "You both edit gateway. Hers was saved first, so yours is refused once instead of quietly replacing it.",
-  ];
-
-  function jack(win, k) {
-    return win.querySelector('[data-k="' + k + '"]');
+  var top = document.querySelector(".top");
+  if (!top) return;
+  function onScroll() {
+    top.toggleAttribute("data-scrolled", window.scrollY > 24);
   }
-  function note(win, text, warn) {
-    var n = win.querySelector(".mini-note");
-    n.hidden = !text;
-    n.textContent = text || "";
-    n.classList.toggle("warn", !!warn);
-  }
-  function flash(el, on) {
-    if (on) el.setAttribute("data-flash", "");
-    else el.removeAttribute("data-flash");
-  }
+  window.addEventListener("scroll", onScroll, { passive: true });
+  onScroll();
 
-  function apply(n) {
-    jack(anna, "acme-db").hidden = n < 1;
-    flash(jack(anna, "acme-db"), n === 1);
-    jack(you, "acme-db").hidden = n < 2;
-    flash(jack(you, "acme-db"), n === 2);
-    share.toggleAttribute("data-pulse", n === 1 || n === 2);
-    jack(anna, "bastion").toggleAttribute("data-live", n >= 3);
-    jack(you, "bastion").querySelector(".pres").hidden = n < 3;
-    var hers = jack(anna, "bastion").querySelector(".pres");
-    hers.textContent = "session open";
-    hers.hidden = n < 3;
-    note(anna, n === 4 ? "Saved gateway." : "");
-    note(
-      you,
-      n === 4
-        ? '"gateway" was changed by someone else since you opened it. Save again to replace it.'
-        : "",
-      true,
+  var links = [].slice.call(top.querySelectorAll('nav a[href^="#"]'));
+  if (!("IntersectionObserver" in window) || !links.length) return;
+  var byId = {};
+  links.forEach(function (a) {
+    byId[a.getAttribute("href").slice(1)] = a;
+  });
+  // A section counts as current while it crosses a line a third of the way down the screen.
+  var io = new IntersectionObserver(
+    function (entries) {
+      entries.forEach(function (e) {
+        var a = byId[e.target.id];
+        if (!a) return;
+        if (e.isIntersecting) {
+          links.forEach(function (l) {
+            l.removeAttribute("aria-current");
+          });
+          a.setAttribute("aria-current", "true");
+        } else a.removeAttribute("aria-current");
+      });
+    },
+    { rootMargin: "-33% 0px -66% 0px" },
+  );
+  Object.keys(byId).forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) io.observe(el);
+  });
+})();
+
+// The theme switch pins the opposite of what is showing, and remembers it. The colours follow
+// from the attribute in CSS, and the plasma watches the same attribute. The footer has one, and
+// the moon in the mock window's sidebar is one too, as it is in the app.
+(function () {
+  var btns = [].slice.call(document.querySelectorAll(".tg, .w-theme"));
+  if (!btns.length) return;
+  var root = document.documentElement;
+  function showing() {
+    return (
+      root.getAttribute("data-theme") ||
+      (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
     );
-    cap.textContent = STEPS[n];
-    dots.forEach(function (d, i) {
-      if (i === n) d.setAttribute("aria-current", "step");
-      else d.removeAttribute("aria-current");
+  }
+  function label() {
+    var say = showing() === "light" ? "Switch to dark theme" : "Switch to light theme";
+    btns.forEach(function (b) {
+      b.setAttribute("aria-label", say);
     });
   }
-
-  var box = document.createElement("div");
-  box.className = "duo-dots";
-  var dots = STEPS.map(function (_, i) {
-    var b = document.createElement("button");
-    b.type = "button";
-    b.textContent = String(i + 1);
-    b.setAttribute("aria-label", "Step " + (i + 1));
-    b.addEventListener("click", function () {
-      stop();
-      at = i;
-      apply(i);
-    });
-    box.appendChild(b);
-    return b;
-  });
-  cap.parentNode.insertBefore(box, cap);
-
-  // Plays only while on screen, and not at all with reduced motion: the numbers still work.
-  var at = 0,
-    timer = null;
-  function stop() {
-    clearInterval(timer);
-    timer = null;
+  function flip() {
+    var next = showing() === "light" ? "dark" : "light";
+    root.setAttribute("data-theme", next);
+    try {
+      localStorage.setItem("theme", next);
+    } catch (e) {}
+    label();
   }
-  function play() {
-    if (timer || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    timer = setInterval(function () {
-      at = (at + 1) % STEPS.length;
-      apply(at);
-    }, 3400);
-  }
-  var touched = false;
-  dots.forEach(function (d) {
-    d.addEventListener("click", function () {
-      touched = true;
+  btns.forEach(function (b) {
+    b.addEventListener("click", flip);
+    // The mock's is a span, so Enter and Space are wired by hand.
+    b.addEventListener("keydown", function (e) {
+      if (b.tagName !== "BUTTON" && (e.key === "Enter" || e.key === " ")) {
+        e.preventDefault();
+        flip();
+      }
     });
   });
-  new IntersectionObserver(function (entries) {
-    if (entries[0].isIntersecting && !touched) play();
-    else stop();
-  }).observe(duo);
-  apply(0);
+  label();
 })();
