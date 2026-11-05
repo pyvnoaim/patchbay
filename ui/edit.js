@@ -365,6 +365,11 @@ document.addEventListener("contextmenu", (e) => {
               key: chord("d"),
               run: front(() => openPalette("", true)),
             },
+            {
+              icon: "square-terminal",
+              label: "Local shell beside",
+              run: front(() => openLocal(true)),
+            },
           ]),
       "-",
       { icon: "x", label: "Close", key: chord("w"), run: () => closeSession(onTab.id) },

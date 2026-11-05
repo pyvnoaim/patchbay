@@ -41,6 +41,8 @@ the next push.
       On now. A colleague on 0.1.71 still shows, without minutes.
 - [ ] **Licence pane**: with one vault it says free; with a shared list it shows no
       licence needed yet; a fresh `npm run licence` paste is accepted and removable.
+- [ ] **Local shell**: "local" in ⌘K opens a tab, in ⌘D opens beside; `brew` works in it
+      (the login PATH); `exit` then ⏎ starts another; it reopens after a relaunch.
 - [ ] **Device row toggle**: with a session open, clicking its row shows the page, clicking
       again goes back to the session.
 - [ ] **Snippet presets**: "Add N common ones" in Settings ▸ Snippets adds them to Mine,

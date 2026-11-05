@@ -1,5 +1,5 @@
-//! Terminal sessions: ssh on a pty inside the window, ssh in the system terminal, and
-//! the one-shot ping / traceroute tabs.
+//! Terminal sessions: ssh on a pty inside the window, ssh in the system terminal, a
+//! shell on this machine, and the one-shot ping / traceroute tabs.
 
 use super::load_jacks;
 use crate::{config, patchbay, pty, sftp, terminal};
@@ -132,6 +132,24 @@ pub async fn open_line(
     let log = config::load_settings()
         .log_sessions
         .then(|| log_path(&resolved));
+    sessions.open(out, id, &program, &args, cols.max(2), rows.max(2), log)?;
+    Ok(terminal::command_line_of(&program, &args))
+}
+
+/// This machine's own shell in a tab, on the same pty. Nothing in the list reaches its
+/// argv: it is `$SHELL -l` and nothing else, so a colleague's file can't choose it.
+#[tauri::command]
+pub async fn open_local(
+    out: Out,
+    sessions: tauri::State<'_, pty::Shared>,
+    id: u32,
+    cols: u16,
+    rows: u16,
+) -> Result<String, String> {
+    let (program, args) = terminal::login_shell();
+    let log = config::load_settings()
+        .log_sessions
+        .then(|| log_path("local"));
     sessions.open(out, id, &program, &args, cols.max(2), rows.max(2), log)?;
     Ok(terminal::command_line_of(&program, &args))
 }

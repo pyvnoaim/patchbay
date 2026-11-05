@@ -742,7 +742,8 @@ listen("window:close", async () => {
 // do it, or not. A desktop is asked for its password as it opens, which is why asking
 // first is the default. Ends back on the list.
 const REOPEN = {
-  term: (t) => openSession(t.name, null, null, false, t.via),
+  // A local shell is always a fresh one, so two of them come back as two.
+  term: (t) => openSession(t.name, null, null, false, t.via, t.via === "local"),
   web: (t) => openWebSession(t.name),
   sftp: (t) => openFilesSession(t.name),
   rdp: (t) => openRdpSession(t.name),
@@ -753,7 +754,9 @@ const REOPEN = {
   },
 };
 async function restoreTabs() {
-  const back = lastTabs.filter((t) => REOPEN[t.kind] && all.some((j) => j.name === t.name));
+  const back = lastTabs.filter(
+    (t) => REOPEN[t.kind] && (t.via === "local" || all.some((j) => j.name === t.name)),
+  );
   if (!back.length || prefs.reopen === "never") return;
   if (prefs.reopen === "always") return reopen(back);
   const tabs = back.filter((t) => t.kind !== "forward").length;

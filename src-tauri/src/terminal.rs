@@ -43,6 +43,27 @@ pub fn command_line_of(program: &str, args: &[String]) -> String {
         .join(" ")
 }
 
+/// The shell a local tab runs: the user's own, as a login shell, because an app opened
+/// from the Dock starts with launchd's bare PATH and only the profile puts Homebrew on it.
+#[cfg(not(windows))]
+pub fn login_shell() -> (String, Vec<String>) {
+    let fallback = if cfg!(target_os = "macos") {
+        "/bin/zsh"
+    } else {
+        "/bin/sh"
+    };
+    let shell = std::env::var("SHELL")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| fallback.into());
+    (shell, vec!["-l".into()])
+}
+
+#[cfg(windows)]
+pub fn login_shell() -> (String, Vec<String>) {
+    ("powershell.exe".into(), vec!["-NoLogo".into()])
+}
+
 #[cfg(target_os = "macos")]
 pub fn open(args: &[String]) -> Result<(), String> {
     let cmd = command_line(args);

@@ -1394,7 +1394,7 @@ function openPalette(seed = "", beside = false) {
   // The keys, said once at the foot: the rows only show the one Enter would take.
   $("pfoot").innerHTML = `<span><kbd>↑</kbd><kbd>↓</kbd>move</span>
     <span><kbd>⏎</kbd>${beside ? "open beside" : "open"}</span><span><kbd>esc</kbd>close</span>
-    <span class="pf-what">Names, hosts, notes and folders</span>`;
+    <span class="pf-what">Names, hosts, notes and folders, or "local"</span>`;
   renderPalette();
   pq.focus();
   pq.setSelectionRange(seed.length, seed.length);
@@ -1424,11 +1424,18 @@ function palMatches() {
           .filter((s) => !f || s.name.toLowerCase().includes(f) || s.text.toLowerCase().includes(f))
           .map((s) => ({ snip: s }))
       : [];
-  return [...typed, ...folders, ...named, ...jacks.filter((j) => !named.includes(j))].slice(0, 40);
+  // Last, so a device whose name starts the same still takes Enter. A word it starts,
+  // not one it contains, so "localhost" stays a quick connect.
+  const local = f.length > 1 && ["local", "shell", "terminal"].some((w) => w.startsWith(f));
+  return [
+    ...[...typed, ...folders, ...named, ...jacks.filter((j) => !named.includes(j))].slice(0, 40),
+    ...(local ? [{ local: true }] : []),
+  ];
 }
 function palPick(p) {
   closePalette();
   if (p.snip) return typeSnippet(p.snip);
+  if (p.local) return openLocal(palBeside);
   if (!p.path) return palBeside ? openBeside(p.name) : primary(p.name);
   const parts = p.path.split("/");
   for (let i = 1; i < parts.length; i++) {
@@ -1449,7 +1456,8 @@ function renderPalette() {
   // What Enter does, shown only on the row it would do it to (by CSS, so arrowing is a repaint).
   const go = (verb) => `<span class="pgo">${verb}<kbd>⏎</kbd></span>`;
   const verb = palBeside ? "Open beside" : "Connect";
-  const kindOf = (r) => (r.snip ? "Snippets" : r.path ? "Folders" : "Devices");
+  const kindOf = (r) =>
+    r.snip ? "Snippets" : r.local ? "This machine" : r.path ? "Folders" : "Devices";
   const row = (j, i) => {
     const sel = `data-pi="${i}" role="option" aria-selected="${i === palSel}"`;
     // The text itself, not only its name: it is about to be on your prompt, and in a
@@ -1460,6 +1468,11 @@ function renderPalette() {
         <span class="pt"><span class="name">${esc(j.snip.name)}</span><span class="host snip">${esc(j.snip.text)}</span></span>${
           j.snip.vault ? `<span class="pchip">${VAULTS[j.snip.vault][1]}</span>` : ""
         }${go("Type")}</div>`;
+    }
+    if (j.local) {
+      return `<div class="jack" ${sel}>
+        <span class="os">${icon("square-terminal")}</span>
+        <span class="pt"><span class="name">${esc(LOCAL)}</span><span class="host">a shell on this machine</span></span>${go(palBeside ? "Open beside" : "Open")}</div>`;
     }
     if (j.path) {
       const at = j.path.lastIndexOf("/");

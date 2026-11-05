@@ -304,6 +304,18 @@ async function openBeside(name, dir = "row") {
   }
 }
 
+// This machine's own shell, in a tab or beside the one in front. Always a fresh one: two
+// local shells side by side is the usual reason to want one. Not a device, so the name
+// is only what the tab says.
+const LOCAL = "Local shell";
+async function openLocal(beside = false) {
+  const anchor = activeId;
+  await openSession(LOCAL, null, null, false, "local", true);
+  if (beside && anchor !== null && sessions.has(anchor) && activeId !== anchor) {
+    joinSplit(anchor, activeId, "row");
+  }
+}
+
 // A divider drag moves the room between the two panes either side of it, never past
 // a pane's minimum, and refits them as it goes; a double-click evens the split out.
 const PANE_MIN = 140;
@@ -377,6 +389,7 @@ const taskLabel = (task) => (task === "ping-on" ? "ping ∞" : task);
 // `waiting` is a redial from "r": a failed one goes back to waiting rather than stopping.
 // `via` is "telnet" or "serial" for a device reached that way instead of ssh: the
 // system's own tool on the same pty, and the same tab in every other respect.
+// `via` "local" is this machine's shell, which is not a device and has nothing to wait for.
 // `fresh` opens another session even with one open already: a second shell beside the first.
 async function openSession(
   name,
@@ -451,7 +464,7 @@ async function openSession(
         return;
       }
       // A cable has nothing to wait on: it is plugged in or it isn't.
-      if (d === "r" && !task && via !== "serial") return waitForIt(s);
+      if (d === "r" && !task && via !== "serial" && via !== "local") return waitForIt(s);
       const again = d === "\r" ? task : d === "c" && task === "ping" ? "ping-on" : undefined;
       if (again !== undefined) redial(s, again, false);
       return;
@@ -472,7 +485,7 @@ async function openSession(
   // Our banner is cleared by the first byte from the far end, so a login that draws
   // with cursor moves gets a clean screen. An error we wrote on the way in stays.
   let ours = true;
-  const what = task ? `${taskLabel(task)} ` : via === "ssh" ? "" : `${via} `;
+  const what = task ? `${taskLabel(task)} ` : via === "ssh" || via === "local" ? "" : `${via} `;
   term.write(`\x1b[2m── ${what}${name}… ──\x1b[0m\r\n`);
 
   const out = ptyChannel(
@@ -499,10 +512,10 @@ async function openSession(
       if (waiting && code === 255) waitForIt(s);
       else
         term.write(
-          `\r\n\x1b[2m── ${task ? taskLabel(task) : via} exited (${code}) · ⏎ to ${task ? "run it again" : "reconnect"}${task === "ping" ? " · c to ping until ^C" : task || via === "serial" ? "" : " · r to reconnect when it's back"} · ${chord("w")} to close ──\x1b[0m\r\n`,
+          `\r\n\x1b[2m── ${task ? taskLabel(task) : via} exited (${code}) · ⏎ to ${task ? "run it again" : via === "local" ? "start another" : "reconnect"}${task === "ping" ? " · c to ping until ^C" : task || via === "serial" || via === "local" ? "" : " · r to reconnect when it's back"} · ${chord("w")} to close ──\x1b[0m\r\n`,
         );
       if (!task && !(waiting && code === 255)) lostCard(s, code);
-      if (!task) heads(s, "disconnected");
+      if (!task) heads(s, via === "local" ? "ended" : "disconnected");
       renderTabs();
       renderTree();
     },
@@ -514,7 +527,9 @@ async function openSession(
       ? invoke("open_task", { out, id, name, task, ...size })
       : via === "ssh"
         ? invoke("open_session", { out, id, name, ...size })
-        : invoke("open_line", { out, id, name, via, ...size }));
+        : via === "local"
+          ? invoke("open_local", { out, id, ...size })
+          : invoke("open_line", { out, id, name, via, ...size }));
   } catch (err) {
     ours = false;
     s.dead = true;
@@ -592,9 +607,9 @@ function lostCard(s, code) {
     <b>${title}</b>
     <span>${said}</span>
     <div class="lost-b">
-      <button type="button" class="primary" data-lost="again">Reconnect<kbd>⏎</kbd></button>
+      <button type="button" class="primary" data-lost="again">${s.via === "local" ? "Start another" : "Reconnect"}<kbd>⏎</kbd></button>
       ${
-        s.via === "serial"
+        s.via === "serial" || s.via === "local"
           ? ""
           : `<button type="button" class="ghost" data-lost="wait" data-tip="Dial again once it answers">Wait and retry<kbd>r</kbd></button>`
       }

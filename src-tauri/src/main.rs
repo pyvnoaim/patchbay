@@ -244,6 +244,7 @@ fn main() {
             remote::rdp_input,
             remote::open_vnc,
             sessions::open_line,
+            sessions::open_local,
             remote::open_vnc_session,
             remote::close_vnc_session,
             remote::vnc_input,

@@ -12,6 +12,7 @@ it back. Nothing is retyped anywhere.
 
 - Settings → Snippets can add a set of common ones (apt upgrade, disk, memory, ports, service logs), yours to edit or remove.
 - With a team list, Snippets says what Mine and Team mean.
+- A shell on this machine: type "local" in Search to open one in a tab, or with ⌘D beside the one in front. A tab's menu has it too.
 - Clicking a connected device in the sidebar now switches between its page and its session, both ways.
 
 ## 0.1.74 - 2026-11-04
