@@ -1070,8 +1070,11 @@ function renderJack(j, live) {
 }
 
 // Out of a session and back to the tree's own view: what a click in the sidebar means.
+// The session is remembered, so a second click on its device goes back to it.
+let leftSession = null;
 function browse() {
   if (activeId === null) return;
+  leftSession = activeId;
   activeId = null;
   showTab();
   renderTabs();

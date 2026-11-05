@@ -35,6 +35,19 @@ function devClick(e, row) {
   if (picking(e)) return markToggle(i);
   if (e.shiftKey) return markRange(i);
   marked.clear();
+  // A click on the device already on show flips back to its session, so the row is a
+  // toggle between the two: the session left last, else its newest. The second click of
+  // a double-click still comes back out and opens another, as it always did.
+  const again = activeId === null && detailMode === "jack" && sel === i && e.detail === 1;
+  const name = shown[i].name;
+  const live = [...sessions.values()].filter((s) => s.name === name);
+  const back = live.find((s) => s.id === leftSession) ?? live.at(-1);
+  if (again && back) {
+    activeId = back.id;
+    showTab();
+    renderTabs();
+    return;
+  }
   select(i);
   // e.detail is the click count, so this survives a re-render landing mid-gesture.
   if (e.detail === 2) primary(shown[sel].name);
