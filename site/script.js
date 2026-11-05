@@ -1208,13 +1208,29 @@
       b.setAttribute("aria-label", say);
     });
   }
-  function flip() {
-    var next = showing() === "light" ? "dark" : "light";
+  function set(next) {
     root.setAttribute("data-theme", next);
     try {
       localStorage.setItem("theme", next);
     } catch (e) {}
     label();
+  }
+  // A browser without view transitions, or a reader who asked for less motion, gets it at once.
+  function flip() {
+    var next = showing() === "light" ? "dark" : "light";
+    var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!document.startViewTransition || still) return set(next);
+    var beam;
+    var t = document.startViewTransition(function () {
+      set(next);
+      // The beam is its own layer, painted over the new page while it sweeps down.
+      beam = document.createElement("div");
+      beam.className = "fx-beam";
+      document.body.appendChild(beam);
+    });
+    t.finished.then(function () {
+      beam.remove();
+    });
   }
   btns.forEach(function (b) {
     b.addEventListener("click", flip);

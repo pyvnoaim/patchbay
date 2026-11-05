@@ -496,6 +496,56 @@ footer {
 .w-theme {
   cursor: pointer;
 }
+/* The theme switch draws the new page top to bottom behind a bright line, the way a CRT draws a
+   frame. Only the switch starts a view transition on this page, so these apply to nothing else. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  animation: none;
+}
+::view-transition-new(root) {
+  animation: beam-draw 0.55s cubic-bezier(0.45, 0, 0.25, 1) both;
+}
+@keyframes beam-draw {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+.fx-beam {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  z-index: 100;
+  pointer-events: none;
+  background: var(--accent);
+  box-shadow:
+    0 0 12px 2px var(--accent),
+    0 0 40px 8px var(--glow);
+  view-transition-name: fx-beam;
+}
+::view-transition-new(fx-beam) {
+  animation: beam-sweep 0.55s cubic-bezier(0.45, 0, 0.25, 1) both;
+}
+@keyframes beam-sweep {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  to {
+    transform: translateY(100vh);
+    opacity: 0;
+  }
+}
 .tg:focus-visible,
 .w-theme:focus-visible {
   outline: 2px solid var(--accent);
