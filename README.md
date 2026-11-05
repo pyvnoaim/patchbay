@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-<p align="center"><b>Share the list, not the passwords.</b></p>
+<p align="center"><b>Every server, one tab away.</b></p>
 
 <p align="center">
   A connection manager for ssh, remote desktop, VNC, telnet, serial consoles, web UIs and files.<br>
@@ -37,22 +37,22 @@
 ---
 
 Your machines live in one file you can read, hand-edit and keep in a repo: hostnames,
-folders and jump chains, and never a credential, so the file goes on the team drive as
-it is. The window opens them as tabs under a folder tree. Your `ssh` agent and
-`~/.ssh/config` hold what it doesn't.
+folders and jump chains, never a credential, so it goes on the team drive as it is. The
+window opens them as tabs under a folder tree. Your `ssh` agent and `~/.ssh/config`
+hold the rest.
 
 ## Features
 
 | | |
 | --- | --- |
-| **Sessions in tabs** | Your system `ssh` on a real pty, so the agent, `~/.ssh/config` and host-key prompts all just work. |
-| **Remote desktop** | RDP decoded in-app (IronRDP, pure Rust) through RDP's graphics pipeline, H.264 on your Mac's video hardware, and a clipboard that carries files too; or handed to your own client. |
-| **Web UIs and files** | A device's admin page in a tab beside its shell; browse, upload and edit files over `sftp`. |
-| **Jump chains** | `db → web → bastion` resolves to one `ssh -J`, and "Find the break" says which hop stopped answering. |
-| **Mine and Team** | Your own devices beside the team's shared list, on a drive you already have. No server, no account. |
-| **Team host keys** | A first connect is checked against the key a colleague already trusted, and yours is offered to them. |
-| **Broadcast and snippets** | Type into many shells at once; snippets fill in `{host}`, ask for a `{?}` blank, and never press Enter. |
-| **Import** | Reads `~/.ssh/config` or a Royal TS `.rtsz`. Passwords never come across. |
+| **Sessions in tabs** | Your system `ssh` on a real pty: agent, `~/.ssh/config` and host-key prompts just work. A local shell too. |
+| **Remote desktop** | RDP decoded in-app (IronRDP, pure Rust) via the graphics pipeline, H.264 on the OS decoder, files on the clipboard. VNC the same way. Or hand off to your own client. |
+| **Web UIs and files** | A device's admin page in a tab beside its shell. Browse, upload and edit files over `sftp`. |
+| **Jump chains** | `db → web → bastion` becomes one `ssh -J`, and "Find the break" names the hop that stopped answering. |
+| **Mine and Team** | Your devices beside the team's shared list, on a drive you already have. No server, no account. |
+| **Team host keys** | A first connect is checked against the key a colleague already trusted. |
+| **Broadcast and snippets** | Type into many shells at once. Snippets fill in `{host}`, ask for a `{?}` blank, and never press Enter. |
+| **Import** | `~/.ssh/config` or a Royal TS `.rtsz`. Passwords never come across. |
 
 ## Install
 
@@ -90,7 +90,7 @@ it once, then System Settings → Privacy & Security → Open Anyway. The `curl`
 skips that, because a browser marks what it downloads as quarantined and `curl` doesn't.
 
 You need an `ssh` on your PATH. On Windows that means the OpenSSH Client, which ships
-with Windows 10/11 - if it's missing, enable it under Settings → Apps → Optional
+with Windows 10/11. If it's missing, enable it under Settings → Apps → Optional
 Features. Its agent is a service that is off by default, so keys with a passphrase ask
 for it on every connection until you turn it on, once, in an administrator PowerShell:
 
@@ -98,7 +98,7 @@ for it on every connection until you turn it on, once, in an administrator Power
 Set-Service ssh-agent -StartupType Automatic; Start-Service ssh-agent; ssh-add
 ```
 
-The `.deb` wants Ubuntu 22.04 or newer, or anything else with `libwebkit2gtk-4.1`; the
+The `.deb` wants Ubuntu 22.04 or newer, or anything else with `libwebkit2gtk-4.1`. The
 AppImage carries its own. "Open in Terminal" uses `$TERMINAL` if it is set, otherwise
 the first of gnome-terminal, konsole, alacritty, kitty, foot or xterm it finds.
 
@@ -108,17 +108,14 @@ Already have a list? An empty window offers the hosts it finds in `~/.ssh/config
 Settings ▸ Import reads that or a Royal TS `.rtsz` document. Either way you see what it
 found with tick boxes, and nothing is written until you tick.
 
+
 ## Config
 
-`~/.config/patchbay/patchbay.toml`, or `%APPDATA%\patchbay\patchbay.toml` on Windows -
-or wherever `$PATCHBAY_CONFIG` points. The window creates it on first run, and
-Settings ▸ Config file opens it in your editor.
-
-That one file is the whole list. Grouping is the `folders` list on each device, and a
-folder can carry a note for whoever arrives at that customer next.
+`~/.config/patchbay/patchbay.toml`, `%APPDATA%\patchbay\patchbay.toml` on Windows, or
+`$PATCHBAY_CONFIG`. Created on first run. Settings ▸ Config file opens it in your editor.
 
 ```toml
-[defaults]                       # inherited by every jack; the jack wins
+[defaults]                       # inherited by every jack, the jack wins
 user = "root"
 
 [jack.bastion]
@@ -136,180 +133,133 @@ folders = ["prod", "web"]
 desc = "main web box"
 
 [folder.prod]
-note = "change window is Tuesday 22:00; ask ops before touching bastion"
+note = "change window is Tuesday 22:00, ask ops before touching bastion"
 ```
 
-Jump chains resolve by walking `jump` until it runs out, so `db → web → bastion`
-becomes one `ssh -J` list. Loops throw instead of hanging.
-
-Nothing in the file is ever executed as written. The most it can produce is an `ssh`
-command line, and the window shows it before it runs.
-
-## A team
-
-A team's list is the same file in a folder you already share. Import your Royal
-document, put the file on the team drive, and point Settings ▸ Team at it; colleagues
-point at the same path. Everyone sees the same devices and folder notes, and `grep`
-still reads it. Nothing to install and no server in the middle, and since the file
-holds no credentials, sharing it shares hostnames and nothing more.
-
-Your own devices stay in your own file, shown beside the team's as **Mine**; moving one
-across is **Share with Team** on its page, or a right-click, and can be undone. `[settings]` and colours stay there too. `[defaults]` goes with the list, so a
-`user` or `key` there is for a *shared* account (`root@nas`, `~/.ssh/acme`; `~`
-expands per machine). A personal account on a shared server goes in your
-`~/.ssh/config`, which supplies what the list leaves out.
-
-Who can edit is whoever can write the file; a read-only share is a read-only list.
-Whoever can edit can also point `prod-db` at a machine they own, which is the trust a
-shared Royal document extends too, minus the passwords. If someone else changed a
-device between you opening it and saving, the save is refused once and the list
-reloads; saving again replaces their change. A share that is away keeps the list you
-were looking at and refuses to save until it is back.
-
-A folder that syncs (OneDrive, Dropbox) works for a team that mostly reads. Two people
-saving in the same minute get a conflicted copy beside the file, which the window
-names and never merges; a team that edits at the same time wants a share. On Windows a
-save can be refused while the sync client or someone's editor has the file open - it
-goes through the next time.
-
-## Development
-
-```sh
-npm run dev          # the app window, against dev/patchbay.toml
-npm run build        # patchbay.app / .exe / .deb
-npm test             # cargo test
-npm run check        # formatting and lints, what CI runs
-```
-
-`npm run dev` needs Rust (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`) -
-no need to restart your shell, the dev script finds `~/.cargo/bin` itself. The first
-build compiles a few hundred crates and takes minutes; after that it's seconds.
-
-Everything local runs against `dev/patchbay.toml`, a copy of the tracked sample, so you
-never touch your own `~/.config` while working on it.
-
-The app opens sessions in its own window - the system `ssh` on a real pty, with the argv
-`patchbay.rs` builds, streamed to xterm.js. Your agent, `~/.ssh/config` and
-host-key prompts all still work, because it *is* your ssh. **Open in Terminal**, on a
-device's page and its right-click menu, hands it to your own terminal instead.
-
-## The rest of your machine
-
-Settings ▸ Devices can write your devices, or the team's, to `~/.ssh/patchbay.conf` and add one `Include`
-line to `~/.ssh/config`. Then `ssh web-01` works in any terminal, and so do `scp`,
-`rsync`, Ansible and VS Code Remote - with the jump chains patchbay resolved, as
-`ProxyJump`. Your own config is never rewritten: one line goes in at the top, a name
-you already define is left to you, and turning it off takes the line and the file away.
-
-It goes the other way too: `patchbay://web-01` in a runbook or an alert opens that
-device. A link carries a device *name*, resolved against your own config - never an
-address, so a link can't point you at a machine you don't have.
+`jump` is walked until it runs out, so a chain becomes one `ssh -J` list. A loop is an
+error, not a hang. Nothing in the file is executed as written: the most it produces is
+an `ssh` command line, shown before it runs.
 
 ## Folders and web UIs
 
-A folder with slashes (`prod/eu/web`) nests in the sidebar, and `folders` is a list,
-so a device can sit in several branches at once. A device says how it is reached - `ssh`
-(on by default), `rdp = <port>`, `vnc = <port>`, `telnet = <port>`, `serial = "/dev/…"`
-or `url`, one of them - and that is what Enter and a double-click open.
+`prod/eu/web` nests in the sidebar, and `folders` is a list, so a device can sit in
+several branches. A device is reached by `ssh` (on by default), `rdp = <port>`,
+`vnc = <port>`, `telnet = <port>`, `serial = "/dev/…"` or `url`. That is what Enter and
+a double-click open.
 
 ```toml
 [jack.acme-nas]
 host = "10.80.0.20"
-os   = "synology"               # picks the icon, and its colour
-url  = "https://10.80.0.20:5001"   # opens in a tab
+os   = "synology"                # icon and colour
+url  = "https://10.80.0.20:5001" # opens in a tab
 folders = ["acme/prod"]
 
 [jack.acme-dc]
 host = "10.80.0.5"
-rdp  = 3389                     # remote desktop, in a tab
+rdp  = 3389                      # remote desktop, in a tab
 ssh  = false
 folders = ["acme/prod"]
 ```
 
-A device's web UI opens in a tab, beside your terminals. Appliances are usually reached
-by IP, so their certificate names something else and the page would be blank with no
-explanation - patchbay says which certificate and why, and on macOS and Windows can hand
-it to your system's trust store the way the browser's **Always trust** does. Linux has
-no one store the webview reads, so there a device with a self-signed certificate is
-one for your browser. Plain `http` works too, but only to your own network; a public
-one goes to the browser.
+Appliances reached by IP have certificates naming something else. patchbay says which
+certificate and why, and on macOS and Windows can add it to the system trust store like
+a browser's **Always trust**. Linux has no single store the webview reads, so there a
+self-signed device is one for your browser. Plain `http` works on your own network only.
+
+## A team
+
+Put the file in a folder you already share and point Settings ▸ Team at it. Colleagues
+point at the same path. Everyone sees the same devices and folder notes, with no server
+in between, and since the file holds no credentials, sharing it shares hostnames only.
+
+- **Mine stays yours.** Your own devices show beside the team's as **Mine**. **Share
+  with Team** (on the page or right-click) moves one across, undoably. `[settings]` and
+  colours stay in your file. `[defaults]` goes with the list, so a `user` or `key` there
+  is a _shared_ account (`~` expands per machine). Personal accounts go in
+  `~/.ssh/config`.
+- **Who can edit** is whoever can write the file, and they can repoint `prod-db`: the
+  same trust a shared Royal document extends, minus the passwords. A save over someone
+  else's newer change is refused once and the list reloads. A share that is away keeps
+  the list on screen and refuses saves until it's back.
+- **Synced folders** (OneDrive, Dropbox) suit a team that mostly reads: two saves in the
+  same minute make a conflicted copy, which the window names and never merges. On
+  Windows a save can be refused while a sync client holds the file. The next one lands.
 
 ## Files
 
-`ssh` ships `sftp`, so patchbay uses it. **Files** on a device's page, or right-click it
-and **Browse files**: a tab listing the remote side, double-click to go
-into a folder or to download a file, and drop files onto it to upload. Right-click a
-file to rename or delete it, or **Edit here** to open it in whatever this machine opens
-it with - saving puts it straight back.
+**Files** on a device's page, or right-click ▸ **Browse files**: the system `sftp` over
+your agent, config and jump chain. Double-click a folder to enter it or a file to
+download it, drop files to upload, right-click to rename, delete, or **Edit here** (saving
+puts it straight back). Listings share one ssh session, so only the first authenticates.
+Windows' ssh can't share, so there every listing authenticates and a password-only
+device can't be browsed.
 
-Same connection as everything else - your agent, your `~/.ssh/config`, your jump chain.
-Repeated listings share one ssh session, so only the first one authenticates. Windows'
-ssh can't share one, so there each listing authenticates on its own, and a device that
-wants a password typed can't be browsed - it needs a key or the agent.
+## The rest of your machine
+
+- **`ssh web-01` anywhere.** Settings ▸ Devices writes your devices, or the team's, to
+  `~/.ssh/patchbay.conf` with one `Include` line in `~/.ssh/config`, jump chains as
+  `ProxyJump`, so `scp`, `rsync`, Ansible and VS Code Remote work too. A name you
+  already define is left alone. Turning it off removes the line and the file.
+- **`patchbay://web-01`** in a runbook or alert opens that device. A link carries a
+  _name_ resolved against your config, never an address.
+- **Open in Terminal**, on a device's page or right-click, hands the session to your own
+  terminal.
 
 ## In the window
 
-- **Map** draws the selected folder by the route to its devices, so a bastion and
-  everything behind it sit together however they are filed. A bastion that isn't
-  answering says so once.
-- **Marks.** ⌘-click (Ctrl-click elsewhere) and shift-click pick out several devices; a dock appears to move,
-  delete or **broadcast** to them - every ssh mark as a pane in one tab, one keystroke
-  reaching all of them.
-- **Background tabs** show a dot when new output arrives, and a session that drops or
-  rings its bell while you're elsewhere says so, with a button to go there.
-- **When** is on a device's page: how long your session there has been open, or when you
-  last opened it. On a shared list, a colleague on it shows with how long they've been on.
-- **Quitting** with sessions or tunnels open asks first, naming each one. On the next
-  launch a pill offers last time's tabs back, splits and forwards included; Settings ▸
-  Devices can reopen them at once or start empty.
-- **A dropped session** keeps its scrollback under a card with **Reconnect** and
-  **Wait and retry**, for a machine that is rebooting.
-- **Find** in a session: ⌘F searches that terminal's scrollback. Every window chord is
-  Ctrl+Shift off macOS, because plain Ctrl+anything belongs to the shell you are in.
-- **Session logs**, off by default, append each session's output to `logs/` beside the config.
-- **Updates** are checked once at launch, downloaded only when you say so, and never
-  restart you: the button becomes `Restart`, a second click, because it takes your
-  sessions with it.
+- **Map** draws a folder by route, so a bastion and everything behind it sit together.
+  A bastion that is down says so once.
+- **Marks**: ⌘-click (Ctrl-click elsewhere) and shift-click pick several devices to move,
+  delete or **broadcast** to: every ssh mark a pane in one tab, one keystroke to all.
+- **A local shell**: "local" in ⌘K opens one in a tab, ⌘D beside the session in front.
+- **Background tabs** dot on new output. A drop or bell elsewhere says so, with a button
+  to go there.
+- **When**, on a device's page: how long your session has been open, or when you last
+  opened it. On a shared list, which colleague is on and for how long.
+- **Quitting** with sessions or tunnels open names each one first. Next launch offers the
+  tabs back, splits and forwards included, or Settings ▸ Devices reopens them always.
+- **A dropped session** keeps its scrollback under **Reconnect** and **Wait and retry**.
+- **Find**: ⌘F searches a terminal's scrollback. Off macOS every window chord is
+  Ctrl+Shift, because plain Ctrl belongs to the shell.
+- **Session logs**, off by default, go to `logs/` beside the config.
+- **Updates** are checked at launch, downloaded when you say, and installed on a second
+  click of `Restart`, since it takes your sessions with it.
 
 ## What it deliberately isn't
 
-Real credentials live in your ssh agent and your existing keys - patchbay stores
-none, so there's nothing here to leak or sync. There is no SSH implementation in
-here and never will be: a session is `/usr/bin/ssh` on a pty, in a tab.
+- **A credential store.** Credentials live in your ssh agent and keys. Nothing here to
+  leak or sync. A remote-desktop password you tick Remember goes to the OS keychain.
+- **An ssh implementation.** A session is `/usr/bin/ssh` on a pty. Files are the `sftp`
+  binary. A web UI is the device's own page in a webview.
+- **FreeRDP.** RDP is IronRDP and VNC is vnc-rs, both pure Rust onto a canvas, with
+  H.264 on the system decoder (VideoToolbox, Media Foundation): no graphics toolkit, no
+  codec library. "Remote desktop in system client" hands a `.rdp` to mstsc, Windows App
+  or xfreerdp instead. VNC signs in with a VNC password or none. A server wanting Apple's
+  sign-in opens in the system's `vnc://` viewer. A VNC screen is never resized from here.
 
-Remote desktop is a tab too. That one decodes RDP itself - IronRDP, pure Rust,
-painted onto a canvas - so there is still no FreeRDP and no embedded graphics
-toolkit, which was always the actual objection. H.264 goes to the system's own decoder
-(VideoToolbox on macOS, Media Foundation on Windows), so no codec library is linked
-either. "Remote desktop in system client" hands a `.rdp` file to mstsc, Windows App or
-xfreerdp if you'd rather.
-
-VNC is a tab as well, decoded by vnc-rs (pure Rust again), over the same forwarded port
-when the device is behind a bastion. It signs in with a VNC password or none; a server
-that only offers another scheme, such as a Mac's Screen Sharing with Apple's sign-in,
-opens in whatever viewer the machine has for `vnc://`, and "VNC in system viewer" does
-that on request. The desktop is never resized from here, since a VNC screen is often
-one somebody is sitting at.
-
-Files are `sftp`, the binary, not a library. A web UI is a webview showing the device's
-own page, not something we render. The pattern holds: patchbay knows where your machines
-are and what to run - the running is someone else's job.
+patchbay knows where your machines are and what to run. The running is someone else's
+job.
 
 ## Licence
 
-**Free for you. Paid for your team.** Every protocol and every tab are free for one
-person, at work or anywhere else, on as many machines as you like. A team sharing one
-list (Settings ▸ Team) will need a company licence: **€249 a year, any team size**.
-Until it goes on sale, a shared list is free too. [LICENSE](LICENSE) has the terms.
+**Free for you, paid for your team.** Every protocol and tab is free for one person, at
+work or anywhere, on any number of machines. A team sharing a list will need a company
+licence: **€249 a year, any team size**. Until it goes on sale, free too. Terms in
+[LICENSE](LICENSE).
 
-Nothing is sent anywhere and there is no account: patchbay makes no outbound request
-except the update check, and Bitwarden's own if you turn that on.
+No account, and no outbound request except the update check (and Bitwarden's own, if
+you turn it on).
 
-- **What counts as a team?** A shared list. Your own list, on all your machines, at
-  work or for clients, is one person.
+- **What counts as a team?** A shared list. Your own list, on all your machines, for any
+  client, is one person.
 - **What if we stop paying?** The shared list stops opening until you renew. Everyone's
-  own devices keep working, because one person is free.
+  own devices keep working.
 - **What about the copy we have now?** 0.1.58 and earlier stay under [PolyForm
   Perimeter](https://polyformproject.org/licenses/perimeter/1.0.1), free for anyone.
-- **Is this open source?** The source is public to read and build, but it isn't OSI open
+- **Is this open source?** The source is public to read and build, but not OSI open
   source, and a modified copy isn't yours to hand on.
+
+## Development
+
+`npm run dev` needs Node 22+ and Rust. It runs against `dev/patchbay.toml`, never your
+own config. [CONTRIBUTING.md](CONTRIBUTING.md) has the rest.

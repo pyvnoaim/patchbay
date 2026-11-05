@@ -1,12 +1,8 @@
 # Changelog
 
-Written for someone about to install, not for someone reading the diff: what
-changed for them, in plain sentences. Newest first.
-
-This file is the source. `npm run bump` stamps `## Unreleased` with the version
-and the date, the release workflow lifts that section into the GitHub release,
-and from there the app shows it before it installs anything and the site reads
-it back. Nothing is retyped anywhere.
+What changed for someone about to install, in plain sentences, newest first.
+`npm run bump` stamps `## Unreleased` with version and date. The release, the app's
+update pill and the site all read it from here.
 
 ## 0.1.75 - 2026-11-05
 
@@ -28,7 +24,7 @@ it back. Nothing is retyped anywhere.
 - A device's page says when you last opened it, or how long your session has been open.
 - On a shared list, a colleague on a device shows with how long they've been connected.
 - ⌘Q now asks before quitting with sessions open, as the close button did, and the question lists each session and tunnel that will close.
-- Remote desktops, VNC, split panes and open forwards come back on launch too. By default a pill offers them; Settings ▸ Devices can reopen them at once or start empty.
+- Remote desktops, VNC, split panes and open forwards come back on launch too. By default a pill offers them. Settings ▸ Devices can reopen them at once or start empty.
 
 ## 0.1.71 - 2026-10-31
 
@@ -67,7 +63,7 @@ it back. Nothing is retyped anywhere.
 ## 0.1.63 - 2026-10-26
 
 - A new look throughout: rounder cards, a calmer sidebar, and one size for every button.
-- A device's page puts Connect, Files and Open in Terminal under its name; click a host, user or port to copy it.
+- A device's page puts Connect, Files and Open in Terminal under its name. Click a host, user or port to copy it.
 - The sidebar has a "Go to device" box at the top, and New device and a light/dark/system switch at the foot.
 - A tab you're not looking at shows a dot when there's new output, and tells you if its session drops or rings its bell.
 - A dropped session says so over the terminal, with Reconnect and Wait and retry.
@@ -85,7 +81,7 @@ it back. Nothing is retyped anywhere.
 
 - Settings ▸ Licence takes a team's company licence. Nothing needs one yet.
 - Telnet and serial consoles open in a tab, and Royal TS telnet connections now import.
-- Split a tab: ⌘D opens a device beside the one in front; drag the line between panes to resize.
+- Split a tab: ⌘D opens a device beside the one in front. Drag the line between panes to resize.
 - Works with a screen reader, says a device's status in words, and respects Reduce Motion.
 - Remote desktop shows Windows' own pointer: the text cursor over text, the resize arrows on a window's edge.
 - Remote desktop plays the desktop's sound on this machine.
@@ -105,8 +101,8 @@ it back. Nothing is retyped anywhere.
 - A snippet can leave a blank, `{?}` or `{?unit}`, that you are asked to fill in when you pick it: `journalctl -u {?unit} -f`.
 - The first time you connect to a team device, patchbay offers to share its host key with the team.
 - Adding your devices to your ssh config can now add your own (Mine) instead of the team's, picked in Settings ▸ Devices.
-- The sidebar's folders no longer draw vertical guide lines; the indent alone shows what is inside.
-- Dropping files on a remote desktop tab is gone; copy and paste moves files both ways, on every platform.
+- The sidebar's folders no longer draw vertical guide lines. The indent alone shows what is inside.
+- Dropping files on a remote desktop tab is gone. Copy and paste moves files both ways, on every platform.
 - A submenu with no room on either side of the menu now opens over it instead of off the window.
 
 ## 0.1.54 - 2026-10-23
@@ -120,7 +116,7 @@ it back. Nothing is retyped anywhere.
 
 ## 0.1.52 - 2026-10-22
 
-- The remote desktop sign-in no longer repeats your saved username in a wide bar under the field; other saved accounts show as small chips.
+- The remote desktop sign-in no longer repeats your saved username in a wide bar under the field. Other saved accounts show as small chips.
 
 ## 0.1.51 - 2026-10-22
 
@@ -141,7 +137,7 @@ it back. Nothing is retyped anywhere.
 
 - A folder's pane sets the user, port, key and jump host for every device in it, and its right-click menu goes straight there.
 - Settings ▸ Defaults is gone: folders do that job. A `[defaults]` already in a file still applies.
-- The New button left the toolbar; ⌘N and the folder menu still add a device.
+- The New button left the toolbar. ⌘N and the folder menu still add a device.
 - Snippets can say `{host}`, `{user}`, `{port}` and `{name}`, filled in from each device, and a Snippets button on a shell tab lists them.
 - Settings ▸ Team shows where the shared list is, drive first, instead of a path cut off before the file.
 - The file that shows who is connected is never written through a linked folder either.
@@ -179,7 +175,7 @@ it back. Nothing is retyped anywhere.
 
 ## 0.1.40 - 2026-10-21
 
-- **Windows is back.** An installer again, `patchbay_x64-setup.exe`; SmartScreen asks once, because it is not signed.
+- **Windows is back.** An installer again, `patchbay_x64-setup.exe`. SmartScreen asks once, because it is not signed.
 
 ## 0.1.39 - 2026-10-20
 
@@ -201,13 +197,13 @@ it back. Nothing is retyped anywhere.
 ## 0.1.36 - 2026-10-14
 
 - The sidebar draws a guide line under each folder, so what is inside it is easier to tell apart.
-- The folder page's own "Device" button is gone; New in the top bar already files into the folder.
+- The folder page's own "Device" button is gone. New in the top bar already files into the folder.
 - "Out of reach" no longer breaks over two lines.
 
 ## 0.1.35 - 2026-10-12
 
 - A folder's notes sit at the top of its page, beside what answers from this network.
-- The user, port, key and jump boxes are gone from the folder page; a folder's settings in the file still apply.
+- The user, port, key and jump boxes are gone from the folder page. A folder's settings in the file still apply.
 - Clearing a folder's note no longer removes the settings written beside it.
 
 ## 0.1.34 - 2026-10-11
@@ -245,16 +241,16 @@ it back. Nothing is retyped anywhere.
 
 - **Snippets.** Lines you type often, kept in Settings ▸ Snippets and picked in Search while a shell is in front. patchbay types the line at the prompt and never presses Enter. Into a broadcast it goes to every pane.
 - A snippet is yours or the team's, like a device. New ones are yours until you say otherwise.
-- **Mine and Team.** With a shared list set, your own devices show beside the team's as a second vault only this machine sees. Both can have a `web`; a device of yours can jump through the team's bastion, never the other way round.
+- **Mine and Team.** With a shared list set, your own devices show beside the team's as a second vault only this machine sees. Both can have a `web`. A device of yours can jump through the team's bastion, never the other way round.
 - Move a device between the two from its menu, its detail or the sheet's "Who can see it?".
 - When the shared list is away, your own devices still open and the sidebar says why the team's are missing.
 - Starting a team list now moves your devices into it. If an earlier one left copies behind, Settings ▸ One shared list removes them.
 - **The sidebar is the list.** Folders unfold to their devices, a folder with one device shows it on its own row, and whatever you select is described across the whole right-hand side.
-- A session gets the full width; the Details button brings the device's pane back beside it.
+- A session gets the full width. The Details button brings the device's pane back beside it.
 - Right-clicking in the sidebar no longer blanks the web page beside it.
 - The Sort menu is gone: folders are A to Z, devices in the order the file has them.
 - Bitwarden works with a server of your own: Settings ▸ Bitwarden ▸ Your own server.
-- Renaming or deleting a folder no longer leaves two devices of one name in the same place; it says which one is in the way.
+- Renaming or deleting a folder no longer leaves two devices of one name in the same place. It says which one is in the way.
 - A remote desktop moved to a screen with another sharpness redraws at the new one.
 - Quitting closes the connections the file browser kept open, instead of leaving them for a minute.
 
@@ -264,7 +260,7 @@ it back. Nothing is retyped anywhere.
 
 ## 0.1.26 - 2026-10-02
 
-- A remote desktop can remember more than one account. The sign-in offers every saved one; pick it and press Enter.
+- A remote desktop can remember more than one account. The sign-in offers every saved one. Pick it and press Enter.
 - Editing a device no longer copies the user, port, key or jump it inherits from its folder onto the device itself.
 - The folder pane's User/Port/Key/Jump fields fit in a narrow window.
 
@@ -349,7 +345,7 @@ it back. Nothing is retyped anywhere.
 ## 0.1.9 - 2026-09-16
 
 - A device with a long name connects again on macOS instead of exiting with a socket error.
-- No Windows build this release; macOS and Linux only for now.
+- No Windows build this release, macOS and Linux only for now.
 
 ## 0.1.8 - 2026-09-16
 
@@ -358,7 +354,7 @@ it back. Nothing is retyped anywhere.
 
 ## 0.1.7 - 2026-09-16
 
-- Windows is now only the setup `.exe`; the `.msi` is no longer published.
+- Windows is now only the setup `.exe`. The `.msi` is no longer published.
 
 ## 0.1.6 - 2026-09-15
 
@@ -404,14 +400,14 @@ it back. Nothing is retyped anywhere.
 
 - ⌘K finds folders too: pick one and the list opens on it.
 - A device clicked in ⌘K opens the way Enter opens it. A click always started ssh.
-- Sidebar folders sort A–Z. Ones with subfolders no longer go first.
+- Sidebar folders sort A to Z. Ones with subfolders no longer go first.
 - Folders can be marked with ⌘-click or shift-click too, and removed together.
 - ⌘A marks every device in the list you are looking at, all of them or one folder's.
 - A remote desktop is sharp on a Retina screen, at the size Windows would draw it there.
 - A remote desktop fills its tab, without a black frame around it.
 - FRITZ!Box is a device kind, with AVM's mark.
-- The device list sorts A–Z, by type (web, ssh, remote desktop) or by device (Windows,
-  Raspberry Pi…). Pick it from Sort at the top; the file keeps its own order.
+- The device list sorts A to Z, by type (web, ssh, remote desktop) or by device (Windows,
+  Raspberry Pi…). Pick it from Sort at the top. The file keeps its own order.
 - Terminal keys work like a Mac terminal: ⌘A selects all, ⌘←/⌘→ jump to the line's ends,
   ⌥←/⌥→ by word, ⌘⌫ deletes to the start, ⌘+/⌘-/⌘0 size the text.
 - Off macOS, Ctrl+Shift+C and Ctrl+Shift+V copy and paste in a terminal.
@@ -426,8 +422,8 @@ it back. Nothing is retyped anywhere.
   your click, so Ping, Files and the rest needed pressing twice.
 - Trusting a device's certificate sticks. The page used to load and then be covered by
   the same "trust it" panel again, once for every address the page redirected through.
-- Closing a session no longer asks first. Only closing several at once - a broadcast
-  group, or quitting with live tabs - is still worth a question.
+- Closing a session no longer asks first. Only closing several at once (a broadcast
+  group, or quitting with live tabs) is still worth a question.
 - The sidebar opens the way you left it. Folders you folded stay folded, and a first
   run starts with all of them closed instead of every one unfolded.
 - An import from Royal TS keeps the way in each connection had: an RDP or web entry
@@ -436,11 +432,11 @@ it back. Nothing is retyped anywhere.
   match, so there are no black bars and nothing to reconnect for. A host too old to be
   asked has its picture scaled into the pane instead.
 - Keys no longer stick in a remote desktop. After a ⌘ chord or a switch to another app,
-  typing went to Windows as shortcuts; everything held is released now.
+  typing went to Windows as shortcuts. Everything held is released now.
 - Free, all of it: every protocol, every tab and the shared list, at a company of any
   size. PolyForm Perimeter is the licence, and nothing in the app asks for a key.
 - Every write keeps the file it replaced as `patchbay.toml.bak`, beside your config. The
-  Undo pill only ever covered a delete, and only for as long as it was on screen; a
+  Undo pill only ever covered a delete, and only for as long as it was on screen. A
   folder rename touches every device in it.
 - A shared list refuses more than it used to: deleting a device a colleague has changed
   since, or saving `[defaults]` over theirs, is refused the way an edit already was, and
@@ -467,7 +463,7 @@ it back. Nothing is retyped anywhere.
   everything it had.
 - Drag a device onto a folder in the sidebar to file it there. Or right-click ▸ Move to
   folder…, which also works on several marked devices.
-- A Shortcuts page in Settings lists every key. `?` opens it; so does the Help menu on
+- A Shortcuts page in Settings lists every key. `?` opens it. So does the Help menu on
   macOS.
 - On Linux, "Open in Terminal" honours `$TERMINAL` before trying the usual suspects.
 - A forwarded port that fails after ssh has connected is reported with ssh's own words,
@@ -482,16 +478,16 @@ it back. Nothing is retyped anywhere.
 - The disk image's background is sharp on a retina screen.
 - `tags` in a config file is no longer read as a synonym for `folders`. Nothing patchbay
   ever wrote used it.
-- Clicking the empty space under the list clears the marks; the selection stays.
+- Clicking the empty space under the list clears the marks. The selection stays.
 - Closing a tab, a broadcast group or the window with a live session in it asks
-  first; a second ⌘W is the yes. A page, a file listing or a finished session closes
+  first. A second ⌘W is the yes. A page, a file listing or a finished session closes
   without a question.
 - A device sheet with something typed into it asks before Escape or a click outside
   throws it away.
 - Duplicate is a button on the device's pane now, not just a right-click item.
 - Left and Right arrows walk the folder tree: fold, unfold, step up or down.
 - **Quick connect.** Type `user@host` or `host:2222` into the search and press Enter:
-  a session, no record. Your `~/.ssh/config` still applies; nothing else does.
+  a session, no record. Your `~/.ssh/config` still applies. Nothing else does.
 - The tabs you had open come back on the next launch: shells, web pages and file
   listings, in the same order. A remote desktop asks for a password, so it doesn't.
 - A shell's tab carries its device's mark, so six shells on six boxes tell apart.
@@ -499,22 +495,22 @@ it back. Nothing is retyped anywhere.
   keeps the order you filed it in.
 - **Import a Royal TS document.** Point patchbay at a `.rtsz` and it reads the lot:
   folders become folders, RDP and ssh connections and web UIs become devices with the
-  way in they already had. Tick what you want; nothing else is written. Passwords stay
+  way in they already had. Tick what you want. Nothing else is written. Passwords stay
   in Royal TS, because patchbay keeps none.
 - Importing is its own page in Settings now, with both sources on it, and the list it
-  finds is grouped by folder with a filter - a document with a hundred devices in it is
+  finds is grouped by folder with a filter: a document with a hundred devices in it is
   not a list you scroll.
 - **One list, not several.** Spaces are gone: folders do the grouping, and anything you
   had in `spaces/` is folded into your list on the next launch, keeping its own name as
   the outermost folder. The files it read are kept as `.toml.merged`.
-- A folder can carry a note - what somebody arriving at that customer needs to know -
+- A folder can carry a note (what somebody arriving at that customer needs to know),
   shown on the folder's own page.
 - A device name can contain a dot. `dc1.acme.local` is a name people actually use.
 - A setting to log a session's terminal output to a file under `logs/`, beside the
   config. Off by default.
 - **Broadcast to marked devices.** Pick out several boxes, right-click, hit Broadcast:
   every device opens as its own pane in one tab, and one keystroke reaches all of them.
-  Click a pane to focus it and one keystroke goes there instead; the tab's broadcast
+  Click a pane to focus it and one keystroke goes there instead. The tab's broadcast
   toggle turns fan-out on and off without closing anything. Marks a NAS's web UI along
   with the ssh boxes? The web ones are left out and named.
 - A bulk-action bar appears when you mark two or more devices: broadcast to them or
@@ -559,7 +555,7 @@ it back. Nothing is retyped anywhere.
   when you say so, and never restarts you: the new version is put in place and
   the button becomes `Restart`, which is a separate click because it takes your
   live sessions with it. Settings ▸ Updates has the switch and a check you can
-  run yourself; the macOS menu has one too.
+  run yourself. The macOS menu has one too.
 - The disk image is an installer now, with the app and Applications where you
   expect them, and it ejects itself once you've dragged the app out.
 - Everything downloaded is verified against a key built into the app before a
