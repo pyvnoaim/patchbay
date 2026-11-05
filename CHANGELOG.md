@@ -8,6 +8,11 @@ and the date, the release workflow lifts that section into the GitHub release,
 and from there the app shows it before it installs anything and the site reads
 it back. Nothing is retyped anywhere.
 
+## Unreleased
+
+- Settings → Snippets can add a set of common ones (apt upgrade, disk, memory, ports, service logs), yours to edit or remove.
+- With a team list, Snippets says what Mine and Team mean.
+
 ## 0.1.74 - 2026-11-04
 
 - The pill offering last time's tabs back reads more cleanly, and one-line pills have fully round ends like the update pill.

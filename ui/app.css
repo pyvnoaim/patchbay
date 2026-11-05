@@ -1279,7 +1279,8 @@ body.dragging * {
   font-family: var(--mono);
   font-size: 12px;
 }
-#snip-add {
+#snip-add,
+#snip-common {
   display: inline-flex;
   align-items: center;
   gap: 6px;

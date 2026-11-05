@@ -1726,6 +1726,10 @@ function renderSnips() {
         .join("")
     : `<p class="page-note">None yet.</p>`;
   $("snip-add").innerHTML = `${icon("plus")}Add a snippet`;
+  const missing = commonMissing();
+  $("snip-common").hidden = !missing.length;
+  $("snip-common").innerHTML = `${icon("copy-plus")}Add ${missing.length} common ones`;
+  $("snip-vaults").hidden = !vaults.two;
 }
 // An edit after a refusal is a fix, to be saved rather than discarded on the next close.
 $("snip-rows").addEventListener("input", (e) => {
@@ -1747,6 +1751,33 @@ $("snip-add").addEventListener("click", () => {
   snipDraft.push({ name: "", text: "", vault: vaults.two ? "mine" : null });
   renderSnips();
   $("snip-rows").querySelector(".snip-row:last-child input")?.focus();
+});
+
+// Offered, never seeded: the file stays the whole list, and a line nobody asked for
+// would turn up on a colleague's prompt. Added as rows in Mine, saved on close like
+// any typed one, so they can be edited or removed. One whose name or text is already
+// there is skipped.
+// ponytail: one fixed list for Debian and Ubuntu; per-os presets if anyone asks.
+const COMMON_SNIPPETS = [
+  ["apt upgrade", "sudo apt update && sudo apt upgrade -y"],
+  ["disk", "df -h"],
+  ["memory", "free -h"],
+  ["top memory", "ps aux --sort=-%mem | head"],
+  ["listening ports", "sudo ss -tulpn"],
+  ["failed units", "systemctl --failed"],
+  ["restart", "sudo systemctl restart {?unit}"],
+  ["logs", "journalctl -u {?unit} -n 200 --no-pager"],
+];
+function commonMissing() {
+  const have = new Set(snipDraft.flatMap((s) => [s.name.trim(), s.text.trim()]));
+  return COMMON_SNIPPETS.filter(([name, text]) => !have.has(name) && !have.has(text));
+}
+$("snip-common").addEventListener("click", () => {
+  snipRefused = false;
+  for (const [name, text] of commonMissing()) {
+    snipDraft.push({ name, text, vault: vaults.two ? "mine" : null });
+  }
+  renderSnips();
 });
 
 // What the sheet's rows come to, checked before anything in the sheet is written: a

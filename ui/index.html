@@ -383,10 +383,15 @@
               <div class="d-sec">Snippets</div>
               <div id="snip-rows"></div>
               <button type="button" class="ghost" id="snip-add"></button>
+              <button type="button" class="ghost" id="snip-common"></button>
               <p class="page-note">
                 Typed at the prompt, never run: Enter stays yours. <code>{host}</code>,
                 <code>{user}</code>, <code>{port}</code> and <code>{name}</code> come from the
-                device; <code>{?unit}</code> asks when you pick it.
+                device. <code>{?unit}</code> is a blank asked for when you pick it, with the word
+                after <code>?</code> as the question; leave it empty to finish the line yourself.
+                <span id="snip-vaults" hidden
+                  >Mine is only for you; Team is for everyone on the shared list.</span
+                >
               </p>
             </section>
 
