@@ -57,9 +57,13 @@ jobs:
       # tauri links against the system webview even for `cargo test`. A mirror that
       # stops answering hangs apt-get with no error, and one did for one release in
       # three. A wait that long never recovers, but a second try reaches another
-      # mirror: two minutes a try, three tries, then the step fails.
+      # mirror: two minutes a try, three tries, then the step fails. Azure's own mirror
+      # goes first and is left out: on 2026-11-06 it answered every package, slowly
+      # enough that the install alone ran past ten minutes, twice.
+      # ponytail: archive.ubuntu.com for every Linux job, Azure back if it is ever faster.
       - timeout-minutes: 10
         run: |
+          [ ! -f /etc/apt/apt-mirrors.txt ] || sudo sed -i '/azure/d' /etc/apt/apt-mirrors.txt
           until sudo timeout 120 apt-get update; do ((++n < 3)) || exit 1; done
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev \
             libayatana-appindicator3-dev librsvg2-dev
@@ -144,6 +148,7 @@ jobs:
       - if: matrix.os == 'ubuntu-22.04'
         timeout-minutes: 10
         run: |
+          [ ! -f /etc/apt/apt-mirrors.txt ] || sudo sed -i '/azure/d' /etc/apt/apt-mirrors.txt
           until sudo timeout 120 apt-get update; do ((++n < 3)) || exit 1; done
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev \
             libayatana-appindicator3-dev librsvg2-dev patchelf
@@ -251,6 +256,7 @@ jobs:
         run: |
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
             -p patchbay_amd64.deb -p patchbay_amd64.AppImage
+          [ ! -f /etc/apt/apt-mirrors.txt ] || sudo sed -i '/azure/d' /etc/apt/apt-mirrors.txt
           until sudo timeout 120 apt-get update; do ((++n < 3)) || exit 1; done
           sudo apt-get install -y ./patchbay_amd64.deb
           if ldd /usr/bin/patchbay-app | grep "not found"; then exit 1; fi
