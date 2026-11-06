@@ -4,6 +4,10 @@ What changed for someone about to install, in plain sentences, newest first.
 `npm run bump` stamps `## Unreleased` with version and date. The release, the app's
 update pill and the site all read it from here.
 
+## Unreleased
+
+- Settings in a short window: the list of sections scrolls, and a pane reaches the foot of the sheet instead of stopping short.
+
 ## 0.1.75 - 2026-11-05
 
 - Settings → Snippets can add a set of common ones (apt upgrade, disk, memory, ports, service logs), yours to edit or remove.

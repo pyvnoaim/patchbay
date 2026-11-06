@@ -3472,6 +3472,11 @@ button:disabled {
 /* The scroll lives on the panes, so the rail stays put while a pane moves. */
 .sheet.set .sheet-body {
   display: flex;
+  /* One height for every pane, so the sheet doesn't jump size between panes. Set here, not on
+     .setpanes: the nav is the same height and scrolls too, or in a short window the sheet's
+     max-height clips the nav and the panes end above the sheet's foot. Tall enough that Devices,
+     the first pane anyone sees, doesn't scroll. */
+  height: min(580px, 80vh);
   padding: 0;
   overflow: hidden;
 }
@@ -3483,6 +3488,8 @@ button:disabled {
   flex-direction: column;
   gap: 2px;
   padding: 16px 10px 12px;
+  overflow-y: auto;
+  scrollbar-width: thin;
   background: var(--row);
   border-right: 1px solid var(--line);
 }
@@ -3542,12 +3549,9 @@ button:disabled {
 .setnav button.warn {
   color: var(--down);
 }
-/* One height for every pane, so the sheet doesn't jump size between panes. A taller pane scrolls;
-   tall enough that Devices, the first pane anyone sees, doesn't. */
 .setpanes {
   flex: 1;
   min-width: 0;
-  height: min(580px, 70vh);
   padding: 18px 22px 22px;
   overflow-y: auto;
   scrollbar-width: thin;
