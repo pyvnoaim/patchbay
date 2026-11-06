@@ -108,22 +108,6 @@
           <button type="button" class="flat" id="jf-x" data-tip="Close"></button>
         </div>
         <div class="sheet-body jf-body">
-          <!-- Only with a shared list set: with one vault there is nothing to choose. -->
-          <div class="how" id="jf-vault" hidden>
-            <span class="how-q">Who can see it?</span>
-            <div class="how-row">
-              <label class="how-opt"
-                ><input type="radio" name="vault" value="mine" /><span
-                  >Mine · only this machine</span
-                ></label
-              >
-              <label class="how-opt"
-                ><input type="radio" name="vault" value="team" checked /><span
-                  >Team · everyone on the list</span
-                ></label
-              >
-            </div>
-          </div>
           <!-- The common ways as a segmented control; the rare three behind More, whose radios
              stay in the form so the group's value covers them. -->
           <div class="how">
@@ -204,8 +188,24 @@
             ></label>
           </div>
           <div class="jf-cmd" id="jf-cmd" data-need="ssh sftp" aria-live="polite"></div>
-          <!-- Where it sits in the list, and what it is. -->
+          <!-- Where it sits, which list first, and what it is. -->
           <div class="jf-list">
+            <!-- Only with a shared list set: with one vault there is nothing to choose. -->
+            <div class="how" id="jf-vault" hidden>
+              <span class="how-q">Who can see it?</span>
+              <div class="seg" role="radiogroup" aria-label="Who can see it?">
+                <label class="seg-opt"
+                  ><input type="radio" name="vault" value="mine" /><span
+                    >Mine · only this machine</span
+                  ></label
+                >
+                <label class="seg-opt"
+                  ><input type="radio" name="vault" value="team" checked /><span
+                    >Team · everyone on the list</span
+                  ></label
+                >
+              </div>
+            </div>
             <label class="f"
               ><span>Folders</span>
               <input
@@ -633,13 +633,13 @@
           <!-- As in the jack sheet: with one vault there is nothing to choose. -->
           <div class="how" id="imp-vault" hidden>
             <span class="how-q">Who can see them?</span>
-            <div class="how-row">
-              <label class="how-opt"
+            <div class="seg" role="radiogroup" aria-label="Who can see them?">
+              <label class="seg-opt"
                 ><input type="radio" name="imp-vault" value="mine" /><span
                   >Mine · only this machine</span
                 ></label
               >
-              <label class="how-opt"
+              <label class="seg-opt"
                 ><input type="radio" name="imp-vault" value="team" /><span
                   >Team · everyone on the list</span
                 ></label

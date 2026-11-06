@@ -752,20 +752,14 @@ function jfPreview() {
   $("jf-cmd").innerHTML = `<span class="jf-dollar">$</span><code>${esc(parts.join(" "))}</code>`;
 }
 
-// The header: the mark the Kind field names, and who will see the device.
+// The header: the mark the Kind field names. Who sees it is the switch right below.
 function jfHead() {
   const f = jackForm.elements;
   const tint = osColor(f.os.value.trim());
   const mark = $("jf-os");
   mark.innerHTML = osIcon(f.os.value.trim());
   mark.style.color = tint ?? "";
-  $("jf-sub").textContent = vaults.two
-    ? f.vault.value === "mine"
-      ? "Mine · only on this machine"
-      : "Team · everyone on the list"
-    : editing
-      ? "Edit device"
-      : "New device";
+  $("jf-sub").textContent = editing ? "Edit device" : "New device";
 }
 
 function openJack(j, prefillGroup) {
@@ -820,6 +814,9 @@ function openJack(j, prefillGroup) {
   jackFields();
   jfHead();
   // Open when it holds something, so a value is never hidden from the person editing it.
+  // A fold still running from the last time the sheet was open would shut this one at its end.
+  for (const a of $("jf-adv").getAnimations()) a.cancel();
+  $("jf-adv").classList.remove("closing");
   $("jf-adv").open = ["key", "jump", "forward", "mac"].some((k) => f[k].value.trim());
   sheetWrap.hidden = false;
   f.name.focus();
@@ -2024,10 +2021,29 @@ function renderCrumbs() {
 }
 
 jackForm.elements.folders.addEventListener("input", renderCrumbs);
-for (const r of jackForm.elements.vault) {
-  r.addEventListener("change", renderFolderSuggestions);
-  r.addEventListener("change", jfHead);
-}
+for (const r of jackForm.elements.vault) r.addEventListener("change", renderFolderSuggestions);
+// WebKit can't transition a <details> to its natural height (no interpolate-size), so the
+// fold animates by hand: opened before growing so there is a height to reach, and shut only
+// after shrinking. `.closing` turns the chevron at once instead of at the end.
+const jfAdv = $("jf-adv");
+jfAdv.querySelector("summary").addEventListener("click", (e) => {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  e.preventDefault();
+  const closing = jfAdv.open && !jfAdv.classList.contains("closing");
+  const from = jfAdv.offsetHeight;
+  for (const a of jfAdv.getAnimations()) a.cancel();
+  jfAdv.classList.toggle("closing", closing);
+  jfAdv.open = true;
+  const to = closing ? e.currentTarget.offsetHeight : jfAdv.offsetHeight;
+  jfAdv.animate(
+    { height: [`${from}px`, `${to}px`] },
+    { duration: 220, easing: "cubic-bezier(0.2, 0.8, 0.3, 1)" },
+  ).onfinish = () => {
+    if (!closing) return;
+    jfAdv.open = false;
+    jfAdv.classList.remove("closing");
+  };
+});
 $("crumbs").addEventListener("click", (e) => {
   const dropped = e.target.closest("[data-drop]")?.dataset.drop;
   if (!dropped) return;

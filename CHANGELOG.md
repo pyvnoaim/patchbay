@@ -4,6 +4,10 @@ What changed for someone about to install, in plain sentences, newest first.
 `npm run bump` stamps `## Unreleased` with version and date. The release, the app's
 update pill and the site all read it from here.
 
+## Unreleased
+
+- The device sheet is calmer: Mine or Team sits with Folders and looks like the other switches, and Advanced folds open and shut instead of jumping.
+
 ## 0.1.76 - 2026-11-06
 
 - Settings in a short window: the list of sections scrolls, and a pane reaches the foot of the sheet instead of stopping short.
