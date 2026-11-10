@@ -629,17 +629,31 @@ function reachSaid(js) {
           : ["", "Out of reach", up];
 }
 
+// The pane's main button for a device, and a row's in a folder: the same words for the
+// same thing `primary()` does.
+function goOf(j) {
+  return [
+    { web: "globe", sftp: "folder" }[j.primary] ?? KIND[j.primary]?.[0] ?? "square-terminal",
+    { web: "Open", sftp: "Browse files" }[j.primary] ?? "Connect",
+  ];
+}
+
+// A row of the folder overview. The row picks, its button connects: two buttons side by
+// side, because one inside the other is neither valid nor reachable by Tab.
 function tileHtml(t) {
-  const n = t.js.length;
-  const [dot, say, up] = reachSaid(t.js);
-  const tint = t.name && osColor(t.js[0].os);
-  return `<button type="button" class="tile" ${t.name ? `data-name="${esc(t.name)}"` : idAttrs(t.id)}>
-    <span class="tile-top"><span class="os"${tint ? ` style="color:${esc(tint)}"` : ""}>${
-      t.name ? osIcon(t.js[0].os) : icon("folder")
-    }</span><b>${esc(t.label)}</b><small>${esc(t.kind)}</small></span>
-    ${n > 1 && prefs.probe !== false ? `<span class="meter"><i style="width:${(up / n) * 100}%"></i></span>` : ""}
-    <span class="tile-say"><i class="dot ${dot}"></i>${say}</span>
-  </button>`;
+  const [dot, say] = reachSaid(t.js);
+  const j = t.name && t.js[0];
+  const tint = j && osColor(j.os);
+  const where = j ? (j.host ? (j.user ? `${j.user}@${j.host}` : j.host) : (j.url ?? "")) : say;
+  const [gi, gt] = j ? goOf(j) : [];
+  return `<div class="fo-row">
+    <button type="button" class="tile" ${j ? `data-name="${esc(t.name)}"` : idAttrs(t.id)}>
+      <i class="dot ${dot}" data-tip="${esc(say)}"></i>
+      <span class="os"${tint ? ` style="color:${esc(tint)}"` : ""}>${j ? osIcon(j.os) : icon("folder")}</span>
+      <b>${esc(t.label)}</b><small>${esc(t.kind)}</small><small${j ? ' class="fo-where"' : ""}>${esc(where)}</small>
+    </button>
+    ${j ? `<button type="button" class="primary" data-go="${esc(t.name)}">${icon(gi)}${gt}</button>` : ""}
+  </div>`;
 }
 
 function renderGroup() {
@@ -671,59 +685,73 @@ function renderGroup() {
   const chip = (id, label, n) =>
     `<button type="button" data-reach="${id}" aria-pressed="${reachShow === id}">${label}<small>${n}</small></button>`;
 
+  // A field left empty here still has a value if a folder above lends one: the
+  // placeholder says which, so "not set" never lies about what a device gets.
+  const above = (k) => {
+    const parts = real ? group.path.split("/") : [];
+    for (let i = parts.length - 1; i > 0; i--) {
+      const p = parts.slice(0, i).join("/");
+      const v = folderDefs.get(gkey({ path: p, vault: group.vault }))?.[k];
+      if (v != null && v !== "") return `${v} from ${p.split("/").join(" / ")}`;
+    }
+    return "";
+  };
+  const def = (k, label, extra) =>
+    `<label class="fo-def"><span>${label}</span><input data-k="${k}" spellcheck="false" ${extra}
+      placeholder="${esc(above(k) || (k === "port" ? "22" : "not set"))}" /></label>`;
+  const n = members.length;
+
   dBody().innerHTML = `
     <div class="d-name">${esc(groupLabel())}${real ? vaultBadge(group.vault) : ""}</div>
-    <div class="d-desc">${members.length} device${members.length === 1 ? "" : "s"}${
+    <div class="d-desc fo-sum">${n} device${n === 1 ? "" : "s"}${
       real && group.path.includes("/")
         ? ` · in ${esc(group.path.slice(0, group.path.lastIndexOf("/")))}`
         : ""
-    }${!real && group?.vault === "team" && vaults.team ? ` · ${esc(vaults.team)}` : ""}</div>
+    }${!real && group?.vault === "team" && vaults.team ? ` · ${esc(vaults.team)}` : ""}${
+      n && probing
+        ? ` · <span class="meter"><i style="width:${(up / n) * 100}%"></i></span>${up} of ${n} reachable from here${
+            rest ? `, ${rest} still checking` : ""
+          }`
+        : ""
+    }</div>
 
-    <div class="d-cards full">
+    <div class="fo">
     ${
-      !members.length
-        ? ""
-        : `<section class="d-card">
-    <div class="d-sec">${icon("plug")}Reachable from here</div>
-    ${
-      probing
-        ? `<div class="reach"><b>${up}</b>of ${members.length} answer${up === 1 ? "s" : ""} from this network${
-            rest ? ` · ${rest} still checking` : ""
-          }</div>
-    <span class="meter"><i style="width:${(up / members.length) * 100}%"></i></span>
-    ${down ? `<p class="page-note">The rest may sit behind a VPN or a network this machine isn't on.</p>` : ""}
-    <div class="chips">${chip("all", "All", members.length)}${chip("up", "Reachable", up)}${chip("out", "Out of reach", down)}</div>`
-        : `<p class="page-note">Reachability checks are off.</p>`
-    }
+      n
+        ? `<section class="fo-main">
+      <div class="fo-head"><div class="d-sec">${icon("folder")}In here</div>${
+        probing
+          ? `<div class="chips" role="group" aria-label="Show">${chip("all", "All", n)}${chip("up", "Reachable", up)}${chip("out", "Out of reach", down)}</div>`
+          : ""
+      }</div>
+      ${tiles.length ? `<div class="fo-list">${tiles.map(tileHtml).join("")}</div>` : `<p class="page-note">Nothing in here matches.</p>`}
+      ${probing && down ? `<p class="page-note">Grey ones didn't answer from this network. They may sit behind a VPN.</p>` : ""}
     </section>`
-    }
-    ${
-      real
-        ? `<section class="d-card d-notes"><div class="d-sec">${icon("file-pen-line")}Notes</div>
-      <textarea class="d-note" id="gnote" rows="4" spellcheck="false"
-        placeholder="What somebody arriving here needs to know."></textarea></section>
-      <section class="d-card"><div class="d-sec">${icon("settings")}For every device in here</div>
-      <p class="page-note">Used by any device in this folder that doesn't set its own. A
-        nearer folder wins.</p>
-      <div class="grid2" id="gdefs">
-        <label class="f"><span>User</span><input data-k="user" spellcheck="false" placeholder="none" /></label>
-        <label class="f"><span>SSH port</span><input data-k="port" inputmode="numeric" placeholder="22" /></label>
-        <label class="f"><span>Private key file</span><input data-k="key" spellcheck="false" list="sshkeys" placeholder="none" /></label>
-        <label class="f"><span>Jump host</span><input data-k="jump" spellcheck="false" list="jacknames" placeholder="none" /></label>
-      </div></section>`
         : ""
     }
     ${
-      on.length
-        ? `<section class="d-card"><div class="d-sec">${icon("users")}On now</div>
+      real || on.length
+        ? `<aside class="fo-side">${
+            real
+              ? `<section class="d-card"><div class="d-sec">${icon("file-pen-line")}Note</div>
+      <textarea class="d-note" id="gnote" rows="1" spellcheck="false"
+        placeholder="What somebody arriving here needs to know"></textarea></section>
+      <section class="d-card"><div class="d-sec">${icon("settings")}Defaults for devices in here</div>
+      <div id="gdefs">
+        ${def("user", "User", "")}
+        ${def("port", "SSH port", 'inputmode="numeric"')}
+        ${def("key", "Private key", 'list="sshkeys"')}
+        ${def("jump", "Jump host", 'list="jacknames"')}
+      </div>
+      <p class="page-note">A device's own setting wins, then the nearest folder.</p></section>`
+              : ""
+          }${
+            on.length
+              ? `<section class="d-card"><div class="d-sec">${icon("users")}On now</div>
       <div class="on-now">${on.map(([who, what]) => `<span><b>${esc(who)}</b><small>${esc(what)}</small></span>`).join("")}</div></section>`
+              : ""
+          }</aside>`
         : ""
-    }
-    ${
-      !members.length
-        ? ""
-        : `<section class="d-tiles"><div class="d-sec">${icon("folder")}In here</div>
-      ${tiles.length ? `<div class="tiles">${tiles.map(tileHtml).join("")}</div>` : `<p class="page-note">Nothing in here matches.</p>`}</section>`
     }
     </div>
 `;
@@ -885,13 +913,7 @@ function renderJack(j, live) {
               web: "web",
               sftp: "files",
             }[j.primary] ?? "connect"
-          }">${icon(
-            { web: "globe", sftp: "folder" }[j.primary] ??
-              KIND[j.primary]?.[0] ??
-              "square-terminal",
-          )}${{ web: "Open", sftp: "Browse files" }[j.primary] ?? "Connect"}${
-            wide ? "<kbd>⏎</kbd>" : ""
-          }</button>`
+          }">${icon(goOf(j)[0])}${goOf(j)[1]}${wide ? "<kbd>⏎</kbd>" : ""}</button>`
     }
     ${j.ssh && j.primary !== "ssh" ? `<button class="ghost" data-act="connect" data-tip="Connect over ssh">${icon("square-terminal")}${lab("SSH")}</button>` : ""}
     ${j.ssh && j.primary !== "sftp" ? `<button class="ghost" data-act="files" data-tip="Browse files over sftp">${icon("folder")}${lab("Files")}</button>` : ""}

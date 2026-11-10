@@ -179,6 +179,8 @@ async function detailClick(e) {
     reachShow = reach;
     return renderDetail();
   }
+  const go = e.target.closest("[data-go]")?.dataset.go;
+  if (go) return primary(go);
   const tile = e.target.closest(".tile");
   if (tile) {
     if (!tile.dataset.name) return pickGroup(idOf(tile), true);

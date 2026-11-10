@@ -4,6 +4,11 @@ What changed for someone about to install, in plain sentences, newest first.
 `npm run bump` stamps `## Unreleased` with version and date. The release, the app's
 update pill and the site all read it from here.
 
+## Unreleased
+
+- A folder's page leads with its devices: one row each with a Connect button, how many answer in a line under the name, and the note and defaults beside the list.
+- The small buttons at the top of a page (pin, rename, delete, Edit, Duplicate) have an outline, like the ones beside Connect.
+
 ## 0.1.78 - 2026-11-10
 
 - Fields look alike everywhere: a folder's Notes, Settings' snippets and Import's search lose their outline and match the rest. A red Delete or Close tunnel button is filled like its neighbours.
