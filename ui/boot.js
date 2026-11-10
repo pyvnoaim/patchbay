@@ -742,7 +742,8 @@ listen("window:close", async () => {
 // Last time's tabs, in order, for devices that still exist, and the forwards that were
 // open. `prefs.reopen` says whether to ask first (the default, a pill that stays), just
 // do it, or not. A desktop is asked for its password as it opens, which is why asking
-// first is the default. Ends back on the list.
+// first is the default. On launch it ends back on the list, from the pill's Reopen on the
+// first tab back: that click asked for them.
 const REOPEN = {
   // A local shell is always a fresh one, so two of them come back as two.
   term: (t) => openSession(t.name, null, null, false, t.via, t.via === "local"),
@@ -769,15 +770,16 @@ async function restoreTabs() {
   ].filter(Boolean);
   flash(`${said.join(" and ")} from last time`, false, {
     label: "Reopen",
-    run: () => reopen(back).catch(alertish),
+    run: () => reopen(back, true).catch(alertish),
     stay: true,
   });
 }
 
 // One at a time, in the order they sat, so a split's panes rejoin the first of them.
 // ponytail: a split comes back at even shares, not the sizes it was dragged to.
-async function reopen(back) {
+async function reopen(back, land = false) {
   const anchors = new Map();
+  let first = null;
   for (const t of back) {
     const had = new Set(sessions.keys());
     try {
@@ -787,12 +789,14 @@ async function reopen(back) {
       continue;
     }
     const id = [...sessions.keys()].find((k) => !had.has(k));
-    if (id === undefined || t.split == null) continue;
+    if (id === undefined) continue;
+    first ??= id;
+    if (t.split == null) continue;
     if (anchors.has(t.split)) joinSplit(anchors.get(t.split), id, t.dir);
     else anchors.set(t.split, id);
   }
   await refreshTunnels();
-  activeId = null;
+  activeId = land ? first : null;
   showTab();
   render();
 }

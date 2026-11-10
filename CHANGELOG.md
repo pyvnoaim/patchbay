@@ -4,6 +4,10 @@ What changed for someone about to install, in plain sentences, newest first.
 `npm run bump` stamps `## Unreleased` with version and date. The release, the app's
 update pill and the site all read it from here.
 
+## Unreleased
+
+- Reopen on the "from last time" pill takes you to the first tab it brings back, instead of leaving you on the list.
+
 ## 0.1.79 - 2026-11-10
 
 - A folder's page leads with its devices: one row each with a Connect button, how many answer in a line under the name, and the note and defaults beside the list.
