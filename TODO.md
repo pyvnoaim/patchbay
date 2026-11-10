@@ -14,8 +14,6 @@ before the next push.
 - [ ] **VNC password**: a server that wants one asks. Remember works. A wrong saved one is
       asked again still ticked. A Mac with only Apple's sign-in opens in Screen Sharing.
 - [ ] **RDP handoff** for 2008 R2: opens outside the window.
-- [ ] **RDP pointer**: the I-beam over text and resize arrows on a window edge, at the
-      right size on a Retina screen.
 - [ ] **RDP sound**: a video or a system sound plays, in sync. Does it start at once or
       only after the first click in the desktop?
 - [ ] **Settings**: a switch takes effect at once. Theme, font size and the shared list
@@ -90,8 +88,6 @@ Rough, unranked. Most are a `ponytail:` ceiling someone hasn't hit yet.
 
 - **Shared host keys for the bastions.** ssh applies the option to the last hop only,
   so a jump host is still asked about the old way.
-- **The remote cursor's shape.** The canvas shows this machine's arrow. RDP sends the
-  remote pointer (an I-beam over text) and a CSS cursor could show it.
 - **A remembered graphics cache.** IronRDP can keep the pipeline's bitmap cache between
   sessions, so a reconnect to the same desktop paints faster.
 - **More than one team vault.** Two customers on two shares. It is what spaces were,
