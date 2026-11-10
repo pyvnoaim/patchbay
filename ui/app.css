@@ -1262,14 +1262,13 @@ body.dragging * {
 }
 .snip-row :is(input, select) {
   min-width: 0;
-  height: 30px;
-  padding: 0 9px;
-  border: 1px solid var(--line);
+  height: var(--h-control);
+  padding: 0 10px;
+  border: 1px solid transparent;
   border-radius: var(--r-md);
   background: var(--row);
   color: var(--fg);
   font: inherit;
-  font-size: 12.5px;
   outline: none;
 }
 .snip-row :is(input, select):focus {
@@ -1672,7 +1671,7 @@ button.linkish:hover {
   }
 }
 .name {
-  font-weight: 560;
+  font-weight: 550;
   letter-spacing: -0.005em;
 }
 .host {
@@ -1891,14 +1890,13 @@ button,
 .d-note {
   width: 100%;
   margin-top: 2px;
-  padding: 7px 9px;
+  padding: 7px 10px;
   resize: vertical;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: var(--r-md);
   background: var(--row);
   color: var(--fg);
   font: inherit;
-  font-size: 12.5px;
   line-height: 1.5;
   outline: none;
   -webkit-user-select: text;
@@ -2667,7 +2665,7 @@ button.flat:hover {
   padding: 13px 16px;
   border-bottom: 1px solid var(--line);
   font-size: 14px;
-  font-weight: 620;
+  font-weight: 600;
   letter-spacing: -0.01em;
 }
 /* An ask can carry a command to read before it runs; its line breaks have to survive. */
@@ -2764,13 +2762,12 @@ button.flat:hover {
 }
 .imp-find {
   width: 100%;
-  padding: 6px 9px;
-  border: 1px solid var(--line);
+  padding: 7px 10px;
+  border: 1px solid transparent;
   border-radius: var(--r-md);
   background: var(--row);
   color: var(--fg);
   font: inherit;
-  font-size: 12.5px;
   outline: none;
 }
 .imp-find:focus {
@@ -2993,7 +2990,8 @@ button.danger {
   background: transparent;
   color: var(--down);
 }
-button.danger:hover {
+button.danger:hover,
+button.ghost.danger:hover {
   background: color-mix(in srgb, var(--down) 18%, transparent);
 }
 
@@ -3180,7 +3178,10 @@ button.danger:hover {
   align-items: center;
   gap: 6px;
 }
+/* Filled like the ghost buttons it sits beside. A bare .danger (the sheet's Delete) stays
+   text-only, away from Cancel and Save. */
 button.ghost.danger {
+  background: var(--row);
   color: var(--down);
 }
 button:disabled {
