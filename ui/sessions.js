@@ -1536,15 +1536,16 @@ function renderTabs() {
       </div>`);
       continue;
     }
-    // A shell tab wears its device's mark in readable()'s colour, never a raw brand hex.
-    const os = s.kind === "term" && !s.task ? all.find((j) => j.name === s.name)?.os : undefined;
+    // A device tab wears its device's mark in readable()'s colour, never a raw brand hex.
+    // Files and tasks keep their kind icon: the mark says which device, not what the tab does.
+    const os = s.kind !== "sftp" && !s.task ? all.find((j) => j.name === s.name)?.os : undefined;
     const tint = os && osColor(os);
     chips.push(`<div class="tab ${s.dead ? "dead" : ""} ${s.news ? "news" : ""}" data-id="${s.id}" role="tab" aria-selected="${s.id === activeId}">
       <span class="dot ${s.dead ? "down" : "up"}" role="img" aria-label="${s.dead ? "ended" : s.news ? "connected, new output" : "connected"}"></span>
       ${os ? `<span class="tabkind"${tint ? ` style="color:${esc(tint)}"` : ""}>${osIcon(os)}</span>` : ""}
-      ${s.kind === "rdp" ? `<span class="tabkind">${icon("monitor")}</span>` : ""}
-      ${s.kind === "vnc" ? `<span class="tabkind">${icon("screen-share")}</span>` : ""}
-      ${s.kind === "web" ? `<span class="tabkind">${icon("globe")}</span>` : ""}
+      ${!os && s.kind === "rdp" ? `<span class="tabkind">${icon("monitor")}</span>` : ""}
+      ${!os && s.kind === "vnc" ? `<span class="tabkind">${icon("screen-share")}</span>` : ""}
+      ${!os && s.kind === "web" ? `<span class="tabkind">${icon("globe")}</span>` : ""}
       ${s.kind === "sftp" ? `<span class="tabkind">${icon("folder")}</span>` : ""}
       ${s.task ? `<span class="tabkind">${icon({ trace: "waypoints", key: "key-round" }[s.task] ?? "plug")}</span>` : ""}
       <span class="lbl">${esc(s.task ? `${taskLabel(s.task)} ${labelOf(s.name)}` : labelOf(s.name))}</span>

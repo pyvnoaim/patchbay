@@ -4,6 +4,10 @@ What changed for someone about to install, in plain sentences, newest first.
 `npm run bump` stamps `## Unreleased` with version and date. The release, the app's
 update pill and the site all read it from here.
 
+## Unreleased
+
+- Remote desktop, VNC and web tabs show the device's logo, like a shell tab, instead of a plain monitor or globe.
+
 ## 0.1.80 - 2026-11-10
 
 - Reopen on the "from last time" pill takes you to the first tab it brings back, instead of leaving you on the list.
