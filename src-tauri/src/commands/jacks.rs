@@ -715,13 +715,20 @@ pub async fn snippets() -> Result<Snippets, String> {
             } else {
                 ""
             };
+            // A team file's `me:` key would land on a device of yours, the one name
+            // `merge` leaves out for the same reason.
+            let foreign = |k: &Option<String>| {
+                vault == Some("team") && k.as_deref().is_some_and(|k| k.starts_with(patchbay::MINE))
+            };
             out.list
-                .extend(kept.into_iter().map(|(jack, name, text)| Snippet {
-                    jack: jack.map(|k| format!("{mine}{k}")),
-                    name,
-                    text,
-                    vault,
-                }));
+                .extend(kept.into_iter().filter(|(jack, _, _)| !foreign(jack)).map(
+                    |(jack, name, text)| Snippet {
+                        jack: jack.map(|k| format!("{mine}{k}")),
+                        name,
+                        text,
+                        vault,
+                    },
+                ));
             out.refused.extend(refused);
             out.stamps
                 .insert(vault.unwrap_or("team"), config::snippets_stamp_at(&file));

@@ -116,16 +116,20 @@ let snipsRefused = ""; // the refused names already said, so a focus doesn't rep
 // this is the check on the way out, the last thing between a file and a prompt.
 const snippetOk = (t) =>
   t.trim().length > 0 && [...t].length <= 1000 && !/[\u0000-\u001f\u007f-\u009f]/.test(t);
-// What the shell in front is offered: its device's own first, then every prompt's, a
-// device's winning a name they share. A broadcast gets a device's only when every pane
-// is that device: text written for one host is not typed into another.
+// What the shell in front is offered: its device's own first, then every prompt's. A
+// broadcast gets a device's only when every pane is that device: text written for one
+// host is not typed into another. Nothing hides anything: a team device's "disk" must
+// not stand in for yours. A local shell is no device, whatever a key in a file says.
 function snipsHere() {
   const s = sessions.get(activeId);
-  const panes = s?.bcast?.on ? [...s.bcast.live].map((id) => sessions.get(id)?.name) : [s?.name];
-  const one = new Set(panes).size === 1 ? panes[0] : undefined;
-  const own = snips.filter((x) => x.jack && x.jack === one);
-  const names = new Set(own.map((x) => x.name));
-  return [...own, ...snips.filter((x) => !x.jack && !names.has(x.name))];
+  const panes = s?.bcast?.on ? [...s.bcast.live].map((id) => sessions.get(id)) : [s];
+  const names = new Set(panes.map((p) => (p && p.via !== "local" ? p.name : undefined)));
+  const one = names.size === 1 ? [...names][0] : undefined;
+  const device = one !== undefined && all.some((j) => j.name === one);
+  return [
+    ...snips.filter((x) => x.jack && device && x.jack === one),
+    ...snips.filter((x) => !x.jack),
+  ];
 }
 let probes = new Map(); // name -> { target, ms }
 // The selected folder: { path, vault }, or null for every device.

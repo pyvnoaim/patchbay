@@ -4,6 +4,10 @@ What changed for someone about to install, in plain sentences, newest first.
 `npm run bump` stamps `## Unreleased` with version and date. The release, the app's
 update pill and the site all read it from here.
 
+## Unreleased
+
+- A shared list's snippets no longer show at your own devices' prompts, and a device's snippet no longer hides one of yours with the same name.
+
 ## 0.1.84 - 2026-11-18
 
 - A device can have its own snippets (Advanced, one `name: text` per line). They show first at that device's prompt, and nowhere else.
