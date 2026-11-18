@@ -3042,6 +3042,7 @@ button.ghost.danger:hover {
 /* The folder overview: what is in it, the list, and beside it what the folder says about
    them, the rail. The rail wraps under the list in a narrow window. */
 .fo {
+  container-type: inline-size;
   clear: both;
   display: flex;
   flex-wrap: wrap;
@@ -3089,7 +3090,15 @@ button.ghost.danger:hover {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-height: 28px;
   margin: 8px 0;
+}
+/* Side by side, the rail starts where the list does, not at its heading: the head's
+   28px plus its margins. 820 is where the two bases (520 + 20 + 280) stop fitting. */
+@container (min-width: 820px) {
+  .fo-main + .fo-side {
+    margin-top: 44px;
+  }
 }
 .fo-head .d-sec {
   margin: 0;
@@ -3097,6 +3106,7 @@ button.ghost.danger:hover {
 /* A segmented switch, like Mine/Team in the device sheet. */
 .chips {
   display: inline-flex;
+  height: 28px;
   padding: 2px;
   border-radius: var(--r-md);
   background: var(--row);

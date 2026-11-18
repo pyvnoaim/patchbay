@@ -735,7 +735,7 @@ function renderGroup() {
             real
               ? `<section class="d-card"><div class="d-sec">${icon("file-pen-line")}Note</div>
       <textarea class="d-note" id="gnote" rows="1" spellcheck="false"
-        placeholder="What somebody arriving here needs to know"></textarea></section>
+        placeholder="Add a note for this folder"></textarea></section>
       <section class="d-card"><div class="d-sec">${icon("settings")}Defaults for devices in here</div>
       <div id="gdefs">
         ${def("user", "User", "")}
