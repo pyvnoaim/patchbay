@@ -4,7 +4,7 @@ What changed for someone about to install, in plain sentences, newest first.
 `npm run bump` stamps `## Unreleased` with version and date. The release, the app's
 update pill and the site all read it from here.
 
-## Unreleased
+## 0.1.83 - 2026-11-18
 
 - On a folder's page the note and defaults line up with the top of the device list, and an empty note's hint fits on one line.
 
