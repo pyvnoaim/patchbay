@@ -37,6 +37,9 @@
 // in the window. Never add a way for one to press Enter. It stops at the shell's screen like
 // everything else that sends bytes, and in a broadcast one pane in an editor stops it for all of
 // them.
+//
+// A device's own `[jack.<key>.snippet]` is offered only at that device's prompt, and in a
+// broadcast only when every pane is that device (`snipsHere` in `core.js`).
 
 const { listen } = window.__TAURI__.event;
 const tabsEl = $("tabs"),
@@ -879,17 +882,18 @@ async function typeSnippet(sn) {
 // The toolbar's way in, for whoever never finds them in Search: every snippet, and
 // the way to write one.
 function snippetMenu(btn) {
+  const here = snipsHere();
   const r = btn.getBoundingClientRect();
   showCtx(r.left, r.bottom + 4, null, [
-    ...snips.map((sn) => ({
+    ...here.map((sn) => ({
       icon: "text-cursor-input",
       label: sn.name,
       run: () => typeSnippet(sn),
     })),
-    ...(snips.length ? ["-"] : []),
+    ...(here.length ? ["-"] : []),
     {
-      icon: snips.length ? "pencil" : "plus",
-      label: snips.length ? "Edit snippets…" : "Add a snippet…",
+      icon: here.length ? "pencil" : "plus",
+      label: here.length ? "Edit snippets…" : "Add a snippet…",
       run: () => openSettings("snippets"),
     },
   ]);

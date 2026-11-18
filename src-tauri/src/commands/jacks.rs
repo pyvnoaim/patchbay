@@ -97,6 +97,9 @@ pub struct Snippet {
     name: String,
     text: String,
     vault: Option<&'static str>,
+    /// The device it belongs to, by its key in the window (`me:web` for yours), or
+    /// `None` for one offered at every prompt.
+    jack: Option<String>,
 }
 
 /// Both vaults' snippets, yours first, and what the sheet needs to save them back.
@@ -707,10 +710,18 @@ pub async fn snippets() -> Result<Snippets, String> {
         let mut read = |file: PathBuf, vault: Option<&'static str>| {
             let src = std::fs::read_to_string(&file).unwrap_or_default();
             let (kept, refused) = patchbay::snippets(&src);
-            out.list.extend(
-                kept.into_iter()
-                    .map(|(name, text)| Snippet { name, text, vault }),
-            );
+            let mine = if vault == Some("mine") {
+                patchbay::MINE
+            } else {
+                ""
+            };
+            out.list
+                .extend(kept.into_iter().map(|(jack, name, text)| Snippet {
+                    jack: jack.map(|k| format!("{mine}{k}")),
+                    name,
+                    text,
+                    vault,
+                }));
             out.refused.extend(refused);
             out.stamps
                 .insert(vault.unwrap_or("team"), config::snippets_stamp_at(&file));

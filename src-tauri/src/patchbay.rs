@@ -212,20 +212,33 @@ pub fn snippet_ok(text: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The `[snippet]` table, in file order, and the names of the ones that were refused.
-/// Read apart from `Raw` so one bad value costs that snippet and not the whole list:
-/// this file may be a colleague's, and it never went through a save here.
-pub fn snippets(src: &str) -> (Vec<(String, String)>, Vec<String>) {
-    let table = toml::from_str::<toml::Table>(src)
-        .ok()
-        .and_then(|mut t| t.remove("snippet"))
-        .and_then(|v| v.try_into::<toml::Table>().ok())
-        .unwrap_or_default();
+/// The `[snippet]` table, then each device's `[jack.<key>.snippet]`, in file order, and
+/// the names of the ones that were refused (`web: name` for a device's). A device's
+/// carries its key. Read apart from `Raw` so one bad value costs that snippet and not
+/// the whole list: this file may be a colleague's, and it never went through a save here.
+/// A snippet as read: the device it belongs to, if any, its name and its text.
+pub type Snippet = (Option<String>, String, String);
+
+pub fn snippets(src: &str) -> (Vec<Snippet>, Vec<String>) {
+    let mut t = toml::from_str::<toml::Table>(src).unwrap_or_default();
+    let table = |v: Option<toml::Value>| v.and_then(|v| v.try_into::<toml::Table>().ok());
+    let mut tables = vec![(None, table(t.remove("snippet")))];
+    for (key, j) in table(t.remove("jack")).unwrap_or_default() {
+        tables.push((
+            Some(key),
+            table(j.as_table().and_then(|j| j.get("snippet")).cloned()),
+        ));
+    }
     let (mut kept, mut refused) = (Vec::new(), Vec::new());
-    for (name, v) in table {
-        match v.as_str().filter(|t| snippet_ok(t).is_ok()) {
-            Some(text) => kept.push((name, text.to_string())),
-            None => refused.push(name),
+    for (jack, t) in tables {
+        for (name, v) in t.unwrap_or_default() {
+            match v.as_str().filter(|t| snippet_ok(t).is_ok()) {
+                Some(text) => kept.push((jack.clone(), name, text.to_string())),
+                None => refused.push(match &jack {
+                    Some(k) => format!("{k}: {name}"),
+                    None => name,
+                }),
+            }
         }
     }
     (kept, refused)
@@ -1088,11 +1101,27 @@ host = "10.0.1.2"
         assert_eq!(
             kept,
             [
-                ("disk".to_string(), "df -h /".to_string()),
-                ("last".into(), "w".into())
+                (None, "disk".to_string(), "df -h /".to_string()),
+                (None, "last".into(), "w".into())
             ]
         );
         assert_eq!(refused, ["two steps", "odd"]);
+    }
+
+    #[test]
+    fn a_device_snippet_is_checked_like_any_other_and_never_costs_the_device() {
+        let src = "[jack.web]\nhost = \"10.0.0.5\"\n[jack.web.snippet]\nreload = \"sudo systemctl reload nginx\"\nbad = \"rm -rf /\\n\"\n[jack.db]\nhost = \"10.0.0.6\"\n";
+        let (kept, refused) = snippets(src);
+        assert_eq!(
+            kept,
+            [(
+                Some("web".to_string()),
+                "reload".to_string(),
+                "sudo systemctl reload nginx".to_string()
+            )]
+        );
+        assert_eq!(refused, ["web: bad"]);
+        assert_eq!(jacks_of(src).unwrap()["web"].host, "10.0.0.5");
     }
 
     #[test]

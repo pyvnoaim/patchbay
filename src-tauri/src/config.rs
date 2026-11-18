@@ -50,17 +50,32 @@ pub struct JackInput {
     pub folders: Vec<String>,
     #[serde(default)]
     pub forward: Vec<String>,
+    /// The device's own `[jack.<key>.snippet]`, whole. `None` leaves it as it is, which
+    /// is what an import sends.
+    #[serde(default)]
+    pub snippets: Option<Vec<(String, String)>>,
     /// What the sheet was opened on (`stamp_of`); a table that hashes differently now was
     /// changed by someone else since.
     pub stamp: Option<String>,
 }
 
 /// One number for a table as written, so an edit can say what it was made against. Only
-/// ever compared inside one run of the app, so `DefaultHasher` is enough.
+/// ever compared inside one run of the app, so `DefaultHasher` is enough. A table's
+/// text leaves out the tables inside it, so those are fed in too: without them a
+/// colleague's `[jack.web.snippet]` edit passed as unchanged and was overwritten.
 pub fn stamp_of(item: &Item) -> String {
     use std::hash::{Hash, Hasher};
+    fn feed(item: &Item, h: &mut std::hash::DefaultHasher) {
+        item.to_string().hash(h);
+        for (k, v) in item.as_table().into_iter().flat_map(Table::iter) {
+            if v.is_table() {
+                k.hash(h);
+                feed(v, h);
+            }
+        }
+    }
     let mut h = std::hash::DefaultHasher::new();
-    item.to_string().hash(&mut h);
+    feed(item, &mut h);
     h.finish().to_string()
 }
 
@@ -93,15 +108,9 @@ pub fn snippets_stamp_at(file: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// The whole `[snippet]` table as the sheet has it. A name that is still there keeps
-/// its line and the comment on it; one that is gone is removed; a new one goes last.
-/// Every text goes through `snippet_ok`, which is what keeps a snippet from ever being
-/// more than text on a prompt.
-pub fn set_snippets_at(
-    file: &Path,
-    list: &[(String, String)],
-    stamp: Option<&str>,
-) -> Result<(), String> {
+/// A snippet list as a sheet sends it: named, each name once, each text one plain line.
+/// `snippet_ok` is what keeps a snippet from ever being more than text on a prompt.
+fn check_snippets(list: &[(String, String)]) -> Result<(), String> {
     let mut seen = std::collections::HashSet::new();
     for (name, text) in list {
         let name = name.trim();
@@ -113,35 +122,50 @@ pub fn set_snippets_at(
         }
         patchbay::snippet_ok(text).map_err(|e| format!("\"{name}\": {e}"))?;
     }
+    Ok(())
+}
+
+/// A `snippet` table whole, under `parent`. A name that is still there keeps its line
+/// and the comment on it; one that is gone is removed; a new one goes last. Answers
+/// whether the table is empty now.
+fn write_snippets(parent: &mut Table, list: &[(String, String)]) -> Result<bool, String> {
+    let t = parent
+        .entry("snippet")
+        .or_insert_with(|| Item::Table(Table::new()))
+        .as_table_mut()
+        .ok_or("`snippet` in that file isn't a table")?;
+    let seen: std::collections::HashSet<&str> = list.iter().map(|(n, _)| n.trim()).collect();
+    let gone: Vec<String> = t
+        .iter()
+        .map(|(k, _)| k.to_string())
+        .filter(|k| !seen.contains(k.as_str()))
+        // Only what the sheet showed: a line it left out as unusable was never
+        // offered for keeping, so it is not this save's to delete.
+        .filter(|k| {
+            t.get(k)
+                .and_then(Item::as_str)
+                .is_some_and(|v| patchbay::snippet_ok(v).is_ok())
+        })
+        .collect();
+    for k in gone {
+        t.remove(&k);
+    }
+    for (name, text) in list {
+        t[name.trim()] = value(text.as_str());
+    }
+    Ok(t.is_empty())
+}
+
+/// The whole `[snippet]` table as the Settings sheet has it.
+pub fn set_snippets_at(
+    file: &Path,
+    list: &[(String, String)],
+    stamp: Option<&str>,
+) -> Result<(), String> {
+    check_snippets(list)?;
     let (mut doc, was) = read_doc(file)?;
     stale("the snippets", stamp, doc.get("snippet"))?;
-    let empty = {
-        let t = doc
-            .entry("snippet")
-            .or_insert_with(|| Item::Table(Table::new()))
-            .as_table_mut()
-            .ok_or("`snippet` in that file isn't a table")?;
-        let gone: Vec<String> = t
-            .iter()
-            .map(|(k, _)| k.to_string())
-            .filter(|k| !seen.contains(k.as_str()))
-            // Only what the sheet showed: a line it left out as unusable was never
-            // offered for keeping, so it is not this save's to delete.
-            .filter(|k| {
-                t.get(k)
-                    .and_then(Item::as_str)
-                    .is_some_and(|v| patchbay::snippet_ok(v).is_ok())
-            })
-            .collect();
-        for k in gone {
-            t.remove(&k);
-        }
-        for (name, text) in list {
-            t[name.trim()] = value(text.as_str());
-        }
-        t.is_empty()
-    };
-    if empty {
+    if write_snippets(doc.as_table_mut(), list)? {
         let orphan = orphan_comments(doc.as_table_mut(), "snippet");
         rehome_comments(&mut doc, orphan);
     }
@@ -516,6 +540,9 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
     if let Some(m) = j.mac.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
         patchbay::magic_packet(m)?;
     }
+    if let Some(list) = &j.snippets {
+        check_snippets(list)?;
+    }
 
     let (mut doc, was) = read_doc(path)?;
     let jacks = jack_table(&mut doc)?;
@@ -580,6 +607,11 @@ pub fn save_jack_at(path: &Path, original: Option<String>, j: JackInput) -> Resu
         }
     }
     set_num(t, "port", j.port);
+    if let Some(list) = &j.snippets {
+        if write_snippets(t, list)? {
+            t.remove("snippet");
+        }
+    }
 
     write_doc(path, &doc, was.as_deref())?;
     Ok(key)
@@ -1358,6 +1390,7 @@ folders = ["prod/eu/web"]
             mac: None,
             folders: vec![],
             forward: vec![],
+            snippets: None,
             stamp: None,
         }
     }
@@ -1710,6 +1743,46 @@ folders = ["prod/eu/web"]
         assert!(
             read(&p).contains("keep this comment"),
             "the file was re-serialized"
+        );
+    }
+
+    #[test]
+    fn a_device_keeps_its_snippets_unless_the_sheet_sends_new_ones() {
+        let p = scratch("jack-snippets");
+        let mut j = input("snip", "10.0.0.9");
+        j.snippets = Some(vec![(
+            "reload".into(),
+            "sudo systemctl reload nginx".into(),
+        )]);
+        save_jack_at(&p, None, j).unwrap();
+        let out = read(&p);
+        assert!(out.contains("[jack.snip.snippet]"), "{out}");
+        assert!(
+            out.contains("keep this comment"),
+            "the file was re-serialized"
+        );
+
+        // The stamp covers them: a colleague's snippet edit is refused, not overwritten.
+        let stamp = stamps_at(&p, "jack")["snip"].clone();
+        let mut d = read(&p).parse::<DocumentMut>().unwrap();
+        d["jack"]["snip"]["snippet"]["disk"] = value("df -h");
+        std::fs::write(&p, d.to_string()).unwrap();
+        assert_ne!(stamps_at(&p, "jack")["snip"], stamp);
+
+        // An import sends none, and they stay.
+        save_jack_at(&p, Some("snip".into()), input("snip", "10.0.0.10")).unwrap();
+        assert!(read(&p).contains("reload = "));
+
+        let mut bad = input("snip", "10.0.0.10");
+        bad.snippets = Some(vec![("x".into(), "ls\n".into())]);
+        assert!(save_jack_at(&p, Some("snip".into()), bad).is_err());
+
+        let mut none = input("snip", "10.0.0.10");
+        none.snippets = Some(vec![]);
+        save_jack_at(&p, Some("snip".into()), none).unwrap();
+        assert!(
+            !read(&p).contains("snippet"),
+            "an empty table was left behind"
         );
     }
 

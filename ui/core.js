@@ -109,13 +109,24 @@ let hostKeys = new Map();
 let present = new Map();
 let presentSaid = ""; // what was last told about this window, so a redraw isn't a write
 // Lines of text the palette types at a prompt, from both vaults, yours first.
-let snips = []; // { name, text, vault }
+let snips = []; // { name, text, vault, jack }
 let snipStamps = {}; // each vault's [snippet] table as read, for the save
 let snipsRefused = ""; // the refused names already said, so a focus doesn't repeat them
 // One plain line, at most 1000 characters. Rust refuses the same on save and on read;
 // this is the check on the way out, the last thing between a file and a prompt.
 const snippetOk = (t) =>
   t.trim().length > 0 && [...t].length <= 1000 && !/[\u0000-\u001f\u007f-\u009f]/.test(t);
+// What the shell in front is offered: its device's own first, then every prompt's, a
+// device's winning a name they share. A broadcast gets a device's only when every pane
+// is that device: text written for one host is not typed into another.
+function snipsHere() {
+  const s = sessions.get(activeId);
+  const panes = s?.bcast?.on ? [...s.bcast.live].map((id) => sessions.get(id)?.name) : [s?.name];
+  const one = new Set(panes).size === 1 ? panes[0] : undefined;
+  const own = snips.filter((x) => x.jack && x.jack === one);
+  const names = new Set(own.map((x) => x.name));
+  return [...own, ...snips.filter((x) => !x.jack && !names.has(x.name))];
+}
 let probes = new Map(); // name -> { target, ms }
 // The selected folder: { path, vault }, or null for every device.
 let group = null;

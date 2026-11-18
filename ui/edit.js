@@ -809,6 +809,10 @@ function openJack(j, prefillGroup) {
   f.mac.value = j?.mac ?? "";
   f.folders.value = (j?.folders ?? (prefillGroup?.path ? [prefillGroup.path] : [])).join(", ");
   f.forward.value = (j?.forward ?? []).join(", ");
+  f.snippets.value = snips
+    .filter((s) => editing && s.jack === editing)
+    .map((s) => `${s.name}: ${s.text}`)
+    .join("\n");
   $("oschoices").innerHTML = OS_CHOICES.map((o) => `<option value="${esc(o)}">`).join("");
   renderFolderSuggestions();
   jackFields();
@@ -817,7 +821,7 @@ function openJack(j, prefillGroup) {
   // A fold still running from the last time the sheet was open would shut this one at its end.
   for (const a of $("jf-adv").getAnimations()) a.cancel();
   $("jf-adv").classList.remove("closing");
-  $("jf-adv").open = ["key", "jump", "forward", "mac"].some((k) => f[k].value.trim());
+  $("jf-adv").open = ["key", "jump", "forward", "mac", "snippets"].some((k) => f[k].value.trim());
   sheetWrap.hidden = false;
   f.name.focus();
   jfWas = jfState();
@@ -857,6 +861,14 @@ jackForm.addEventListener("submit", async (e) => {
     return showErr(jfErr, "telnet port has to be a number");
   if (reach === "serial" && !serial.startsWith("/dev/"))
     return showErr(jfErr, "a serial device is a /dev/ path, like /dev/cu.usbserial-1410");
+  // One per line, so a line is the one thing a snippet can't hold. Name before the first
+  // colon. ponytail: a name with a colon in it splits there; a row editor if one does.
+  const snippets = [];
+  for (const line of f.snippets.value.split("\n").filter((l) => l.trim())) {
+    const at = line.indexOf(":");
+    if (at < 1) return showErr(jfErr, `"${line.trim()}": a snippet is name: text`);
+    snippets.push([line.slice(0, at).trim(), line.slice(at + 1).trim()]);
+  }
   try {
     await invoke("save_jack", {
       original: editing,
@@ -884,6 +896,7 @@ jackForm.addEventListener("submit", async (e) => {
         desc: f.desc.value.trim() || null,
         mac: f.mac.value.trim() || null,
         folders: commaList(f.folders.value),
+        snippets,
         stamp: editStamp,
       },
       vault: vaults.two ? f.vault.value : null,
@@ -1526,7 +1539,8 @@ async function openSettings(pane) {
     if (!el.firstChild) el.innerHTML = icon(el.dataset.icon);
   }
   resetSources();
-  snipDraft = snips.map((s) => ({ ...s }));
+  // A device's own are edited on the device.
+  snipDraft = snips.filter((s) => !s.jack).map((s) => ({ ...s }));
   snipWas = JSON.stringify(snipDraft);
   renderSnips();
   showPane(pane);
@@ -1803,7 +1817,8 @@ function snipRows() {
 // failing then loses the ones that left its vault, until they are typed again.
 async function saveSnips(rows) {
   if (JSON.stringify(snipDraft) === snipWas) return;
-  const of = (list, v) => list.filter((s) => (s.vault ?? null) === v).map((s) => [s.name, s.text]);
+  const of = (list, v) =>
+    list.filter((s) => !s.jack && (s.vault ?? null) === v).map((s) => [s.name, s.text]);
   const order = vaults.two ? ["mine", "team"] : [null];
   const gained = (v) => of(rows, v).length - of(snips, v).length;
   for (const v of [...order].sort((a, b) => gained(b) - gained(a))) {

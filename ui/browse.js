@@ -1442,7 +1442,7 @@ function palMatches() {
   // Only with a shell in front: a snippet is typed, and there has to be a prompt.
   const typed =
     shellInFront() && !palBeside
-      ? snips
+      ? snipsHere()
           .filter((s) => !f || s.name.toLowerCase().includes(f) || s.text.toLowerCase().includes(f))
           .map((s) => ({ snip: s }))
       : [];

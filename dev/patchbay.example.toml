@@ -29,6 +29,10 @@ jump = "bastion"
 forward = ["8080:localhost:80"]
 desc = "two hops: bastion, then here"
 
+# Offered only at this device's prompt, typed and never run.
+[jack.web.snippet]
+reload = "sudo systemctl reload nginx"
+
 [jack.db]
 os = "postgres"
 host = "10.0.0.5"

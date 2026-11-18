@@ -234,7 +234,7 @@
           <!-- The rest, folded: most devices need none of it. Opened by openJack() when any of it
              is set, so a value is never hidden from the person editing it. -->
           <details class="jf-adv" id="jf-adv">
-            <summary>Advanced<span>key, jump host, forwards, wake</span></summary>
+            <summary>Advanced<span>key, jump host, forwards, wake, snippets</span></summary>
             <div class="jf-advbody">
               <label class="f" data-need="ssh sftp"
                 ><span>Private key file</span
@@ -255,6 +255,16 @@
                 ><span>MAC address · for Wake on LAN</span
                 ><input name="mac" spellcheck="false" placeholder="00:1b:21:92:0a:1f"
               /></label>
+              <label class="f wide" data-need="ssh telnet serial"
+                ><span>Snippets · only at this device's prompt, one per line</span
+                ><textarea
+                  name="snippets"
+                  class="mono"
+                  rows="3"
+                  spellcheck="false"
+                  placeholder="reload: sudo systemctl reload nginx"
+                ></textarea>
+              </label>
             </div>
           </details>
           <datalist id="jacknames"></datalist>
