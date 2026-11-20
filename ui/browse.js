@@ -894,28 +894,28 @@ function renderJack(j, live) {
   const wide = activeId === null;
   const tint = osColor(j.os);
   const stops = [...j.hops, j.user ? `${j.user}@${j.host}` : j.host];
-  // The ways in: wide, a row of their own under the name, each saying what it is; beside a
-  // session, icons in the pane's strip, where there is no room for words.
+  // The ways in: wide, the main one top right and the rest a row under the name, each saying
+  // what it is; beside a session, icons in the pane's strip, where there is no room for words.
   const lab = (w) => (wide ? w : "");
-  const ways = `
-    ${
-      live
-        ? /* A web tab is a page: closed, not disconnected. Plain: the way out is not
+  const go = `${
+    live
+      ? /* A web tab is a page: closed, not disconnected. Plain: the way out is not
              the thing to press, and the tab has its own. */
-          `<button class="ghost" data-act="disconnect">${icon("x")}${
-            live.dead || live.kind === "web" ? "Close" : "Disconnect"
-          }</button>`
-        : `<button class="primary" data-act="${
-            {
-              rdp: "rdp",
-              vnc: "vnc",
-              telnet: "telnet",
-              serial: "serial",
-              web: "web",
-              sftp: "files",
-            }[j.primary] ?? "connect"
-          }">${icon(goOf(j)[0])}${goOf(j)[1]}${wide ? "<kbd>⏎</kbd>" : ""}</button>`
-    }
+        `<button class="ghost" data-act="disconnect">${icon("x")}${
+          live.dead || live.kind === "web" ? "Close" : "Disconnect"
+        }</button>`
+      : `<button class="primary" data-act="${
+          {
+            rdp: "rdp",
+            vnc: "vnc",
+            telnet: "telnet",
+            serial: "serial",
+            web: "web",
+            sftp: "files",
+          }[j.primary] ?? "connect"
+        }">${icon(goOf(j)[0])}${goOf(j)[1]}${wide ? "<kbd>⏎</kbd>" : ""}</button>`
+  }`;
+  const more = `
     ${j.ssh && j.primary !== "ssh" ? `<button class="ghost" data-act="connect" data-tip="Connect over ssh">${icon("square-terminal")}${lab("SSH")}</button>` : ""}
     ${j.ssh && j.primary !== "sftp" ? `<button class="ghost" data-act="files" data-tip="Browse files over sftp">${icon("folder")}${lab("Files")}</button>` : ""}
     ${j.url && j.primary !== "web" ? `<button class="ghost" data-act="web" data-tip="Open web UI">${icon("globe")}${lab("Web")}</button>` : ""}
@@ -944,8 +944,12 @@ function renderJack(j, live) {
     }
     ${
       // Beside a session the buttons belong to the card, under the name they act on; the strip
-      // above it is left to the tab bar's row.
-      wide ? `<div class="d-go">${ways}</div>` : `<div class="d-acts">${ways}${tools}</div>`
+      // above it is left to the tab bar's row. Wide, the main way in sits top right with Edit.
+      !wide
+        ? `<div class="d-acts">${go}${more}${tools}</div>`
+        : more.trim()
+          ? `<div class="d-go">${more}</div>`
+          : ""
     }
 
     <div class="d-cards">
@@ -1089,7 +1093,7 @@ function renderJack(j, live) {
     }
 `;
 
-  if (wide) dActs().innerHTML = tools;
+  if (wide) dActs().innerHTML = go + tools;
 }
 
 // Out of a session and back to the tree's own view: what a click in the sidebar means.

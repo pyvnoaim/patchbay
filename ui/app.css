@@ -1143,7 +1143,7 @@ body.dragging * {
   background: var(--row);
   color: var(--fg-dim);
 }
-/* The ways in, a row of their own under the name. Clear of the mark's float, so the row
+/* The other ways in, a row of their own under the name. Clear of the mark's float, so the row
    starts at the page's edge rather than beside the tile. */
 #wide .d-go {
   clear: left;
@@ -1168,7 +1168,7 @@ body.dragging * {
 #wide .d-go button.ghost:hover {
   background: var(--row-hover);
 }
-#wide .d-go kbd {
+#wide :is(.d-go, .dactions) kbd {
   margin-left: 2px;
   padding: 0 5px;
   border: 1px solid color-mix(in oklab, var(--on-accent) 45%, transparent);
