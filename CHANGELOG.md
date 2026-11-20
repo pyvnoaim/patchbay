@@ -4,6 +4,10 @@ What changed for someone about to install, in plain sentences, newest first.
 `npm run bump` stamps `## Unreleased` with version and date. The release, the app's
 update pill and the site all read it from here.
 
+## Unreleased
+
+- Pinging a device that is off no longer shows it as reachable while the ping runs.
+
 ## 0.1.85 - 2026-11-18
 
 - A shared list's snippets no longer show at your own devices' prompts, and a device's snippet no longer hides one of yours with the same name.

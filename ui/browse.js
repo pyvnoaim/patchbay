@@ -301,7 +301,8 @@ function statePill(name) {
 function dotState(name) {
   if (prefs.probe === false) return "unknown";
   // A session that is up is a better answer than a sweep that has not come round yet.
-  for (const s of sessions.values()) if (!s.dead && s.name === name) return "up";
+  // Only a connected one: a ping tab is live while it asks, answer or not.
+  for (const s of sessions.values()) if (isLive(s) && s.name === name) return "up";
   const p = probes.get(name);
   return !p ? "checking" : p.ms == null ? "down" : "up";
 }
