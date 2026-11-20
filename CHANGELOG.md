@@ -4,7 +4,7 @@ What changed for someone about to install, in plain sentences, newest first.
 `npm run bump` stamps `## Unreleased` with version and date. The release, the app's
 update pill and the site all read it from here.
 
-## Unreleased
+## 0.1.88 - 2026-11-20
 
 - Right-clicking a device in a folder's list opens its menu, Edit included.
 - Saving a Web UI device drops the user it has no field for, so an imported `master@` no longer sticks to it.
