@@ -877,7 +877,9 @@ jackForm.addEventListener("submit", async (e) => {
         name: f.name.value.trim(),
         // A console cable has no address, so a serial device keeps none.
         host: reach === "serial" ? "" : f.host.value.trim(),
-        user: f.user.value.trim() || null,
+        // A Web UI, telnet or serial device has no User field, and a hidden one would keep
+        // whatever an import wrote there with no way to see or clear it.
+        user: f.user.closest(".f").hidden ? null : f.user.value.trim() || null,
         // One way in: the other two are cleared, so a device saved with several keeps
         // only this one.
         port: overSsh && port ? +port : null,
