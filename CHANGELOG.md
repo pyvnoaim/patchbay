@@ -4,7 +4,7 @@ What changed for someone about to install, in plain sentences, newest first.
 `npm run bump` stamps `## Unreleased` with version and date. The release, the app's
 update pill and the site all read it from here.
 
-## Unreleased
+## 0.1.86 - 2026-11-20
 
 - Pinging a device that is off no longer shows it as reachable while the ping runs.
 
