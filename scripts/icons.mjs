@@ -10,7 +10,8 @@ const USED = [
   "text-cursor-input", // a snippet: text typed at a prompt
   "folder",
   "folder-open",
-  "chevron-right", // tree disclosure
+  "chevron-right", // tree disclosure, and Forward
+  "chevron-left", // Back
   "tag",
   "circle-off", // Untagged
   "server", // a jack

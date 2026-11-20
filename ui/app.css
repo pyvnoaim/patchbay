@@ -273,6 +273,16 @@ body[data-os="macos"] {
   min-width: 0;
   height: 100%;
 }
+.navbtns {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  -webkit-app-region: no-drag;
+}
+.navbtns .chip {
+  width: var(--h-control);
+  padding: 0;
+}
 .tabactions {
   display: flex;
   align-items: center;
@@ -1210,6 +1220,9 @@ body.dragging * {
 #wide .d-cmdsec .d-sec {
   display: none;
 }
+#wide .d-cmdsec .mono {
+  border: 1px solid var(--card-edge);
+}
 #wide .d-cmdsec .mono::before {
   content: "$ ";
   color: var(--fg-faint);
@@ -1917,8 +1930,61 @@ button,
   line-height: 15px;
   vertical-align: 1px;
 }
+/* The folders a device is in, as breadcrumbs: each level opens its folder. */
 .d-in {
-  margin: 0 5px 2px 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 6px 2px 0;
+  padding: 0 7px 0 6px;
+  font-size: 12px;
+  line-height: 22px;
+  color: var(--fg-dim);
+  vertical-align: middle;
+}
+.d-in svg {
+  width: 13px;
+  height: 13px;
+  margin-right: 3px;
+  color: var(--fg-faint);
+}
+.d-in i {
+  font-style: normal;
+  color: var(--fg-faint);
+}
+.d-in button {
+  display: inline;
+  padding: 0 2px;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+.d-in button:hover {
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* A folder's "On now": who, then what and for how long, one colleague per line. */
+.on-now {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.on-now span {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.on-now small {
+  overflow: hidden;
+  color: var(--fg-faint);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .d-row {
@@ -2056,7 +2122,8 @@ button,
   color: var(--fg-dim);
 }
 /* Wide, the route is a cable: a jack per stop, a lead between each and the next, the
-   target lit. Beside a session it stays the list above, which fits a narrow pane. */
+   target lit, each stop centred in an equal column. Beside a session it stays the list
+   above, which fits a narrow pane. */
 #wide .route {
   flex-direction: row;
   gap: 0;
@@ -2067,11 +2134,9 @@ button,
   flex: 1 1 0;
   min-width: 0;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 7px;
-}
-#wide .route > .last {
-  flex: 0 1 auto;
+  text-align: center;
 }
 #wide .route .pip {
   width: 11px;
@@ -2083,8 +2148,8 @@ button,
   content: "";
   position: absolute;
   top: 4.5px;
-  left: 17px;
-  right: 6px;
+  left: calc(50% + 11.5px);
+  right: calc(-50% + 11.5px);
   height: 2px;
   border-radius: 1px;
   background: color-mix(in oklab, var(--fg-faint) 55%, transparent);
@@ -2108,7 +2173,7 @@ button,
 }
 #wide .route .hop {
   max-width: 100%;
-  padding-right: 12px;
+  padding: 0 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2140,8 +2205,9 @@ button,
 }
 .d-copy {
   position: absolute;
-  top: 3px;
+  top: 50%;
   right: 3px;
+  transform: translateY(-50%);
   color: var(--fg-faint);
 }
 /* Buttons stretch by default, which is wrong in a row of two where one is .ghost. */
@@ -3956,6 +4022,10 @@ button:disabled {
   font-size: 12px;
   line-height: 1.5;
   color: var(--fg-dim);
+}
+/* Last in a card, the card's own padding is the space under it. */
+.d-card > .page-note:last-child {
+  margin-bottom: 0;
 }
 /* An answer beside the button that asked. #notices is under every overlay, so a pill fired
    from inside a sheet would sit behind its blur. */

@@ -4,6 +4,13 @@ What changed for someone about to install, in plain sentences, newest first.
 `npm run bump` stamps `## Unreleased` with version and date. The release, the app's
 update pill and the site all read it from here.
 
+## Unreleased
+
+- On a device's page the ssh command line has an outline like the cards above it, and its copy button sits centred. The route's stops sit evenly across the card.
+- A device's folders (In) are links: each level opens its folder.
+- Back and Forward, left of the tabs (or a mouse's side buttons), return to the device or folder you came from.
+- A folder's On now list spaces a colleague's name from what they are on.
+
 ## 0.1.88 - 2026-11-20
 
 - Right-clicking a device in a folder's list opens its menu, Edit included.

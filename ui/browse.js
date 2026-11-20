@@ -354,6 +354,7 @@ function render() {
   $("viewmode").innerHTML = listMode === "map" ? `${icon("x")}Close map` : `${icon("share-2")}Map`;
   $("viewmode").dataset.tip =
     listMode === "map" ? "Back to the detail" : "Draw this folder by the route to each device";
+  paintNav();
   $("newgroup").innerHTML = icon("folder-plus");
   $("newgroup").dataset.tip = "New folder";
   $("settings").innerHTML = icon("settings");
@@ -744,7 +745,7 @@ function renderGroup() {
         ${def("key", "Private key", 'list="sshkeys"')}
         ${def("jump", "Jump host", 'list="jacknames"')}
       </div>
-      <p class="page-note">A device's own setting wins, then the nearest folder.</p></section>`
+      <p class="page-note">A device's own setting wins.</p></section>`
               : ""
           }${
             on.length
@@ -868,6 +869,27 @@ function lentFrom(j, key) {
   return `<span class="d-from" data-tip="Not set on this device">${esc(label)}</span>`;
 }
 
+// A folder path as links, one per level: "eu" in prod/eu opens prod/eu, "prod" opens prod.
+function folderCrumbs(path, vault) {
+  const parts = normPath(path).split("/").filter(Boolean);
+  return parts
+    .map(
+      (p, i) =>
+        `<button type="button" data-folder="${esc(parts.slice(0, i + 1).join("/"))}" data-vault="${esc(vault ?? "")}" data-tip="Open folder">${esc(p)}</button>`,
+    )
+    .join("<i>/</i>");
+}
+
+// A folder from outside the tree (the palette, a device's In row): its parents unfold
+// so the row it lands on is drawn.
+function goFolder(id) {
+  const parts = id.path.split("/");
+  for (let i = 1; i < parts.length; i++) {
+    openGroup(gkey({ path: parts.slice(0, i).join("/"), vault: id.vault }));
+  }
+  pickGroup(id, true);
+}
+
 function renderJack(j, live) {
   if (!j) {
     dBody().innerHTML = "";
@@ -966,7 +988,7 @@ function renderJack(j, live) {
       ${
         j.folders.length
           ? `<div class="d-row"><dt>in</dt><dd>${j.folders
-              .map((f) => `<span class="d-in">${esc(f.split("/").join(" / "))}</span>`)
+              .map((f) => `<span class="d-in">${icon("folder")}${folderCrumbs(f, j.vault)}</span>`)
               .join("")}</dd></div>`
           : ""
       }
@@ -1107,6 +1129,66 @@ function browse() {
   renderTabs();
 }
 
+// Back and Forward walk the devices and folders opened, like a browser's pages. A device
+// is kept as its row (name and folder), since a device filed twice is two rows. Arrow keys
+// step in place: ten presses down a folder are not ten pages to go back through.
+let navPast = [];
+let navAhead = [];
+let navHere = null;
+let travelling = false;
+let stepping = false;
+function visit(place) {
+  if (travelling || (navHere && placeKey(navHere) === placeKey(place))) return;
+  if (navHere && !stepping) navPast = [...navPast.slice(-49), navHere];
+  if (!stepping) navAhead = [];
+  navHere = place;
+  paintNav();
+}
+// Painted on its own: a selection paints rows and detail, not the whole window.
+function paintNav() {
+  $("navback").disabled = !navPast.length;
+  $("navfwd").disabled = !navAhead.length;
+}
+const placeKey = (p) => (p.name ? `${p.name}\n${gkey(p.in)}` : gkey(p.group));
+
+// A place deleted or renamed since is passed over, so one click is never a dead click.
+const placeGone = (p) =>
+  p.name
+    ? !all.some((j) => j.name === p.name)
+    : !!p.group?.path && !folderPaths(p.group.vault).has(normPath(p.group.path));
+
+function travel(d) {
+  if (modalOpen()) return;
+  const from = d < 0 ? navPast : navAhead;
+  while (from.length && placeGone(from.at(-1))) from.pop();
+  if (!from.length) return paintNav();
+  (d < 0 ? navAhead : navPast).push(navHere);
+  navHere = from.pop();
+  travelling = true;
+  try {
+    if (!navHere.name) {
+      if (navHere.group?.path) goFolder(navHere.group);
+      else pickGroup(navHere.group, true);
+      return;
+    }
+    const parts = normPath(navHere.in?.path ?? "")
+      .split("/")
+      .filter(Boolean);
+    for (let n = 1; n <= parts.length; n++) {
+      openGroup(gkey({ path: parts.slice(0, n).join("/"), vault: navHere.in.vault }));
+    }
+    render();
+    let i = shown.findIndex(
+      (x, k) => x.name === navHere.name && gkey(shownIn[k]) === gkey(navHere.in),
+    );
+    if (i < 0) i = revealDevice(navHere.name);
+    if (i >= 0) select(i);
+  } finally {
+    travelling = false;
+    paintNav();
+  }
+}
+
 // Selection must not rebuild the tree: replacing innerHTML destroys the row under
 // the cursor, so two clicks never pair into a dblclick.
 // `stay` is a right-click: the row is picked for its menu, and the session in front
@@ -1124,6 +1206,7 @@ function select(i, stay = false) {
   // The folder it was picked in is the one "New device" and a move start from.
   // Not on the map, which is drawn from the folder it was opened on.
   if (listMode !== "map") group = gkey(shownIn[sel]) ? shownIn[sel] : null;
+  if (!stay) visit({ name: shown[sel].name, in: shownIn[sel] });
   if (!stay) browse();
   paintRows();
   renderDetail();
@@ -1280,7 +1363,11 @@ const foldersMarked = () =>
   [...markedFolders.values()].filter((id) => folderPaths(id.vault).has(id.path));
 
 // From a folder, Down is the first device drawn and Up the last.
-const move = (d) => select(detailMode === "jack" ? sel + d : d > 0 ? 0 : -1);
+const move = (d) => {
+  stepping = true;
+  select(detailMode === "jack" ? sel + d : d > 0 ? 0 : -1);
+  stepping = false;
+};
 
 // A folder row taken as the list: the click and the arrow keys land here.
 function pickGroup(id, foldable) {
@@ -1292,6 +1379,7 @@ function pickGroup(id, foldable) {
   marked.clear();
   markedFolders.clear();
   detailMode = "group"; // the detail describes the folder, not its first device
+  visit({ group: id });
   browse();
   render();
 }
@@ -1464,11 +1552,7 @@ function palPick(p) {
   if (p.snip) return typeSnippet(p.snip);
   if (p.local) return openLocal(palBeside);
   if (!p.path) return palBeside ? openBeside(p.name) : primary(p.name);
-  const parts = p.path.split("/");
-  for (let i = 1; i < parts.length; i++) {
-    openGroup(gkey({ path: parts.slice(0, i).join("/"), vault: p.vault }));
-  }
-  pickGroup(p, true);
+  goFolder(p);
 }
 // A quick connect when nothing matches: `user@host` or `host:2222`, one word. Rust
 // applies the same guard a configured host gets.

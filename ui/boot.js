@@ -5,6 +5,17 @@
 searchBtn.addEventListener("click", () => openPalette());
 $("vault").addEventListener("click", (e) => bitwardenKey(e.currentTarget, true));
 $("snipbtn").addEventListener("click", (e) => snippetMenu(e.currentTarget));
+$("navback").innerHTML = icon("chevron-left");
+$("navback").dataset.tip = "Back";
+$("navfwd").innerHTML = icon("chevron-right");
+$("navfwd").dataset.tip = "Forward";
+$("navback").addEventListener("click", () => travel(-1));
+$("navfwd").addEventListener("click", () => travel(1));
+// A mouse's side buttons, the way a browser takes them.
+window.addEventListener("mouseup", (e) => {
+  if (e.button === 3) travel(-1);
+  if (e.button === 4) travel(1);
+});
 $("viewmode").addEventListener("click", () => {
   listMode = listMode === "map" ? "list" : "map";
   browse();
@@ -181,6 +192,9 @@ async function detailClick(e) {
   }
   const go = e.target.closest("[data-go]")?.dataset.go;
   if (go) return primary(go);
+  const folder = e.target.closest("[data-folder]");
+  if (folder)
+    return goFolder({ path: folder.dataset.folder, vault: folder.dataset.vault || undefined });
   const tile = e.target.closest(".tile");
   if (tile) {
     if (!tile.dataset.name) return pickGroup(idOf(tile), true);
