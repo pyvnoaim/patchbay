@@ -107,11 +107,12 @@ ctxEl.addEventListener("click", (e) => {
 // The webview's own menu is Reload / Inspect Element.
 document.addEventListener("contextmenu", (e) => {
   e.preventDefault();
-  const jackRow = e.target.closest("#list .jack, #tree .jack");
+  // A folder overview's tile has no `data-i`: like a click on it, the menu selects it.
+  const jackRow = e.target.closest("#list .jack, #tree .jack, .tile[data-name]");
   const groupRow = e.target.closest(".group");
 
-  if (jackRow && jackRow.dataset.i !== undefined) {
-    let at = +jackRow.dataset.i;
+  if (jackRow && (jackRow.dataset.i !== undefined || jackRow.dataset.name)) {
+    let at = jackRow.dataset.i === undefined ? -1 : +jackRow.dataset.i;
     if (at < 0) at = revealDevice(jackRow.dataset.name);
     if (at < 0) return;
     // Right-clicking an unmarked row is an ordinary click: it selects and drops the marks.
