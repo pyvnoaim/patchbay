@@ -44,12 +44,15 @@ function showCtx(x, y, head, items, os) {
   // A submenu flies out to the right unless that runs off the window or over a web tab,
   // then to the left, and with room on neither side it lies over the menu, against the
   // edge. Lifted to stay above the bottom edge. Measured here because hidden it has no box.
+  // Capped to the room left of a web tab first, or the fallback overhangs into the page
+  // and the OS view cuts the long host labels off instead of ellipsizing them.
+  const edge = web && x < web.left ? web.left : innerWidth;
   for (const sub of ctxEl.querySelectorAll(".ctx-sub")) {
+    sub.style.maxWidth = `${Math.min(320, edge - 8)}px`;
     sub.style.display = "block";
     const s = sub.getBoundingClientRect();
     const item = sub.parentElement.getBoundingClientRect();
     sub.style.display = "";
-    const edge = web && x < web.left ? web.left : innerWidth;
     const at =
       item.right + s.width <= edge - 4
         ? item.right

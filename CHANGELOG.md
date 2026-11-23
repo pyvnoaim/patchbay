@@ -4,6 +4,10 @@ What changed for someone about to install, in plain sentences, newest first.
 `npm run bump` stamps `## Unreleased` with version and date. The release, the app's
 update pill and the site all read it from here.
 
+## Unreleased
+
+- Beside a web tab, a long address in the Copy menu ends in … instead of disappearing under the page.
+
 ## 0.1.89 - 2026-11-20
 
 - On a device's page the ssh command line has an outline like the cards above it, and its copy button sits centred. The route's stops sit evenly across the card.

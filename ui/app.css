@@ -2655,7 +2655,6 @@ button.flat:hover {
   position: absolute;
   left: 100%;
   width: max-content;
-  max-width: min(320px, calc(100vw - 8px));
   color: var(--fg);
   background: linear-gradient(var(--panel), var(--panel)), var(--bg);
 }
