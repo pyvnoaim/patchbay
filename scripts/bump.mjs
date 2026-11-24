@@ -1,6 +1,6 @@
 // `npm run bump [0.1.0]`: the version lives in four files, and CI refuses a `release x.y.z`
 // commit that disagrees with tauri.conf.json. Targeted line rewrites, so nothing else is reformatted.
-// No version is the next patch, because every push is a release.
+// No version is the next patch: a release is a batch of pushes, rarely worth a minor.
 import { readFileSync, writeFileSync } from "node:fs";
 
 const current = JSON.parse(readFileSync("package.json", "utf8")).version;

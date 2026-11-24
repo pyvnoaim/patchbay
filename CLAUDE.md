@@ -50,8 +50,9 @@ npm run licence "Acme GmbH" 2027-10-20  # sign a team licence with ~/.tauri/patc
 
 ## "push"
 
-When I say **push**, follow `.claude/GATE.md`: review to release, and the _only_ time
-anything is committed.
+When I say **push**, follow `.claude/GATE.md`: review, commit, push, and the _only_ time
+anything is committed. A push does not release: the changelog collects under
+`## Unreleased` until I say **release** (same file).
 
 **Never commit or push unless that message asks for it.** Not after a cleanup, not
 because the work looks finished, the tree is clean or the change is small. Leave the
@@ -124,7 +125,7 @@ Read a neighbouring file before adding one and match it. The rules that aren't o
 
 - **`$PATCHBAY_CONFIG`** overrides the config path. `scripts/dev.mjs` sets it to an absolute `dev/patchbay.toml` (`tauri dev` runs from `src-tauri/`) and puts `~/.cargo/bin` on PATH. `npm test` and `npm run check` go through it too. No env-var prefix in npm scripts: cmd.exe can't.
 - Config lives in `%APPDATA%\patchbay\` on Windows, `$XDG_CONFIG_HOME` or `~/.config` elsewhere.
-- **Releasing is a commit**: `npm run bump`, commit `release x.y.z`, push `main`. CI's part is in `.github/workflows/ci.yml`'s header.
+- **Releasing is a commit**, only when I say **release**: `npm run bump`, commit `release x.y.z`, push `main`. CI's part is in `.github/workflows/ci.yml`'s header.
 - Release notes are the `CHANGELOG.md` section. Release body, `latest.json`, update pill and site all read it.
 - **The update signing key is irreplaceable.** Private half `~/.tauri/patchbay.key` (CI: `TAURI_SIGNING_PRIVATE_KEY`), public half in `plugins.updater.pubkey` of every build. Lose it and no installed copy can update again. The endpoint is the release's `latest.json`. Without one `update_check` fails silently.
 
