@@ -17,3 +17,4 @@ dev/team.toml
 dev/patchbay_licence
 # Written beside the config for a serial console's `screen` (see open_line).
 dev/screenrc
+.DS_Store

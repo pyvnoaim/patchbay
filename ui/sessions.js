@@ -216,7 +216,7 @@ const inActive = (s) => {
 async function openBroadcast(marks) {
   const ssh = marks.filter((m) => m.ssh);
   const skipped = marks.filter((m) => !m.ssh);
-  if (ssh.length < 2) return alertish("A broadcast needs two or more ssh devices.");
+  if (ssh.length < 2) return alertish("a broadcast needs two or more ssh devices");
   if (skipped.length) {
     flash(`Broadcasting to ${ssh.length} · left out: ${skipped.map((m) => m.name).join(", ")}`);
   }

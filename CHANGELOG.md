@@ -4,6 +4,10 @@ What changed for someone about to install, in plain sentences, newest first.
 `npm run bump` stamps `## Unreleased` with version and date. The release, the app's
 update pill and the site all read it from here.
 
+## Unreleased
+
+- In the device form, tabbing to More shows a focus ring like the kinds beside it.
+
 ## 0.1.90 - 2026-11-23
 
 - Beside a web tab, a long address in the Copy menu ends in … instead of disappearing under the page.
