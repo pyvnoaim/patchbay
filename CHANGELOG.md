@@ -4,6 +4,15 @@ What changed for someone about to install, in plain sentences, newest first.
 `npm run bump` stamps `## Unreleased` with version and date. The release, the app's
 update pill and the site all read it from here.
 
+## Unreleased
+
+- Bitwarden fills a device added since patchbay started, without a restart.
+- Bitwarden fills a device whose address moves from http to https on the way to its login page.
+- Turning Bitwarden off and on, or changing its server, no longer leaves open web tabs with a key that refuses.
+- Fill Login with Bitwarden is in the Edit menu, ⌘⇧L, so a login fills without leaving the page's keyboard.
+- A web tab can reload its page: the arrow on the tab, or Reload the page in its menu.
+- When Bitwarden for Mac updates while patchbay is open, patchbay loads the new version and says so.
+
 ## 0.1.91 - 2026-11-27
 
 - In the device form, tabbing to More shows a focus ring like the kinds beside it.

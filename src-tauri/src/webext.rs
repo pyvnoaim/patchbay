@@ -24,12 +24,23 @@
 //! out, and changing the value later signs everyone out. WebKit state is
 //! main-thread-only and lives in a thread-local; `RUNNING` is the atomic that command
 //! threads read, because the thread-local is empty there.
+//!
+//! One controller for the life of the app, and only the context comes and goes. A web
+//! tab's configuration names its controller for good, so a second controller (the
+//! toggle off and on, a new server) left every open tab asking one that had gone. A
+//! page loaded before a context did still has to load again: content scripts go in
+//! with a page, not after it.
+//!
+//! `load` is also the refresh. Called again while running it grants the list's hosts
+//! anew, so a device added since launch can be filled, and it loads Bitwarden again if
+//! the app updated underneath: the background page would be the old build in memory
+//! and the popup the new one from disk. `stale` is how that is noticed.
 
 use serde::Serialize;
 
 /// What a package turned out to be, for the Settings panel to show. Off macOS nothing
 /// builds one - every command there refuses first - and CI's clippy runs on Linux.
-#[derive(Serialize, Default, Debug)]
+#[derive(Serialize, Default, Debug, Clone)]
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub struct Package {
     pub name: String,
@@ -148,9 +159,9 @@ unsafe fn read_package(
     })
 }
 
-/// The loaded extension, for the life of the app. One controller, because the tabs it
-/// serves are one window's, and the extension's own state (its vault session, above
-/// all) is meant to outlive any single tab.
+/// What answers as the browser, for the life of the app, and the extension loaded
+/// into it while the toggle is on. One controller, because the tabs it serves are one
+/// window's, and a tab keeps the controller it was built with.
 ///
 /// `Retained` is not `Send`, and every WebKit call here is main-thread-only anyway, so
 /// the handles live in a thread-local rather than Tauri's state.
@@ -162,11 +173,20 @@ mod live {
     use objc2_foundation::{NSRect, NSRectEdge};
     use objc2_web_kit::{WKWebExtensionContext, WKWebExtensionController};
     use std::cell::RefCell;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
+    use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+    use std::sync::Mutex;
+    use std::time::SystemTime;
 
     pub struct Held {
         pub controller: Retained<WKWebExtensionController>,
-        pub context: Retained<WKWebExtensionContext>,
+        /// `None` while the toggle is off. The tabs stay, so turning it on finds them.
+        pub context: Option<Retained<WKWebExtensionContext>>,
+        /// What loaded, kept so a second `load` reports what is running instead of
+        /// what is on disk, which after an update is a different version.
+        pub facts: super::Package,
+        /// The hosts and server last granted. The window asks after every reload of
+        /// the list, and the same answer twice is not worth telling WebKit about.
+        pub granted: super::Reach,
         /// Held here because AppKit delegates are weak: the controller alone would let
         /// it go, and the popup would quietly never show.
         pub _delegate: Retained<Delegate>,
@@ -183,26 +203,49 @@ mod live {
     }
     // Read from command threads, where the thread-local above is always empty: asking
     // it there said "not running" to every web tab, so none was ever attached.
+    static ATTACHED: AtomicBool = AtomicBool::new(false);
     static RUNNING: AtomicBool = AtomicBool::new(false);
-    static HOSTS: AtomicUsize = AtomicUsize::new(0);
+    /// The loaded manifest's mtime, which is how a Bitwarden updated since is told.
+    static STAMP: Mutex<Option<SystemTime>> = Mutex::new(None);
 
-    pub fn set(h: Held, hosts: usize) {
+    pub fn set(h: Held) {
         HELD.with(|x| *x.borrow_mut() = Some(h));
-        HOSTS.store(hosts, Relaxed);
+        ATTACHED.store(true, Relaxed);
+    }
+
+    pub fn up(
+        context: Retained<WKWebExtensionContext>,
+        facts: super::Package,
+        granted: super::Reach,
+        at: Option<SystemTime>,
+    ) {
+        *STAMP.lock().unwrap_or_else(|e| e.into_inner()) = at;
+        read(|h| {
+            h.context = Some(context);
+            h.facts = facts;
+            h.granted = granted;
+        });
         RUNNING.store(true, Relaxed);
     }
 
-    pub fn take() -> Option<Held> {
+    pub fn down() -> Option<(
+        Retained<WKWebExtensionController>,
+        Retained<WKWebExtensionContext>,
+    )> {
         RUNNING.store(false, Relaxed);
-        HELD.with(|x| x.borrow_mut().take())
+        read(|h| Some((h.controller.clone(), h.context.take()?))).flatten()
+    }
+
+    pub fn attached() -> bool {
+        ATTACHED.load(Relaxed)
     }
 
     pub fn running() -> bool {
         RUNNING.load(Relaxed)
     }
 
-    pub fn hosts() -> usize {
-        HOSTS.load(Relaxed)
+    pub fn stamp() -> Option<SystemTime> {
+        *STAMP.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// A short borrow, cloning out what the caller needs. WebKit calls back into the
@@ -213,15 +256,43 @@ mod live {
     }
 }
 
-/// Whether the extension is up, so a web tab knows to hand it their configuration.
+/// What the extension may see: the devices' match patterns, and a server of your own.
+#[cfg(target_os = "macos")]
+type Reach = (Vec<String>, Option<String>);
+
+/// Whether the extension is up, which is when a web tab gets its key.
 #[cfg(target_os = "macos")]
 pub fn running() -> bool {
     live::running()
 }
 
-/// A webview configuration carrying the loaded controller, or `None` when nothing is
-/// loaded. Main thread only, and it has to be handed to the *builder*: WebKit reads
-/// the controller when the view is created, so setting it afterwards is too late.
+/// Whether there is a controller to tell about tabs. True from the first load on, the
+/// toggle off included: a tab opened meanwhile is then one Bitwarden finds when it
+/// comes back, rather than one to close and open again.
+#[cfg(target_os = "macos")]
+pub fn attached() -> bool {
+    live::attached()
+}
+
+/// The installed manifest's mtime. An update replaces the bundle, so it moves.
+#[cfg(target_os = "macos")]
+fn stamp() -> Option<std::time::SystemTime> {
+    std::fs::metadata(package().ok()?.join("manifest.json"))
+        .ok()?
+        .modified()
+        .ok()
+}
+
+/// Whether Bitwarden for Mac was updated under the one running here. A bundle that is
+/// missing is one mid-update, not a newer one: it is asked again on the next call.
+#[cfg(target_os = "macos")]
+pub fn stale() -> bool {
+    running() && stamp().is_some_and(|now| live::stamp() != Some(now))
+}
+
+/// A webview configuration carrying the controller, or `None` before there is one.
+/// Main thread only, and it has to be handed to the *builder*: WebKit reads the
+/// controller when the view is created, so setting it afterwards is too late.
 #[cfg(target_os = "macos")]
 pub fn tab_configuration(
     mtm: objc2::MainThreadMarker,
@@ -586,9 +657,10 @@ pub fn key(
         // The toolbar's key names no tab, so it acts on whatever is in front.
         let want = id.or(h.active);
         let tab = want.and_then(|w| h.tabs.iter().find(|t| t.ivars().id == w).cloned());
-        (h.context.clone(), tab)
+        Some((h.context.clone()?, tab))
     })
-    .ok_or("Bitwarden isn't running")?;
+    .flatten()
+    .ok_or("Bitwarden isn't running - turn it on in Settings")?;
     let mut landed = None;
     if popup {
         unsafe { context.performActionForTab(tab.as_deref().map(ProtocolObject::from_ref)) };
@@ -698,22 +770,56 @@ fn show_popup(action: &objc2_web_kit::WKWebExtensionAction) {
     }
 }
 
-/// The toggle going off. Tabs opened while it ran keep the controller in their
-/// configuration, but an unloaded context runs nothing in them.
+/// The toggle going off. Only the context goes: the controller and its tabs stay for
+/// the next `load`, and an unloaded context runs nothing in them meanwhile.
 #[cfg(target_os = "macos")]
 pub fn unload() -> Result<(), String> {
     if objc2::MainThreadMarker::new().is_none() {
         return Err("not on the main thread".into());
     }
-    let Some(h) = live::take() else {
+    let Some((controller, context)) = live::down() else {
         return Ok(());
     };
-    unsafe { h.controller.unloadExtensionContext_error(&h.context) }
+    unsafe { controller.unloadExtensionContext_error(&context) }
         .map_err(|e| e.localizedDescription().to_string())
 }
 
-/// Load the installed Bitwarden extension into a controller, on the main thread. A
-/// second call reports what is already running rather than loading it again.
+/// Hand a context the pages it may see, and say how many of them are devices. Before
+/// it loads, and again on a running one: host access set once at launch left a device
+/// added since with a key that could fill nothing until the next restart.
+#[cfg(target_os = "macos")]
+unsafe fn grant(
+    ctx: &objc2_web_kit::WKWebExtensionContext,
+    mtm: objc2::MainThreadMarker,
+    hosts: &[String],
+    server: Option<&str>,
+) -> usize {
+    use objc2_foundation::{NSDate, NSDictionary, NSString};
+    use objc2_web_kit::WKWebExtensionMatchPattern;
+    let pattern =
+        |h: &str| WKWebExtensionMatchPattern::matchPatternWithString(&NSString::from_str(h), mtm);
+    // None is fine: with no device page to fill, the vault still opens.
+    let mut patterns: Vec<_> = hosts.iter().filter_map(|h| pattern(h)).collect();
+    let devices = patterns.len();
+    patterns.extend(
+        BITWARDEN_SERVERS
+            .iter()
+            .copied()
+            .chain(server)
+            .filter_map(pattern),
+    );
+    // A dictionary of pattern -> when it expires, and an expiry is not what decides
+    // this: the toggle is, and turning it off unloads the context outright.
+    let forever = NSDate::distantFuture();
+    let pk: Vec<_> = patterns.iter().map(|p| &**p).collect();
+    let pw = vec![&*forever; pk.len()];
+    ctx.setGrantedPermissionMatchPatterns(&NSDictionary::from_slices(&pk, &pw));
+    devices
+}
+
+/// Load the installed Bitwarden extension into the controller, on the main thread. A
+/// second call grants the hosts anew and reports what is running, and loads again
+/// only when Bitwarden for Mac has been updated since.
 ///
 /// `hosts` are the pages it may see: one match pattern per device URL in the list, plus
 /// Bitwarden's own servers. Never `allHostsAndSchemesMatchPattern` - an extension that
@@ -731,22 +837,16 @@ pub async fn load(
     use objc2_foundation::{NSDate, NSDictionary, NSError, NSString, NSURL};
     use objc2_web_kit::{
         WKWebExtension, WKWebExtensionContext, WKWebExtensionController,
-        WKWebExtensionControllerConfiguration, WKWebExtensionMatchPattern,
+        WKWebExtensionControllerConfiguration,
     };
 
     if !supported() {
         return Err("this needs macOS 15.4 or newer".into());
     }
-    // Settings asks every time it opens; a second controller would strand every tab
-    // already attached to the first.
-    if running() {
-        let mut p = inspect(app, package()?).await?;
-        p.loaded = true;
-        p.hosts = live::hosts();
-        return Ok(p);
-    }
     let path = package()?;
     let name = path.display().to_string();
+    // Read before the package is, so an update landing mid-load is seen next time.
+    let at = stamp();
     let (tx, rx) = std::sync::mpsc::channel::<Result<Package, String>>();
 
     app.run_on_main_thread(move || {
@@ -754,6 +854,27 @@ pub async fn load(
             let _ = tx.send(Err("not on the main thread".into()));
             return;
         };
+        // Settings asks every time it opens and the window after every change to the
+        // list. The same build still running only needs its hosts brought up to date.
+        let reach = (hosts, server);
+        let held = live::read(|h| Some((h.context.clone()?, h.granted != reach))).flatten();
+        if let Some((ctx, moved)) = held {
+            if at.is_none() || at == live::stamp() {
+                if moved {
+                    let n = unsafe { grant(&ctx, mtm, &reach.0, reach.1.as_deref()) };
+                    live::read(|h| {
+                        h.facts.hosts = n;
+                        h.granted = reach;
+                    });
+                }
+                let _ =
+                    tx.send(live::read(|h| h.facts.clone()).ok_or("Bitwarden went away".into()));
+                return;
+            }
+            if let Err(e) = unload() {
+                eprintln!("patchbay: bitwarden: unloading the old build: {e}");
+            }
+        }
         let url = NSURL::fileURLWithPath(&NSString::from_str(&name));
         let done = RcBlock::new(move |ext: *mut WKWebExtension, err: *mut NSError| {
             let facts = match unsafe { read_package(ext, err) } {
@@ -778,55 +899,58 @@ pub async fn load(
                 if let Some(base) = NSURL::URLWithString(&NSString::from_str(&base)) {
                     ctx.setBaseURL(&base);
                 }
-                // Both grants are dictionaries of thing -> when it expires, and an
-                // expiry is not what decides this: the toggle is, and turning it off
-                // unloads the context outright.
+                // The API permissions it declared (storage, tabs, and so on), each
+                // until the toggle goes off. Host access is `grant`'s separate list,
+                // and that is the one that matters.
                 let forever = NSDate::distantFuture();
-                // The API permissions it declared (storage, tabs, and so on). Host
-                // access is the separate list below, and that is the one that matters.
                 let asked = ext.requestedPermissions();
                 let asked: Vec<_> = asked.iter().collect();
                 let keys: Vec<_> = asked.iter().map(|p| &**p).collect();
                 let whens = vec![&*forever; keys.len()];
                 ctx.setGrantedPermissions(&NSDictionary::from_slices(&keys, &whens));
+                let devices = grant(&ctx, mtm, &reach.0, reach.1.as_deref());
 
-                let pattern = |h: &str| {
-                    WKWebExtensionMatchPattern::matchPatternWithString(&NSString::from_str(h), mtm)
-                };
-                // None is fine: with no device page to fill, the vault still opens.
-                let mut patterns: Vec<_> = hosts.iter().filter_map(|h| pattern(h)).collect();
-                let devices = patterns.len();
-                let servers = BITWARDEN_SERVERS.iter().copied().chain(server.as_deref());
-                patterns.extend(servers.filter_map(pattern));
-                let pk: Vec<_> = patterns.iter().map(|p| &**p).collect();
-                let pw = vec![&*forever; pk.len()];
-                ctx.setGrantedPermissionMatchPatterns(&NSDictionary::from_slices(&pk, &pw));
-                let conf = WKWebExtensionControllerConfiguration::defaultConfiguration(mtm);
-                // The basis for the extension's own web views: background and popup.
-                let web = conf.webViewConfiguration();
-                web.setApplicationNameForUserAgent(Some(&NSString::from_str(SAFARI_UA)));
-                conf.setWebViewConfiguration(Some(&web));
-                let controller =
-                    WKWebExtensionController::initWithConfiguration(mtm.alloc(), &conf);
+                let before = live::read(|h| (h.controller.clone(), h.window.clone()));
+                let fresh = before.is_none();
+                let (controller, window) = before.unwrap_or_else(|| {
+                    let conf = WKWebExtensionControllerConfiguration::defaultConfiguration(mtm);
+                    // The basis for the extension's own web views: background and popup.
+                    let web = conf.webViewConfiguration();
+                    web.setApplicationNameForUserAgent(Some(&NSString::from_str(SAFARI_UA)));
+                    conf.setWebViewConfiguration(Some(&web));
+                    (
+                        WKWebExtensionController::initWithConfiguration(mtm.alloc(), &conf),
+                        shim::Window::new(mtm),
+                    )
+                });
                 match controller.loadExtensionContext_error(&ctx) {
                     Ok(()) => {
-                        let seen = ctx.isLoaded();
-                        let delegate = shim::Delegate::new(mtm);
-                        controller.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
-                        let window = shim::Window::new(mtm);
-                        live::set(
-                            live::Held {
+                        let facts = Package {
+                            loaded: ctx.isLoaded(),
+                            hosts: devices,
+                            ..facts
+                        };
+                        // Kept only once something loaded in it: a controller that
+                        // never ran an extension is not one to hand to every tab.
+                        if fresh {
+                            let delegate = shim::Delegate::new(mtm);
+                            controller.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+                            live::set(live::Held {
                                 controller: controller.clone(),
-                                context: ctx.clone(),
+                                context: None,
+                                facts: Package::default(),
+                                granted: Default::default(),
                                 _delegate: delegate,
                                 window: window.clone(),
                                 tabs: Vec::new(),
                                 active: None,
                                 anchor: None,
-                            },
-                            devices,
-                        );
+                            });
+                        }
+                        live::up(ctx.clone(), facts.clone(), reach.clone(), at);
                         // After `set`: WebKit asks the window for its tabs straight away.
+                        // Said again to a context loaded later, which was not there to
+                        // hear it the first time.
                         controller.didOpenWindow(ProtocolObject::from_ref(&*window));
                         controller.didFocusWindow(Some(ProtocolObject::from_ref(&*window)));
                         // A popup that spins forever is waiting on the background
@@ -842,11 +966,7 @@ pub async fn load(
                             log_errors(&watched);
                         });
                         ctx.loadBackgroundContentWithCompletionHandler(&started);
-                        Ok(Package {
-                            loaded: seen,
-                            hosts: devices,
-                            ..facts
-                        })
+                        Ok(facts)
                     }
                     Err(e) => Err(e.localizedDescription().to_string()),
                 }
@@ -865,22 +985,26 @@ pub async fn load(
     .map_err(|e| e.to_string())?
 }
 
-/// A device's url as the one match pattern that covers it and nothing beside it:
-/// scheme and host exactly, every path. A port is not part of a match pattern, so two
-/// ports on one appliance are the same pattern, which is the same machine either way.
+/// A device's url as the one match pattern that covers it and nothing beside it: the
+/// host exactly, every path. Either scheme, because the url in the list is often not
+/// the page with the form on it: a Synology's http port is three lines of JavaScript
+/// pointing at its https one. A port is not part of a match pattern, so two ports on
+/// one appliance are the same pattern, which is the same machine either way.
 pub fn host_pattern(url: &str) -> Option<String> {
     let u = tauri::Url::parse(url.trim()).ok()?;
-    let host = u.host_str()?;
-    match u.scheme() {
-        "http" | "https" => Some(format!("{}://{}/*", u.scheme(), host)),
-        _ => None,
-    }
+    matches!(u.scheme(), "http" | "https").then(|| Some(format!("*://{}/*", u.host_str()?)))?
 }
 
 /// A self-hosted Bitwarden's address as its match pattern. https only: the vault's
 /// own traffic, and Bitwarden's clients refuse a cleartext server anyway.
 pub fn server_pattern(url: &str) -> Option<String> {
-    host_pattern(url).filter(|p| p.starts_with("https://"))
+    let u = tauri::Url::parse(url.trim()).ok()?;
+    (u.scheme() == "https").then(|| Some(format!("https://{}/*", u.host_str()?)))?
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn stale() -> bool {
+    false
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -910,4 +1034,19 @@ pub async fn inspect(
     _path: std::path::PathBuf,
 ) -> Result<Package, String> {
     Err("hosting a browser extension only works on macOS".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_device_is_its_host_on_either_scheme_and_a_server_only_https() {
+        let nas = Some("*://nas.local/*".to_string());
+        assert_eq!(host_pattern("http://nas.local:5000/"), nas);
+        assert_eq!(host_pattern(" https://nas.local:5001/webman "), nas);
+        assert_eq!(host_pattern("ftp://nas.local/"), None);
+        assert_eq!(host_pattern("-oProxyCommand=x"), None);
+        assert_eq!(server_pattern("http://vault.example.com"), None);
+    }
 }

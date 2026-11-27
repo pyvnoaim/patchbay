@@ -553,6 +553,9 @@ async function load() {
     render();
     seePresence();
     refreshProbes();
+    // Its reach is the list's urls, so a device added since can be filled without a
+    // restart. Asking is also how a Bitwarden updated meanwhile gets noticed.
+    if (webextRunning) invoke("webext_start").catch(alertish);
   } catch (e) {
     // A list already on screen stays: a share that is away is not an empty list.
     if (all.length) {
@@ -718,6 +721,20 @@ listen("menu:check-update", () => checkUpdates(setWrap.hidden ? null : $("update
 // The macOS Help menu's "Keyboard Shortcuts".
 listen("menu:shortcuts", () => openSettings("keys")).catch(() => {
   /* no capability, so ? is the only way in */
+});
+
+// The macOS Edit menu's "Fill Login with Bitwarden", the only way to a key while a
+// device's page has the keyboard.
+listen("menu:fill", fillFront).catch(() => {
+  /* no capability, so the key on the tab is the only way in */
+});
+
+// Bitwarden for Mac updated while this ran, and was loaded again. A page already open
+// still holds the old build's scripts until it loads again.
+listen("webext:updated", ({ payload: v }) =>
+  flash(`Bitwarden was updated to ${v}. A page already open fills once reloaded, from its tab.`),
+).catch(() => {
+  /* no capability: it still reloaded, only unannounced */
 });
 
 // A `patchbay://` link. Rust has already resolved it to a name in this config; the

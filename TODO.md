@@ -45,6 +45,13 @@ before the next push.
       again goes back to the session.
 - [ ] **Snippet presets**: "Add N common ones" in Settings ▸ Snippets adds them to Mine,
       they survive closing and reopening, and `restart` asks for a unit.
+- [ ] **Bitwarden, never run in the window since the one-controller change**: a fill on a
+      web tab still lands. Add a device with a `url`, open it, fill without a restart. A
+      device on `http://` that lands on https fills. Toggle it off and on in Settings:
+      the open tab's key answers again after Reload the page (the tab's arrow, and its
+      menu). ⌘⇧L fills with the keyboard in the page, and opens the vault from a shell.
+      `touch` Bitwarden.app's `safari.appex/Contents/Resources/manifest.json`, press
+      the key: one "was updated" pill, and Settings shows it running.
 
 ## Next: the paid version
 

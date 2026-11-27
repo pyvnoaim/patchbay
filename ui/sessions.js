@@ -1558,6 +1558,7 @@ function renderTabs() {
           ? `<span class="x ${s.filling ? "busy" : ""}" data-bw="${s.id}" data-tip="Fill · right-click for Bitwarden" role="button">${icon("key-round")}</span>`
           : ""
       }
+      ${s.kind === "web" && !s.dead ? `<span class="x" data-reload="${s.id}" data-tip="Reload the page" role="button">${icon("rotate-cw")}</span>` : ""}
       <span class="x" data-close="${s.id}" data-tip="Close  ${chord("w")}" role="button">${icon("x")}</span>
     </div>`);
   }
@@ -1674,6 +1675,15 @@ function bitwardenKey(el, popup) {
       renderTabs();
     });
 }
+const reloadWeb = (id) => invoke("reload_web_view", { id }).catch(alertish);
+
+// The menu's ⌘⇧L: a fill on the web tab in front, or with none there the vault itself.
+// Off, the toolbar's key is hidden and Rust's "turn it on in Settings" is the answer.
+function fillFront() {
+  if (modalOpen()) return;
+  const key = tabsEl.querySelector(`[data-bw="${activeId}"]`);
+  bitwardenKey(key ?? $("vault"), !key);
+}
 tabsEl.addEventListener("contextmenu", (e) => {
   const bw = e.target.closest("[data-bw]");
   if (!bw) return;
@@ -1686,6 +1696,8 @@ tabsEl.addEventListener("contextmenu", (e) => {
 tabsEl.addEventListener("click", (e) => {
   const bw = e.target.closest("[data-bw]");
   if (bw) return bitwardenKey(bw, false);
+  const again = e.target.closest("[data-reload]")?.dataset.reload;
+  if (again) return reloadWeb(+again);
   const close = e.target.closest("[data-close]")?.dataset.close;
   if (close) return closeSession(+close);
   const bclose = e.target.closest("[data-bclose]")?.dataset.bclose;

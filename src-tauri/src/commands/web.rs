@@ -147,11 +147,11 @@ pub async fn open_web_view(
             })
     };
 
-    // With the extension up the whole build moves to the main thread: a
+    // With a controller to attach to, the whole build moves to the main thread: a
     // `WKWebViewConfiguration` can only be made there and cannot be sent, and WebKit
     // reads the controller off it when the view is created rather than after.
     #[cfg(target_os = "macos")]
-    if crate::webext::running() {
+    if crate::webext::attached() {
         let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
         let w = window.clone();
         app.run_on_main_thread(move || {
@@ -218,7 +218,7 @@ pub fn place_web_view(
     // The tab in front is the one Bitwarden fills. Queued rather than called: the
     // extension's state is the main thread's, whichever thread this runs on.
     #[cfg(target_os = "macos")]
-    if crate::webext::running() {
+    if crate::webext::attached() {
         let _ = app.run_on_main_thread(move || crate::webext::activate(id));
     }
     w.show().map_err(|e| e.to_string())
@@ -227,11 +227,22 @@ pub fn place_web_view(
 #[tauri::command]
 pub fn close_web_view(app: tauri::AppHandle, id: u32) {
     #[cfg(target_os = "macos")]
-    if crate::webext::running() {
+    if crate::webext::attached() {
         let _ = app.run_on_main_thread(move || crate::webext::close_tab(id));
     }
     if let Some(w) = app.get_webview(&web_label(id)) {
         let _ = w.close();
+    }
+}
+
+/// A web tab's page, loaded again. A browser's reload, which a tab here had no way to
+/// ask for; also what a page needs after Bitwarden loaded under it, since content
+/// scripts go in with a page.
+#[tauri::command]
+pub fn reload_web_view(app: tauri::AppHandle, id: u32) -> Result<(), String> {
+    match app.get_webview(&web_label(id)) {
+        Some(w) => w.reload().map_err(|e| e.to_string()),
+        None => Ok(()),
     }
 }
 
@@ -408,11 +419,20 @@ fn web_hosts() -> Result<Vec<String>, String> {
     Ok(seen)
 }
 
+/// One start or stop at a time. A load answers from a completion handler, so a second
+/// one asked meanwhile (the list reloading while Settings opens) saw nothing running
+/// and loaded Bitwarden twice under one identity.
+static LOADS: tauri::async_runtime::Mutex<()> = tauri::async_runtime::Mutex::const_new(());
+
 /// Start the extension over the web tabs. Called when the toggle goes on, at launch when
-/// it already was, and on every opening of Settings, where it reports what is running.
+/// it already was, on every opening of Settings, where it reports what is running, and
+/// after every change to the list, whose urls are its reach. Any of those is also where
+/// a Bitwarden updated since is loaded again, and the window told so it can say so.
 #[tauri::command]
 pub async fn webext_start(app: tauri::AppHandle) -> Result<crate::webext::Package, String> {
+    let _one = LOADS.lock().await;
     let hosts = web_hosts()?;
+    let updated = crate::webext::stale();
     // Checked on save and again here: the file can be edited by hand in between.
     let server = crate::config::load_settings()
         .bitwarden_server
@@ -420,8 +440,13 @@ pub async fn webext_start(app: tauri::AppHandle) -> Result<crate::webext::Packag
         .and_then(crate::webext::server_pattern);
     let out = crate::webext::load(&app, hosts, server).await;
     // A failure at launch only ever reaches a pill; the log is where to find it after.
-    if let Err(e) = &out {
-        eprintln!("patchbay: bitwarden start failed: {e}");
+    match &out {
+        Ok(p) if updated => {
+            use tauri::Emitter;
+            let _ = app.emit("webext:updated", &p.version);
+        }
+        Err(e) => eprintln!("patchbay: bitwarden start failed: {e}"),
+        _ => {}
     }
     out
 }
@@ -446,6 +471,7 @@ async fn on_main<T: Send + 'static>(
 
 #[tauri::command]
 pub async fn webext_stop(app: tauri::AppHandle) -> Result<(), String> {
+    let _one = LOADS.lock().await;
     on_main(&app, crate::webext::unload).await
 }
 
@@ -467,6 +493,10 @@ pub async fn webext_key(
     #[cfg(target_os = "macos")]
     {
         let window = app.get_window("main").ok_or("the main window has gone")?;
+        // The one moment it has to be the build on disk: the popup is read from there.
+        if crate::webext::stale() {
+            webext_start(app.clone()).await?;
+        }
         let landed = on_main(&app, move || {
             let view = window.ns_view().map_err(|e| e.to_string())?;
             crate::webext::key(view, id, (x, y, width, height), popup)

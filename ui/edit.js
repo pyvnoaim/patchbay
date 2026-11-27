@@ -375,6 +375,9 @@ document.addEventListener("contextmenu", (e) => {
               run: front(() => openLocal(true)),
             },
           ]),
+      ...(onTab.kind === "web" && !onTab.dead
+        ? [{ icon: "rotate-cw", label: "Reload the page", run: () => reloadWeb(onTab.id) }]
+        : []),
       "-",
       { icon: "x", label: "Close", key: chord("w"), run: () => closeSession(onTab.id) },
     ]);
@@ -1462,6 +1465,7 @@ function keysHtml() {
         ["Previous, next tab or pane", [`${chord("[")}`, `${chord("]")}`]],
         ["Open a device in split view", [chord("d")]],
         ["Close the tab, twice with a live session in it", [chord("w")]],
+        ...(webextRunning ? [["Fill a login with Bitwarden", [chord("⇧l")]]] : []),
         ["This page", ["?"]],
       ],
     ],

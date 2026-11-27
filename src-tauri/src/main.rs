@@ -219,6 +219,7 @@ fn main() {
             web::open_web_view,
             web::place_web_view,
             web::close_web_view,
+            web::reload_web_view,
             web::web_check,
             web::web_trust,
             web::web_cert,
@@ -313,6 +314,15 @@ fn setup_macos(app: &tauri::App) -> tauri::Result<()> {
     let h = app.handle();
     let check = MenuItem::with_id(h, "check-update", "Check for Updates…", true, None::<&str>)?;
     let quit = MenuItem::with_id(h, "quit", "Quit patchbay", true, Some("Cmd+Q"))?;
+    // Bitwarden's own chord for it. A menu item because a web tab is a view of its own:
+    // with the keyboard in a device's page the window hears no key at all.
+    let fill = MenuItem::with_id(
+        h,
+        "fill",
+        "Fill Login with Bitwarden",
+        true,
+        Some("Cmd+Shift+L"),
+    )?;
     let about = SubmenuBuilder::new(h, "patchbay")
         .about(None)
         .separator()
@@ -334,6 +344,8 @@ fn setup_macos(app: &tauri::App) -> tauri::Result<()> {
         .copy()
         .paste()
         .select_all()
+        .separator()
+        .item(&fill)
         .build()?;
     let window = SubmenuBuilder::new(h, "Window")
         .minimize()
@@ -358,6 +370,9 @@ fn setup_macos(app: &tauri::App) -> tauri::Result<()> {
             }
             "shortcuts" => {
                 let _ = app.emit("menu:shortcuts", ());
+            }
+            "fill" => {
+                let _ = app.emit("menu:fill", ());
             }
             "quit" => {
                 let _ = app.emit("window:close", ());
