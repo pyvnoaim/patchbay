@@ -163,13 +163,6 @@ fn main() {
         })
         .setup(|app| {
             setup_links(app);
-            // Spaces were extra config files; anything still in `spaces/` is folded
-            // into the list so nobody opens the window to find devices missing.
-            match config::fold_spaces_at(&patchbay::config_path()) {
-                Ok(0) => {}
-                Ok(n) => println!("patchbay: folded {n} device(s) out of spaces/ into your list"),
-                Err(e) => eprintln!("patchbay: couldn't fold spaces/ in: {e}"),
-            }
             #[cfg(target_os = "macos")]
             setup_macos(app)?;
             Ok(())

@@ -2,16 +2,7 @@
 //! through toml_edit (comments, spacing and key order survive) and lands as a temp
 //! file plus rename, so a crash mid-write can't truncate it.
 //!
-//! It also owns `[settings]`, `[colors]`, `[folder]` notes, and `fold_spaces_at`, the
-//! one-way door out of spaces: it writes the merged list before renaming anything,
-//! because the other order loses the devices outright if the write fails.
-//!
-//! One list file per vault. Spaces were extra files from when a shared list had to be
-//! one of its own; folders do that job now. `fold_spaces_at` runs at startup and folds
-//! anything still in `spaces/` into the list, each device keeping the space's name as
-//! its outermost folder and the space's `[defaults]` written onto it. It writes the
-//! merged list *before* renaming what it read, because the other order loses the
-//! devices if the write fails.
+//! It also owns `[settings]`, `[colors]` and `[folder]` notes. One list file per vault.
 //!
 //! Writes land as temp file + `rename` so a crash can't truncate someone's hosts, and
 //! `write_doc` first keeps the file it is about to replace as `<name>.bak` beside it
@@ -734,9 +725,9 @@ pub fn move_jack_at(from: &Path, to: &Path, name: &str) -> Result<(), String> {
     let Some(mut item) = jack_table(&mut src)?.get(name).cloned() else {
         return Err(format!("no jack named \"{name}\""));
     };
-    // What its old file's `[defaults]` and folders lent it goes along, written onto it,
-    // as `fold_spaces_at` does: left behind, the same device would connect as someone
-    // else, or by another route, the moment it changed vault.
+    // What its old file's `[defaults]` and folders lent it goes along, written onto it:
+    // left behind, the same device would connect as someone else, or by another route,
+    // the moment it changed vault.
     let lent = patchbay::load(from)?.swap_remove(name);
     if let (Some(t), Some(j)) = (item.as_table_mut(), lent) {
         for (k, v) in [("user", j.user), ("key", j.key), ("jump", j.jump)] {
@@ -1235,106 +1226,6 @@ pub fn delete_group_at(file: &Path, path: &str) -> Result<usize, String> {
     map_folders(file, path, None)
 }
 
-/// Fold the old `spaces/*.toml` files into the one list. Each device gets the space's
-/// name as its outermost folder, so `acme` + `prod` becomes `acme/prod`. The files read
-/// are renamed `.toml.merged`, not deleted: they are the only copy of the split version.
-pub fn fold_spaces_at(cfg: &Path) -> Result<usize, String> {
-    let dir = cfg.with_file_name("spaces");
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return Ok(0);
-    };
-    let mut files: Vec<std::path::PathBuf> = entries
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "toml"))
-        .collect();
-    files.sort();
-    if files.is_empty() {
-        return Ok(0);
-    }
-
-    let (mut doc, was) = read_doc(cfg)?;
-    let (mut moved, mut merged) = (0, Vec::new());
-    for file in files {
-        let Some(space) = file
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .map(str::to_string)
-        else {
-            continue;
-        };
-        let Ok(src) = std::fs::read_to_string(&file) else {
-            continue;
-        };
-        let Ok(from) = src.parse::<DocumentMut>() else {
-            // A file that doesn't parse is left where it is and named in the log.
-            eprintln!(
-                "patchbay: {} doesn't parse, so it was left alone",
-                file.display()
-            );
-            continue;
-        };
-        let Some(jacks) = from.get("jack").and_then(Item::as_table) else {
-            continue;
-        };
-        // A space's own `[defaults]` is written onto each of its devices, since there
-        // is only one `[defaults]` after this.
-        let defaults = from.get("defaults").and_then(Item::as_table);
-
-        for (name, item) in jacks.iter() {
-            let Some(t) = item.as_table() else { continue };
-            let mut t = t.clone();
-            if let Some(d) = defaults {
-                for (k, v) in d.iter() {
-                    if !t.contains_key(k) {
-                        t.insert(k, v.clone());
-                    }
-                }
-            }
-            // The space becomes the outermost folder.
-            let mut folders = Array::new();
-            match t.get("folders").and_then(Item::as_array) {
-                Some(had) if !had.is_empty() => {
-                    for v in had.iter().filter_map(|v| v.as_str()) {
-                        folders.push(format!("{space}/{v}"));
-                    }
-                }
-                _ => folders.push(space.clone()),
-            }
-            t["folders"] = Item::Value(folders.into());
-
-            let table = doc
-                .entry("jack")
-                .or_insert_with(|| {
-                    let mut t = Table::new();
-                    t.set_implicit(true);
-                    Item::Table(t)
-                })
-                .as_table_mut()
-                .ok_or("`jack` in that config is not a table")?;
-            // First wins: a name already in the list is the one in use.
-            let mut at = name.to_string();
-            let mut n = 2;
-            while table.contains_key(&at) {
-                at = format!("{name} {n}");
-                n += 1;
-            }
-            table.insert(&at, Item::Table(t));
-            moved += 1;
-        }
-        merged.push(file);
-    }
-    if moved == 0 {
-        return Ok(0);
-    }
-    // Written before renaming: the other order loses the devices if the write fails.
-    write_doc(cfg, &doc, was.as_deref())?;
-    for file in merged {
-        let _ = std::fs::rename(&file, file.with_extension("toml.merged"));
-    }
-    Ok(moved)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1592,67 +1483,6 @@ folders = ["prod/eu/web"]
         assert!(save_jack_at(&p, None, input("x", "  "))
             .unwrap_err()
             .contains("needs a host"));
-    }
-
-    /// Every device arrives, and the split survives as a branch of the tree.
-    #[test]
-    fn spaces_fold_into_the_one_list_and_keep_their_shape() {
-        let cfg = std::env::temp_dir().join(format!(
-            "patchbay-{}-fold/patchbay.toml",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(cfg.parent().unwrap());
-        std::fs::create_dir_all(cfg.with_file_name("spaces")).unwrap();
-        std::fs::write(&cfg, "# mine\n[jack.laptop]\nhost = \"192.168.1.9\"\n").unwrap();
-        std::fs::write(
-            cfg.with_file_name("spaces").join("acme.toml"),
-            "[defaults]\nuser = \"root\"\n\n[jack.db]\nhost = \"10.0.0.5\"\n\
-             [jack.web]\nhost = \"10.0.0.4\"\nuser = \"deploy\"\nfolders = [\"prod\"]\n",
-        )
-        .unwrap();
-        // A name already in the main list.
-        std::fs::write(
-            cfg.with_file_name("spaces").join("lab.toml"),
-            "[jack.laptop]\nhost = \"10.1.1.1\"\n",
-        )
-        .unwrap();
-
-        assert_eq!(fold_spaces_at(&cfg).unwrap(), 3);
-        let jacks = patchbay::parse_all(&read(&cfg)).unwrap().0;
-        assert_eq!(jacks.len(), 4);
-        assert!(read(&cfg).contains("# mine"), "the file was re-serialized");
-
-        // Inherited keys come along; keys set on the device itself win.
-        assert_eq!(
-            jacks["db"].user.as_deref(),
-            Some("root"),
-            "an inherited user was dropped"
-        );
-        assert_eq!(
-            jacks["web"].user.as_deref(),
-            Some("deploy"),
-            "an inherited user won"
-        );
-
-        // The space is the outermost folder, with or without folders before.
-        assert_eq!(
-            jacks["db"].folders.as_deref(),
-            Some(&["acme".to_string()][..])
-        );
-        assert_eq!(
-            jacks["web"].folders.as_deref(),
-            Some(&["acme/prod".to_string()][..])
-        );
-        // The existing device is untouched; the clash gets its own name.
-        assert_eq!(jacks["laptop"].host, "192.168.1.9");
-        assert_eq!(jacks["laptop 2"].host, "10.1.1.1");
-
-        // The files it read are kept, and it does not run twice.
-        assert!(cfg
-            .with_file_name("spaces")
-            .join("acme.toml.merged")
-            .exists());
-        assert_eq!(fold_spaces_at(&cfg).unwrap(), 0);
     }
 
     #[test]
