@@ -986,20 +986,29 @@ pub async fn load(
 }
 
 /// A device's url as the one match pattern that covers it and nothing beside it: the
-/// host exactly, every path. Either scheme, because the url in the list is often not
-/// the page with the form on it: a Synology's http port is three lines of JavaScript
-/// pointing at its https one. A port is not part of a match pattern, so two ports on
-/// one appliance are the same pattern, which is the same machine either way.
+/// host exactly, every path. A device listed as http is granted on https too, because
+/// the url in the list is often not the page with the form on it: a Synology's http
+/// port is three lines of JavaScript pointing at its https one. Never the other way:
+/// a device listed as https has no business being filled over cleartext. A port is not
+/// part of a match pattern, so two ports on one appliance are the same pattern, which
+/// is the same machine either way.
+///
+/// A `*` in the host is refused. The url parser lets it through and a match pattern
+/// reads it as a wildcard, so `http://*/` in a colleague's list was every site there is.
 pub fn host_pattern(url: &str) -> Option<String> {
     let u = tauri::Url::parse(url.trim()).ok()?;
-    matches!(u.scheme(), "http" | "https").then(|| Some(format!("*://{}/*", u.host_str()?)))?
+    let host = u.host_str().filter(|h| !h.contains('*'))?;
+    match u.scheme() {
+        "http" => Some(format!("*://{host}/*")),
+        "https" => Some(format!("https://{host}/*")),
+        _ => None,
+    }
 }
 
 /// A self-hosted Bitwarden's address as its match pattern. https only: the vault's
 /// own traffic, and Bitwarden's clients refuse a cleartext server anyway.
 pub fn server_pattern(url: &str) -> Option<String> {
-    let u = tauri::Url::parse(url.trim()).ok()?;
-    (u.scheme() == "https").then(|| Some(format!("https://{}/*", u.host_str()?)))?
+    host_pattern(url).filter(|p| p.starts_with("https://"))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1041,12 +1050,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_device_is_its_host_on_either_scheme_and_a_server_only_https() {
-        let nas = Some("*://nas.local/*".to_string());
-        assert_eq!(host_pattern("http://nas.local:5000/"), nas);
-        assert_eq!(host_pattern(" https://nas.local:5001/webman "), nas);
-        assert_eq!(host_pattern("ftp://nas.local/"), None);
-        assert_eq!(host_pattern("-oProxyCommand=x"), None);
+    fn http_is_granted_on_https_too_never_the_reverse_and_never_a_wildcard() {
+        let on = |u| host_pattern(u);
+        assert_eq!(
+            on("http://nas.local:5000/").as_deref(),
+            Some("*://nas.local/*")
+        );
+        assert_eq!(
+            on(" https://nas.local:5001/x ").as_deref(),
+            Some("https://nas.local/*")
+        );
+        assert_eq!(on("ftp://nas.local/"), None);
+        assert_eq!(on("-oProxyCommand=x"), None);
+        for wild in [
+            "http://*/",
+            "https://*.example.com/",
+            "http://nas*.local/",
+            "http://%2A/",
+        ] {
+            assert_eq!(on(wild), None, "{wild}");
+            assert_eq!(server_pattern(wild), None, "{wild}");
+        }
         assert_eq!(server_pattern("http://vault.example.com"), None);
     }
 }
